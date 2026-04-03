@@ -5,6 +5,8 @@
 
 // Greybeard Edits:
 // Added ShowTransparentPlotsInDataBox = true;
+// Added Exit Signal: draws an X at bar midpoint after N consecutive grey bars (MinExitBars, default 2).
+//   ExitSignal plot (Values[6]) outputs 0 = no exit, 1 = exit triggered. Color and visibility are user-configurable.
 
 using System;
 using System.ComponentModel;
@@ -12,7 +14,6 @@ using System.ComponentModel.DataAnnotations;
 using System.Reflection;
 using System.Windows;
 using System.Windows.Controls;
-using System.Windows.Forms;
 using System.Windows.Media;
 using System.Windows.Threading;
 using System.Xml.Serialization;
@@ -66,6 +67,7 @@ namespace NinjaTrader.NinjaScript.Indicators.MaverickIndicators
         private int consecutiveGreyBars  = 0;
         private int sequenceState        = 0;   // 0=Idle, 1=Armed, 2=Directional
         private int sequenceDirection    = 0;   // 0=none, 1=bull, -1=bear
+        private int exitGreyBarCount     = 0;   // strictly consecutive grey bars for exit signal
 
         // ── UI button ────────────────────────────────────────────────────────────
         private System.Windows.Controls.Button trendToggleButton;
@@ -95,6 +97,9 @@ namespace NinjaTrader.NinjaScript.Indicators.MaverickIndicators
 
         [Browsable(false)] [XmlIgnore]
         public Series<double> MaverickGuide   => Values[5];
+
+        [Browsable(false)] [XmlIgnore]
+        public Series<double> ExitSignal      => Values[6];   // 0 = no exit, 1 = exit triggered
 
         // ════════════════════════════════════════════════════════════════════════
         //  Properties – MACD (hidden, fixed)
@@ -312,6 +317,25 @@ namespace NinjaTrader.NinjaScript.Indicators.MaverickIndicators
         public int MaverickGuideThickness { get; set; }
 
         // ════════════════════════════════════════════════════════════════════════
+        //  Properties – Exit Signal
+        // ════════════════════════════════════════════════════════════════════════
+        [NinjaScriptProperty]
+        [Display(Name = "Show Exit Signal", Description = "Draw an X on the chart when price returns to consolidation", Order = 1, GroupName = "Exit Signal")]
+        public bool ShowExitSignal { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(1, 200)]
+        [Display(Name = "Min Grey Bars", Description = "Number of consecutive grey bars that triggers the exit signal", Order = 2, GroupName = "Exit Signal")]
+        public int MinExitBars { get; set; }
+
+        [NinjaScriptProperty] [XmlIgnore]
+        [Display(Name = "Exit Color", Order = 3, GroupName = "Exit Signal")]
+        public Brush ExitSignalColor { get; set; }
+        [Browsable(false)]
+        public string ExitSignalColorSerializable
+        { get => Serialize.BrushToString(ExitSignalColor); set => ExitSignalColor = Serialize.StringToBrush(value); }
+
+        // ════════════════════════════════════════════════════════════════════════
         //  Display name
         // ════════════════════════════════════════════════════════════════════════
         public override string DisplayName => "MaverickAIpro PostConsolidation";
@@ -342,6 +366,7 @@ namespace NinjaTrader.NinjaScript.Indicators.MaverickIndicators
                     AddPlot(Brushes.Transparent, "EMA2");
                     AddPlot(new Stroke(Brushes.Green,       2f), PlotStyle.Line, "Maverick200");
                     AddPlot(new Stroke(Brushes.DodgerBlue,  1f), PlotStyle.Line, "MaverickGuide");
+                    AddPlot(Brushes.Transparent, "ExitSignal");
 
                     // MACD params (fixed, hidden)
                     FastPeriod   = 3;
@@ -392,6 +417,11 @@ namespace NinjaTrader.NinjaScript.Indicators.MaverickIndicators
                     VMAVolatilityPeriod    = 9;
                     MaverickGuideColor     = Brushes.DodgerBlue;
                     MaverickGuideThickness = 3;
+
+                    // Exit Signal
+                    ShowExitSignal  = true;
+                    MinExitBars     = 2;
+                    ExitSignalColor = Brushes.Yellow;
                     break;
 
                 case State.Configure:
@@ -671,6 +701,27 @@ namespace NinjaTrader.NinjaScript.Indicators.MaverickIndicators
                 }
             }
 
+            // ── EXIT SIGNAL – fires on the Nth consecutive grey bar ──────────────
+            double exitSignal = 0.0;
+
+            if (isGreyBar)
+            {
+                exitGreyBarCount++;
+                if (ShowExitSignal && exitGreyBarCount == MinExitBars)
+                {
+                    RemoveDrawObject("ExitX" + CurrentBar);
+                    Draw.Text(this, "ExitX" + CurrentBar, "X", 0,
+                              High[0] + 2.0 * TickSize, ExitSignalColor);
+                    exitSignal = 1.0;
+                }
+            }
+            else
+            {
+                exitGreyBarCount = 0;
+            }
+
+            Values[6][0] = exitSignal;
+
             // ── DotSignal plot – Predator reads Values[1] ─────────────────────────
             Values[1][0] = dotSignal;
         }
@@ -824,7 +875,7 @@ namespace NinjaTrader.NinjaScript.Indicators.MaverickIndicators
                 trendToggleButton.Content    = ShowBackgroundTrend ? "Trend On" : "Trend Off";
                 trendToggleButton.Background = ShowBackgroundTrend ? Brushes.Black : Brushes.DarkGray;
             }
-            ChartControl?.Dispatcher.InvokeAsync(() => SendKeys.SendWait("{F5}"));
+            ChartControl?.InvalidateVisual();
         }
     }
 }
