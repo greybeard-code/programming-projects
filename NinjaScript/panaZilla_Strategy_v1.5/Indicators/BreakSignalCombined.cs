@@ -1,4 +1,4 @@
-﻿#region Using declarations
+#region Using declarations
 using System;
 using System.Collections.Generic;
 using System.ComponentModel;
@@ -86,6 +86,7 @@ namespace NinjaTrader.NinjaScript.Indicators
                 PaintPriceMarkers           = true;
                 ScaleJustification          = NinjaTrader.Gui.Chart.ScaleJustification.Right;
                 IsSuspendedWhileInactive    = true;
+                ShowTransparentPlotsInDataBox = true;
 
                 // ---- ThunderZilla Parameters ----
                 TZ_TrendMAType              = ThunderZillaMAType.SMA;
@@ -569,3 +570,60 @@ namespace NinjaTrader.NinjaScript.Indicators
         #endregion
     }
 }
+
+#region NinjaScript generated code. Neither change nor remove.
+
+namespace NinjaTrader.NinjaScript.Indicators
+{
+	public partial class Indicator : NinjaTrader.Gui.NinjaScript.IndicatorRenderBase
+	{
+		private BreakSignalCombined[] cacheBreakSignalCombined;
+		public BreakSignalCombined BreakSignalCombined(ThunderZillaMAType tZ_TrendMAType, int tZ_TrendPeriod, bool tZ_TrendSmoothingEnabled, ThunderZillaMAType tZ_TrendSmoothingMethod, int tZ_TrendSmoothingPeriod, double tZ_StopOffsetMultiplier, int tZ_SignalQtyPerFlat, int tZ_SignalQtyPerTrend, double tZ_BullishThreshold, double tZ_BearishThreshold, int pK_Period, double pK_Factor, int pK_MiddlePeriod, int pK_SignalBreakSplitBars, int pK_SignalPullbackFindPeriod, bool enableExitSignals, int aTR_Period, double aTR_Multiplier, bool useMAExit, int minBarsInTrade, int arrowOffset, bool showLabel, string longLabelText, string shortLabelText, int labelFontSize, string longExitLabel, string shortExitLabel, bool showTrailLine)
+		{
+			return BreakSignalCombined(Input, tZ_TrendMAType, tZ_TrendPeriod, tZ_TrendSmoothingEnabled, tZ_TrendSmoothingMethod, tZ_TrendSmoothingPeriod, tZ_StopOffsetMultiplier, tZ_SignalQtyPerFlat, tZ_SignalQtyPerTrend, tZ_BullishThreshold, tZ_BearishThreshold, pK_Period, pK_Factor, pK_MiddlePeriod, pK_SignalBreakSplitBars, pK_SignalPullbackFindPeriod, enableExitSignals, aTR_Period, aTR_Multiplier, useMAExit, minBarsInTrade, arrowOffset, showLabel, longLabelText, shortLabelText, labelFontSize, longExitLabel, shortExitLabel, showTrailLine);
+		}
+
+		public BreakSignalCombined BreakSignalCombined(ISeries<double> input, ThunderZillaMAType tZ_TrendMAType, int tZ_TrendPeriod, bool tZ_TrendSmoothingEnabled, ThunderZillaMAType tZ_TrendSmoothingMethod, int tZ_TrendSmoothingPeriod, double tZ_StopOffsetMultiplier, int tZ_SignalQtyPerFlat, int tZ_SignalQtyPerTrend, double tZ_BullishThreshold, double tZ_BearishThreshold, int pK_Period, double pK_Factor, int pK_MiddlePeriod, int pK_SignalBreakSplitBars, int pK_SignalPullbackFindPeriod, bool enableExitSignals, int aTR_Period, double aTR_Multiplier, bool useMAExit, int minBarsInTrade, int arrowOffset, bool showLabel, string longLabelText, string shortLabelText, int labelFontSize, string longExitLabel, string shortExitLabel, bool showTrailLine)
+		{
+			if (cacheBreakSignalCombined != null)
+				for (int idx = 0; idx < cacheBreakSignalCombined.Length; idx++)
+					if (cacheBreakSignalCombined[idx] != null && cacheBreakSignalCombined[idx].TZ_TrendMAType == tZ_TrendMAType && cacheBreakSignalCombined[idx].TZ_TrendPeriod == tZ_TrendPeriod && cacheBreakSignalCombined[idx].TZ_TrendSmoothingEnabled == tZ_TrendSmoothingEnabled && cacheBreakSignalCombined[idx].TZ_TrendSmoothingMethod == tZ_TrendSmoothingMethod && cacheBreakSignalCombined[idx].TZ_TrendSmoothingPeriod == tZ_TrendSmoothingPeriod && cacheBreakSignalCombined[idx].TZ_StopOffsetMultiplier == tZ_StopOffsetMultiplier && cacheBreakSignalCombined[idx].TZ_SignalQtyPerFlat == tZ_SignalQtyPerFlat && cacheBreakSignalCombined[idx].TZ_SignalQtyPerTrend == tZ_SignalQtyPerTrend && cacheBreakSignalCombined[idx].TZ_BullishThreshold == tZ_BullishThreshold && cacheBreakSignalCombined[idx].TZ_BearishThreshold == tZ_BearishThreshold && cacheBreakSignalCombined[idx].PK_Period == pK_Period && cacheBreakSignalCombined[idx].PK_Factor == pK_Factor && cacheBreakSignalCombined[idx].PK_MiddlePeriod == pK_MiddlePeriod && cacheBreakSignalCombined[idx].PK_SignalBreakSplitBars == pK_SignalBreakSplitBars && cacheBreakSignalCombined[idx].PK_SignalPullbackFindPeriod == pK_SignalPullbackFindPeriod && cacheBreakSignalCombined[idx].EnableExitSignals == enableExitSignals && cacheBreakSignalCombined[idx].ATR_Period == aTR_Period && cacheBreakSignalCombined[idx].ATR_Multiplier == aTR_Multiplier && cacheBreakSignalCombined[idx].UseMAExit == useMAExit && cacheBreakSignalCombined[idx].MinBarsInTrade == minBarsInTrade && cacheBreakSignalCombined[idx].ArrowOffset == arrowOffset && cacheBreakSignalCombined[idx].ShowLabel == showLabel && cacheBreakSignalCombined[idx].LongLabelText == longLabelText && cacheBreakSignalCombined[idx].ShortLabelText == shortLabelText && cacheBreakSignalCombined[idx].LabelFontSize == labelFontSize && cacheBreakSignalCombined[idx].LongExitLabel == longExitLabel && cacheBreakSignalCombined[idx].ShortExitLabel == shortExitLabel && cacheBreakSignalCombined[idx].ShowTrailLine == showTrailLine && cacheBreakSignalCombined[idx].EqualsInput(input))
+						return cacheBreakSignalCombined[idx];
+			return CacheIndicator<BreakSignalCombined>(new BreakSignalCombined(){ TZ_TrendMAType = tZ_TrendMAType, TZ_TrendPeriod = tZ_TrendPeriod, TZ_TrendSmoothingEnabled = tZ_TrendSmoothingEnabled, TZ_TrendSmoothingMethod = tZ_TrendSmoothingMethod, TZ_TrendSmoothingPeriod = tZ_TrendSmoothingPeriod, TZ_StopOffsetMultiplier = tZ_StopOffsetMultiplier, TZ_SignalQtyPerFlat = tZ_SignalQtyPerFlat, TZ_SignalQtyPerTrend = tZ_SignalQtyPerTrend, TZ_BullishThreshold = tZ_BullishThreshold, TZ_BearishThreshold = tZ_BearishThreshold, PK_Period = pK_Period, PK_Factor = pK_Factor, PK_MiddlePeriod = pK_MiddlePeriod, PK_SignalBreakSplitBars = pK_SignalBreakSplitBars, PK_SignalPullbackFindPeriod = pK_SignalPullbackFindPeriod, EnableExitSignals = enableExitSignals, ATR_Period = aTR_Period, ATR_Multiplier = aTR_Multiplier, UseMAExit = useMAExit, MinBarsInTrade = minBarsInTrade, ArrowOffset = arrowOffset, ShowLabel = showLabel, LongLabelText = longLabelText, ShortLabelText = shortLabelText, LabelFontSize = labelFontSize, LongExitLabel = longExitLabel, ShortExitLabel = shortExitLabel, ShowTrailLine = showTrailLine }, input, ref cacheBreakSignalCombined);
+		}
+	}
+}
+
+namespace NinjaTrader.NinjaScript.MarketAnalyzerColumns
+{
+	public partial class MarketAnalyzerColumn : MarketAnalyzerColumnBase
+	{
+		public Indicators.BreakSignalCombined BreakSignalCombined(ThunderZillaMAType tZ_TrendMAType, int tZ_TrendPeriod, bool tZ_TrendSmoothingEnabled, ThunderZillaMAType tZ_TrendSmoothingMethod, int tZ_TrendSmoothingPeriod, double tZ_StopOffsetMultiplier, int tZ_SignalQtyPerFlat, int tZ_SignalQtyPerTrend, double tZ_BullishThreshold, double tZ_BearishThreshold, int pK_Period, double pK_Factor, int pK_MiddlePeriod, int pK_SignalBreakSplitBars, int pK_SignalPullbackFindPeriod, bool enableExitSignals, int aTR_Period, double aTR_Multiplier, bool useMAExit, int minBarsInTrade, int arrowOffset, bool showLabel, string longLabelText, string shortLabelText, int labelFontSize, string longExitLabel, string shortExitLabel, bool showTrailLine)
+		{
+			return indicator.BreakSignalCombined(Input, tZ_TrendMAType, tZ_TrendPeriod, tZ_TrendSmoothingEnabled, tZ_TrendSmoothingMethod, tZ_TrendSmoothingPeriod, tZ_StopOffsetMultiplier, tZ_SignalQtyPerFlat, tZ_SignalQtyPerTrend, tZ_BullishThreshold, tZ_BearishThreshold, pK_Period, pK_Factor, pK_MiddlePeriod, pK_SignalBreakSplitBars, pK_SignalPullbackFindPeriod, enableExitSignals, aTR_Period, aTR_Multiplier, useMAExit, minBarsInTrade, arrowOffset, showLabel, longLabelText, shortLabelText, labelFontSize, longExitLabel, shortExitLabel, showTrailLine);
+		}
+
+		public Indicators.BreakSignalCombined BreakSignalCombined(ISeries<double> input , ThunderZillaMAType tZ_TrendMAType, int tZ_TrendPeriod, bool tZ_TrendSmoothingEnabled, ThunderZillaMAType tZ_TrendSmoothingMethod, int tZ_TrendSmoothingPeriod, double tZ_StopOffsetMultiplier, int tZ_SignalQtyPerFlat, int tZ_SignalQtyPerTrend, double tZ_BullishThreshold, double tZ_BearishThreshold, int pK_Period, double pK_Factor, int pK_MiddlePeriod, int pK_SignalBreakSplitBars, int pK_SignalPullbackFindPeriod, bool enableExitSignals, int aTR_Period, double aTR_Multiplier, bool useMAExit, int minBarsInTrade, int arrowOffset, bool showLabel, string longLabelText, string shortLabelText, int labelFontSize, string longExitLabel, string shortExitLabel, bool showTrailLine)
+		{
+			return indicator.BreakSignalCombined(input, tZ_TrendMAType, tZ_TrendPeriod, tZ_TrendSmoothingEnabled, tZ_TrendSmoothingMethod, tZ_TrendSmoothingPeriod, tZ_StopOffsetMultiplier, tZ_SignalQtyPerFlat, tZ_SignalQtyPerTrend, tZ_BullishThreshold, tZ_BearishThreshold, pK_Period, pK_Factor, pK_MiddlePeriod, pK_SignalBreakSplitBars, pK_SignalPullbackFindPeriod, enableExitSignals, aTR_Period, aTR_Multiplier, useMAExit, minBarsInTrade, arrowOffset, showLabel, longLabelText, shortLabelText, labelFontSize, longExitLabel, shortExitLabel, showTrailLine);
+		}
+	}
+}
+
+namespace NinjaTrader.NinjaScript.Strategies
+{
+	public partial class Strategy : NinjaTrader.Gui.NinjaScript.StrategyRenderBase
+	{
+		public Indicators.BreakSignalCombined BreakSignalCombined(ThunderZillaMAType tZ_TrendMAType, int tZ_TrendPeriod, bool tZ_TrendSmoothingEnabled, ThunderZillaMAType tZ_TrendSmoothingMethod, int tZ_TrendSmoothingPeriod, double tZ_StopOffsetMultiplier, int tZ_SignalQtyPerFlat, int tZ_SignalQtyPerTrend, double tZ_BullishThreshold, double tZ_BearishThreshold, int pK_Period, double pK_Factor, int pK_MiddlePeriod, int pK_SignalBreakSplitBars, int pK_SignalPullbackFindPeriod, bool enableExitSignals, int aTR_Period, double aTR_Multiplier, bool useMAExit, int minBarsInTrade, int arrowOffset, bool showLabel, string longLabelText, string shortLabelText, int labelFontSize, string longExitLabel, string shortExitLabel, bool showTrailLine)
+		{
+			return indicator.BreakSignalCombined(Input, tZ_TrendMAType, tZ_TrendPeriod, tZ_TrendSmoothingEnabled, tZ_TrendSmoothingMethod, tZ_TrendSmoothingPeriod, tZ_StopOffsetMultiplier, tZ_SignalQtyPerFlat, tZ_SignalQtyPerTrend, tZ_BullishThreshold, tZ_BearishThreshold, pK_Period, pK_Factor, pK_MiddlePeriod, pK_SignalBreakSplitBars, pK_SignalPullbackFindPeriod, enableExitSignals, aTR_Period, aTR_Multiplier, useMAExit, minBarsInTrade, arrowOffset, showLabel, longLabelText, shortLabelText, labelFontSize, longExitLabel, shortExitLabel, showTrailLine);
+		}
+
+		public Indicators.BreakSignalCombined BreakSignalCombined(ISeries<double> input , ThunderZillaMAType tZ_TrendMAType, int tZ_TrendPeriod, bool tZ_TrendSmoothingEnabled, ThunderZillaMAType tZ_TrendSmoothingMethod, int tZ_TrendSmoothingPeriod, double tZ_StopOffsetMultiplier, int tZ_SignalQtyPerFlat, int tZ_SignalQtyPerTrend, double tZ_BullishThreshold, double tZ_BearishThreshold, int pK_Period, double pK_Factor, int pK_MiddlePeriod, int pK_SignalBreakSplitBars, int pK_SignalPullbackFindPeriod, bool enableExitSignals, int aTR_Period, double aTR_Multiplier, bool useMAExit, int minBarsInTrade, int arrowOffset, bool showLabel, string longLabelText, string shortLabelText, int labelFontSize, string longExitLabel, string shortExitLabel, bool showTrailLine)
+		{
+			return indicator.BreakSignalCombined(input, tZ_TrendMAType, tZ_TrendPeriod, tZ_TrendSmoothingEnabled, tZ_TrendSmoothingMethod, tZ_TrendSmoothingPeriod, tZ_StopOffsetMultiplier, tZ_SignalQtyPerFlat, tZ_SignalQtyPerTrend, tZ_BullishThreshold, tZ_BearishThreshold, pK_Period, pK_Factor, pK_MiddlePeriod, pK_SignalBreakSplitBars, pK_SignalPullbackFindPeriod, enableExitSignals, aTR_Period, aTR_Multiplier, useMAExit, minBarsInTrade, arrowOffset, showLabel, longLabelText, shortLabelText, labelFontSize, longExitLabel, shortExitLabel, showTrailLine);
+		}
+	}
+}
+
+#endregion
