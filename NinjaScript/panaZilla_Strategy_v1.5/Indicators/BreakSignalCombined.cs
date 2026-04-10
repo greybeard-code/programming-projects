@@ -24,6 +24,7 @@ using NinjaTrader.NinjaScript.DrawingTools;
 // ============================================================
 //  BreakSignalCombined
 //  Combines ThunderZilla (RenkoKings) + PANA Kanal (ninZa.co)
+//  Optionally fires ATR-trailed exit signals after each entry.
 //
 //  PANA Kanal Signal_Trade plot values (ninZa.co official docs):
 //    2  = Break Up      ← BULLISH BREAK  ✓
@@ -43,23 +44,40 @@ using NinjaTrader.NinjaScript.DrawingTools;
 //   -3  = Bearish signal (Per Trend)
 //
 //  DEFAULT COMBINED SIGNALS:
-//  LONG  → PANA Kanal = 2 (Break Up)   AND ThunderZilla >= 1 (any bullish)
+//  LONG  → PANA Kanal = 2 (Break Up)    AND ThunderZilla >= 1 (any bullish)
 //  SHORT → PANA Kanal = -2 (Break Down) AND ThunderZilla <= -1 (any bearish)
+//
+//  EXIT (when EnableExitSignals = true):
+//  A. ATR trailing stop breached         (primary)
+//  B. Price crosses smoothed MA          (optional, UseMAExit)
+//  C. Opposing color bar after MinBarsInTrade
 // ============================================================
 
 namespace NinjaTrader.NinjaScript.Indicators
 {
     public class BreakSignalCombined : Indicator
     {
-        // Private references to the two locked indicators
+        // ---- Indicator references ----
         private Indicators.RenkoKings.RenkoKings_ThunderZilla thunderZilla;
-        private Indicators.ninZaPANAKanal panaKanal;
+        private Indicators.ninZaPANAKanal                     panaKanal;
+
+        // ---- MA series for exit logic ----
+        private Series<double> trendMA;
+        private Series<double> smoothedMA;
+
+        // ---- Exit state machine ----
+        private int    tradeDirection = 0;          //  1 = long, -1 = short, 0 = flat
+        private double trailLevel     = 0;
+        private double highestHigh    = 0;
+        private double lowestLow      = double.MaxValue;
+        private int    entryBar       = -999;
 
         protected override void OnStateChange()
         {
             if (State == State.SetDefaults)
             {
-                Description                 = @"Fires a Long arrow when PANA Kanal prints a Break Up (Signal_Trade = 2) AND ThunderZilla is bullish on the same bar. Fires a Short arrow when PANA Kanal prints a Break Down (Signal_Trade = -2) AND ThunderZilla is bearish on the same bar.";
+                Description                 = "Fires Long/Short arrows when PANA Kanal Break signal aligns with ThunderZilla. "
+                                            + "Optional exit signals via ATR trailing stop, MA cross, or color flip.";
                 Name                        = "BreakSignalCombined";
                 Calculate                   = Calculate.OnBarClose;
                 IsOverlay                   = true;
@@ -70,7 +88,6 @@ namespace NinjaTrader.NinjaScript.Indicators
                 IsSuspendedWhileInactive    = true;
 
                 // ---- ThunderZilla Parameters ----
-                // (Matched exactly to COS / Captain Optimus Strong settings)
                 TZ_TrendMAType              = ThunderZillaMAType.SMA;
                 TZ_TrendPeriod              = 100;
                 TZ_TrendSmoothingEnabled    = false;
@@ -79,22 +96,24 @@ namespace NinjaTrader.NinjaScript.Indicators
                 TZ_StopOffsetMultiplier     = 60;
                 TZ_SignalQtyPerFlat         = 2;
                 TZ_SignalQtyPerTrend        = 999;
+                TZ_BullishThreshold         = 3;
+                TZ_BearishThreshold         = -3;
 
                 // ---- PANA Kanal Parameters ----
-                // (Matched exactly to COS / Captain Optimus Strong settings)
                 PK_Period                   = 20;
                 PK_Factor                   = 4;
                 PK_MiddlePeriod             = 14;
                 PK_SignalBreakSplitBars     = 20;
-                PK_SignalPullbackFindPeriod  = 10;
+                PK_SignalPullbackFindPeriod = 10;
 
-                // ---- Signal Thresholds ----
-                // PANA Kanal Signal_Trade = 2 (Break Up) / -2 (Break Down) is hardcoded
-                // TZ: must be exactly 3 (bullish) or -3 (bearish) to match COS settings
-                TZ_BullishThreshold         = 3;
-                TZ_BearishThreshold         = -3;
+                // ---- Exit Signal Settings ----
+                EnableExitSignals           = true;
+                ATR_Period                  = 14;
+                ATR_Multiplier              = 2.0;
+                UseMAExit                   = true;
+                MinBarsInTrade              = 3;
 
-                // ---- Visuals ----
+                // ---- Visuals — Entry ----
                 LongArrowColor              = Brushes.Cyan;
                 ShortArrowColor             = Brushes.Magenta;
                 ArrowOffset                 = 3;
@@ -102,18 +121,29 @@ namespace NinjaTrader.NinjaScript.Indicators
                 LongLabelText               = "Break Buy";
                 ShortLabelText              = "Break Sell";
                 LabelFontSize               = 10;
+
+                // ---- Visuals — Exit ----
+                LongExitColor               = Brushes.Orange;
+                ShortExitColor              = Brushes.Orange;
+                LongExitLabel               = "Exit Long";
+                ShortExitLabel              = "Exit Short";
+                ShowTrailLine               = true;
             }
             else if (State == State.Configure)
             {
-                // LongSignal  plot = 1 when a long fires,  0 otherwise
-                // ShortSignal plot = -1 when a short fires, 0 otherwise
-                // Both are hidden (Transparent) — used by strategies via .LongSignal[0] / .ShortSignal[0]
-                AddPlot(new Stroke(Brushes.Transparent, 1), PlotStyle.Dot, "LongSignal");
-                AddPlot(new Stroke(Brushes.Transparent, 1), PlotStyle.Dot, "ShortSignal");
+                // Entry plots (transparent — read by strategies)
+                AddPlot(new Stroke(Brushes.Transparent, 1), PlotStyle.Dot,  "LongSignal");
+                AddPlot(new Stroke(Brushes.Transparent, 1), PlotStyle.Dot,  "ShortSignal");
+
+                // Exit plots (transparent — read by strategies)
+                AddPlot(new Stroke(Brushes.Transparent, 1), PlotStyle.Dot,  "LongExit");
+                AddPlot(new Stroke(Brushes.Transparent, 1), PlotStyle.Dot,  "ShortExit");
+
+                // Trail stop line
+                AddPlot(new Stroke(Brushes.Gray, 1), PlotStyle.Line, "TrailStop");
             }
             else if (State == State.DataLoaded)
             {
-                // Instantiate ThunderZilla with current parameter values
                 thunderZilla = RenkoKings_ThunderZilla(
                     TZ_TrendMAType,
                     TZ_TrendPeriod,
@@ -125,7 +155,6 @@ namespace NinjaTrader.NinjaScript.Indicators
                     TZ_SignalQtyPerTrend
                 );
 
-                // Instantiate PANA Kanal with current parameter values
                 panaKanal = ninZaPANAKanal(
                     PK_Period,
                     PK_Factor,
@@ -133,85 +162,181 @@ namespace NinjaTrader.NinjaScript.Indicators
                     PK_SignalBreakSplitBars,
                     PK_SignalPullbackFindPeriod
                 );
+
+                trendMA    = new Series<double>(this);
+                smoothedMA = new Series<double>(this);
             }
         }
 
         protected override void OnBarUpdate()
         {
-            // Wait for enough bars to warm up both indicators
             if (CurrentBar < Math.Max(TZ_TrendPeriod, PK_Period) + 20)
                 return;
 
-            // Reset signal plots
-            Values[0][0] = 0;
-            Values[1][0] = 0;
+            // Reset all plots
+            Values[0][0] = 0;   // LongSignal
+            Values[1][0] = 0;   // ShortSignal
+            Values[2][0] = 0;   // LongExit
+            Values[3][0] = 0;   // ShortExit
+            Values[4][0] = double.NaN; // TrailStop — hidden when not in trade
 
-            // ---- Read PANA Kanal Signal_Trade ----
-            // ninZa.co indicators expose a named plot "Signal_Trade"
-            // Values[0] is typically the first plot — but we use GetValueByName for safety
+            // MA for exit smoothing (always calculated, low cost)
+            trendMA[0]    = SMA(Close, TZ_TrendPeriod)[0];
+            smoothedMA[0] = EMA(trendMA, TZ_TrendSmoothingPeriod)[0];
+
             double pkSignal = panaKanal.Signal_Trade[0];
-
-            // ---- Read ThunderZilla Signal_Trade ----
             double tzSignal = thunderZilla.Signal_Trade[0];
 
-            // ---- LONG: PANA Break Up (2) AND ThunderZilla bullish ----
+            // ================================================================
+            //  ENTRY LOGIC
+            // ================================================================
+            bool longFired  = false;
+            bool shortFired = false;
+
             if (pkSignal == 2 && tzSignal >= TZ_BullishThreshold)
             {
-                // Draw arrow below the bar
                 Draw.ArrowUp(this,
-                    "Long_" + CurrentBar,
-                    false,
-                    0,
-                    Low[0] - (ArrowOffset * TickSize),
+                    "Long_" + CurrentBar, false,
+                    0, Low[0] - (ArrowOffset * TickSize),
                     LongArrowColor);
 
-                // Optional label above the arrow
                 if (ShowLabel)
                     Draw.Text(this,
-                        "LongTxt_" + CurrentBar,
-                        false,
+                        "LongTxt_" + CurrentBar, false,
                         LongLabelText,
-                        0,
-                        Low[0] - (ArrowOffset * TickSize * 4),
-                        0,
-                        LongArrowColor,
+                        0, Low[0] - (ArrowOffset * TickSize * 4),
+                        0, LongArrowColor,
                         new SimpleFont("Arial", LabelFontSize),
                         TextAlignment.Center,
-                        Brushes.Transparent,
-                        Brushes.Transparent,
-                        0);
+                        Brushes.Transparent, Brushes.Transparent, 0);
 
-                Values[0][0] = 1; // Signal plot for strategy use
+                Values[0][0] = 1;
+                longFired    = true;
             }
-
-            // ---- SHORT: PANA Break Down (-2) AND ThunderZilla bearish ----
             else if (pkSignal == -2 && tzSignal <= TZ_BearishThreshold)
             {
-                // Draw arrow above the bar
                 Draw.ArrowDown(this,
-                    "Short_" + CurrentBar,
-                    false,
-                    0,
-                    High[0] + (ArrowOffset * TickSize),
+                    "Short_" + CurrentBar, false,
+                    0, High[0] + (ArrowOffset * TickSize),
                     ShortArrowColor);
 
-                // Optional label below the arrow
                 if (ShowLabel)
                     Draw.Text(this,
-                        "ShortTxt_" + CurrentBar,
-                        false,
+                        "ShortTxt_" + CurrentBar, false,
                         ShortLabelText,
-                        0,
-                        High[0] + (ArrowOffset * TickSize * 4),
-                        0,
-                        ShortArrowColor,
+                        0, High[0] + (ArrowOffset * TickSize * 4),
+                        0, ShortArrowColor,
                         new SimpleFont("Arial", LabelFontSize),
                         TextAlignment.Center,
-                        Brushes.Transparent,
-                        Brushes.Transparent,
-                        0);
+                        Brushes.Transparent, Brushes.Transparent, 0);
 
-                Values[1][0] = -1; // Signal plot for strategy use
+                Values[1][0] = -1;
+                shortFired   = true;
+            }
+
+            // ================================================================
+            //  EXIT LOGIC  (only when EnableExitSignals is true)
+            // ================================================================
+            if (!EnableExitSignals)
+                return;
+
+            double atr         = ATR(ATR_Period)[0];
+            int    barsInTrade = CurrentBar - entryBar;
+
+            // ---- Detect new entry ----
+            if (tradeDirection == 0)
+            {
+                if (longFired)
+                {
+                    tradeDirection = 1;
+                    entryBar       = CurrentBar;
+                    highestHigh    = High[0];
+                    trailLevel     = High[0] - (atr * ATR_Multiplier);
+                }
+                else if (shortFired)
+                {
+                    tradeDirection = -1;
+                    entryBar       = CurrentBar;
+                    lowestLow      = Low[0];
+                    trailLevel     = Low[0] + (atr * ATR_Multiplier);
+                }
+            }
+
+            // ---- Update trail and check exit ----
+            bool   longExit   = false;
+            bool   shortExit  = false;
+            string exitReason = "";
+
+            if (tradeDirection == 1)
+            {
+                highestHigh  = Math.Max(highestHigh, High[0]);
+                trailLevel   = highestHigh - (atr * ATR_Multiplier);
+                Values[4][0] = ShowTrailLine ? trailLevel : double.NaN;
+
+                if (Close[0] < trailLevel)
+                    { longExit = true; exitReason = "Trail"; }
+                else if (UseMAExit && Close[0] < smoothedMA[0] && Close[1] >= smoothedMA[1])
+                    { longExit = true; exitReason = "MA Cross"; }
+                else if (barsInTrade >= MinBarsInTrade && Close[0] < Open[0] && Close[1] > Open[1])
+                    { longExit = true; exitReason = "Flip"; }
+            }
+            else if (tradeDirection == -1)
+            {
+                lowestLow    = Math.Min(lowestLow, Low[0]);
+                trailLevel   = lowestLow + (atr * ATR_Multiplier);
+                Values[4][0] = ShowTrailLine ? trailLevel : double.NaN;
+
+                if (Close[0] > trailLevel)
+                    { shortExit = true; exitReason = "Trail"; }
+                else if (UseMAExit && Close[0] > smoothedMA[0] && Close[1] <= smoothedMA[1])
+                    { shortExit = true; exitReason = "MA Cross"; }
+                else if (barsInTrade >= MinBarsInTrade && Close[0] > Open[0] && Close[1] < Open[1])
+                    { shortExit = true; exitReason = "Flip"; }
+            }
+
+            // ---- Fire exit signals ----
+            if (longExit)
+            {
+                Draw.ArrowDown(this,
+                    "LongExit_" + CurrentBar, false,
+                    0, High[0] + (ArrowOffset * TickSize),
+                    LongExitColor);
+
+                if (ShowLabel)
+                    Draw.Text(this,
+                        "LongExitTxt_" + CurrentBar, false,
+                        LongExitLabel + " (" + exitReason + ")",
+                        0, High[0] + (ArrowOffset * TickSize * 4),
+                        0, LongExitColor,
+                        new SimpleFont("Arial", LabelFontSize),
+                        TextAlignment.Center,
+                        Brushes.Transparent, Brushes.Transparent, 0);
+
+                Values[2][0]   = 1;
+                tradeDirection = 0;
+                highestHigh    = 0;
+            }
+
+            if (shortExit)
+            {
+                Draw.ArrowUp(this,
+                    "ShortExit_" + CurrentBar, false,
+                    0, Low[0] - (ArrowOffset * TickSize),
+                    ShortExitColor);
+
+                if (ShowLabel)
+                    Draw.Text(this,
+                        "ShortExitTxt_" + CurrentBar, false,
+                        ShortExitLabel + " (" + exitReason + ")",
+                        0, Low[0] - (ArrowOffset * TickSize * 4),
+                        0, ShortExitColor,
+                        new SimpleFont("Arial", LabelFontSize),
+                        TextAlignment.Center,
+                        Brushes.Transparent, Brushes.Transparent, 0);
+
+                Values[3][0]   = -1;
+                tradeDirection = 0;
+                lowestLow      = double.MaxValue;
             }
         }
 
@@ -260,12 +385,12 @@ namespace NinjaTrader.NinjaScript.Indicators
 
         [NinjaScriptProperty]
         [Display(Name = "Bullish Threshold (>=)", GroupName = "1. ThunderZilla", Order = 9,
-            Description = "TZ Signal_Trade must be >= this value to count as bullish. Default 1 = any bullish. Set to 3 for strongest only.")]
+            Description = "TZ Signal_Trade must be >= this to count as bullish. 1 = any bullish, 3 = strongest only.")]
         public double TZ_BullishThreshold { get; set; }
 
         [NinjaScriptProperty]
         [Display(Name = "Bearish Threshold (<=)", GroupName = "1. ThunderZilla", Order = 10,
-            Description = "TZ Signal_Trade must be <= this value to count as bearish. Default -1 = any bearish. Set to -3 for strongest only.")]
+            Description = "TZ Signal_Trade must be <= this to count as bearish. -1 = any bearish, -3 = strongest only.")]
         public double TZ_BearishThreshold { get; set; }
 
         // =====================================================================
@@ -298,11 +423,42 @@ namespace NinjaTrader.NinjaScript.Indicators
         public int PK_SignalPullbackFindPeriod { get; set; }
 
         // =====================================================================
-        // GROUP 3: Visuals
+        // GROUP 3: Exit Signal Settings
+        // =====================================================================
+
+        [NinjaScriptProperty]
+        [Display(Name = "Enable Exit Signals", GroupName = "3. Exit Signals", Order = 1,
+            Description = "When enabled, fires exit arrows after each entry using ATR trailing stop, MA cross, or color flip.")]
+        public bool EnableExitSignals { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(1, int.MaxValue)]
+        [Display(Name = "ATR Period", GroupName = "3. Exit Signals", Order = 2)]
+        public int ATR_Period { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.1, double.MaxValue)]
+        [Display(Name = "ATR Multiplier", GroupName = "3. Exit Signals", Order = 3,
+            Description = "Trail distance = ATR x this value. Default = 2.0.")]
+        public double ATR_Multiplier { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Use MA Cross Exit", GroupName = "3. Exit Signals", Order = 4,
+            Description = "Exit when price crosses back through the smoothed trend MA.")]
+        public bool UseMAExit { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(1, int.MaxValue)]
+        [Display(Name = "Min Bars In Trade", GroupName = "3. Exit Signals", Order = 5,
+            Description = "Minimum bars before a color-flip exit is allowed. Default = 3.")]
+        public int MinBarsInTrade { get; set; }
+
+        // =====================================================================
+        // GROUP 4: Visuals — Entry
         // =====================================================================
 
         [XmlIgnore]
-        [Display(Name = "Long Arrow Color", GroupName = "3. Visuals", Order = 1)]
+        [Display(Name = "Long Arrow Color", GroupName = "4. Visuals - Entry", Order = 1)]
         public Brush LongArrowColor { get; set; }
 
         [Browsable(false)]
@@ -313,7 +469,7 @@ namespace NinjaTrader.NinjaScript.Indicators
         }
 
         [XmlIgnore]
-        [Display(Name = "Short Arrow Color", GroupName = "3. Visuals", Order = 2)]
+        [Display(Name = "Short Arrow Color", GroupName = "4. Visuals - Entry", Order = 2)]
         public Brush ShortArrowColor { get; set; }
 
         [Browsable(false)]
@@ -325,46 +481,88 @@ namespace NinjaTrader.NinjaScript.Indicators
 
         [NinjaScriptProperty]
         [Range(1, 20)]
-        [Display(Name = "Arrow Offset (ticks)", GroupName = "3. Visuals", Order = 3,
-            Description = "How many ticks below/above the bar to place the arrow.")]
+        [Display(Name = "Arrow Offset (ticks)", GroupName = "4. Visuals - Entry", Order = 3)]
         public int ArrowOffset { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "Show Label", GroupName = "3. Visuals", Order = 4)]
+        [Display(Name = "Show Label", GroupName = "4. Visuals - Entry", Order = 4)]
         public bool ShowLabel { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "Long Label Text", GroupName = "3. Visuals", Order = 5)]
+        [Display(Name = "Long Label Text", GroupName = "4. Visuals - Entry", Order = 5)]
         public string LongLabelText { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "Short Label Text", GroupName = "3. Visuals", Order = 6)]
+        [Display(Name = "Short Label Text", GroupName = "4. Visuals - Entry", Order = 6)]
         public string ShortLabelText { get; set; }
 
         [NinjaScriptProperty]
         [Range(6, 30)]
-        [Display(Name = "Label Font Size", GroupName = "3. Visuals", Order = 7)]
+        [Display(Name = "Label Font Size", GroupName = "4. Visuals - Entry", Order = 7)]
         public int LabelFontSize { get; set; }
 
         // =====================================================================
-        // Exposed plots for use in strategies / Market Analyzer
+        // GROUP 5: Visuals — Exit
+        // =====================================================================
+
+        [XmlIgnore]
+        [Display(Name = "Long Exit Color", GroupName = "5. Visuals - Exit", Order = 1)]
+        public Brush LongExitColor { get; set; }
+
+        [Browsable(false)]
+        public string LongExitColorSerializable
+        {
+            get { return Serialize.BrushToString(LongExitColor); }
+            set { LongExitColor = Serialize.StringToBrush(value); }
+        }
+
+        [XmlIgnore]
+        [Display(Name = "Short Exit Color", GroupName = "5. Visuals - Exit", Order = 2)]
+        public Brush ShortExitColor { get; set; }
+
+        [Browsable(false)]
+        public string ShortExitColorSerializable
+        {
+            get { return Serialize.BrushToString(ShortExitColor); }
+            set { ShortExitColor = Serialize.StringToBrush(value); }
+        }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Long Exit Label", GroupName = "5. Visuals - Exit", Order = 3)]
+        public string LongExitLabel { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Short Exit Label", GroupName = "5. Visuals - Exit", Order = 4)]
+        public string ShortExitLabel { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Show Trail Line", GroupName = "5. Visuals - Exit", Order = 5,
+            Description = "Plots the ATR trailing stop level on the chart while in a trade.")]
+        public bool ShowTrailLine { get; set; }
+
+        // =====================================================================
+        // Output plots (for use by strategies / Market Analyzer)
         // =====================================================================
 
         [Browsable(false)]
         [XmlIgnore]
-        [Display(Name = "Long Signal", GroupName = "Output Plots")]
-        public Series<double> LongSignal
-        {
-            get { return Values[0]; }
-        }
+        public Series<double> LongSignal  { get { return Values[0]; } }
 
         [Browsable(false)]
         [XmlIgnore]
-        [Display(Name = "Short Signal", GroupName = "Output Plots")]
-        public Series<double> ShortSignal
-        {
-            get { return Values[1]; }
-        }
+        public Series<double> ShortSignal { get { return Values[1]; } }
+
+        [Browsable(false)]
+        [XmlIgnore]
+        public Series<double> LongExit    { get { return Values[2]; } }
+
+        [Browsable(false)]
+        [XmlIgnore]
+        public Series<double> ShortExit   { get { return Values[3]; } }
+
+        [Browsable(false)]
+        [XmlIgnore]
+        public Series<double> TrailStop   { get { return Values[4]; } }
 
         #endregion
     }
@@ -377,18 +575,18 @@ namespace NinjaTrader.NinjaScript.Indicators
 	public partial class Indicator : NinjaTrader.Gui.NinjaScript.IndicatorRenderBase
 	{
 		private BreakSignalCombined[] cacheBreakSignalCombined;
-		public BreakSignalCombined BreakSignalCombined(ThunderZillaMAType tZ_TrendMAType, int tZ_TrendPeriod, bool tZ_TrendSmoothingEnabled, ThunderZillaMAType tZ_TrendSmoothingMethod, int tZ_TrendSmoothingPeriod, double tZ_StopOffsetMultiplier, int tZ_SignalQtyPerFlat, int tZ_SignalQtyPerTrend, double tZ_BullishThreshold, double tZ_BearishThreshold, int pK_Period, double pK_Factor, int pK_MiddlePeriod, int pK_SignalBreakSplitBars, int pK_SignalPullbackFindPeriod, int arrowOffset, bool showLabel, string longLabelText, string shortLabelText, int labelFontSize)
+		public BreakSignalCombined BreakSignalCombined(ThunderZillaMAType tZ_TrendMAType, int tZ_TrendPeriod, bool tZ_TrendSmoothingEnabled, ThunderZillaMAType tZ_TrendSmoothingMethod, int tZ_TrendSmoothingPeriod, double tZ_StopOffsetMultiplier, int tZ_SignalQtyPerFlat, int tZ_SignalQtyPerTrend, double tZ_BullishThreshold, double tZ_BearishThreshold, int pK_Period, double pK_Factor, int pK_MiddlePeriod, int pK_SignalBreakSplitBars, int pK_SignalPullbackFindPeriod, bool enableExitSignals, int aTR_Period, double aTR_Multiplier, bool useMAExit, int minBarsInTrade, int arrowOffset, bool showLabel, string longLabelText, string shortLabelText, int labelFontSize, string longExitLabel, string shortExitLabel, bool showTrailLine)
 		{
-			return BreakSignalCombined(Input, tZ_TrendMAType, tZ_TrendPeriod, tZ_TrendSmoothingEnabled, tZ_TrendSmoothingMethod, tZ_TrendSmoothingPeriod, tZ_StopOffsetMultiplier, tZ_SignalQtyPerFlat, tZ_SignalQtyPerTrend, tZ_BullishThreshold, tZ_BearishThreshold, pK_Period, pK_Factor, pK_MiddlePeriod, pK_SignalBreakSplitBars, pK_SignalPullbackFindPeriod, arrowOffset, showLabel, longLabelText, shortLabelText, labelFontSize);
+			return BreakSignalCombined(Input, tZ_TrendMAType, tZ_TrendPeriod, tZ_TrendSmoothingEnabled, tZ_TrendSmoothingMethod, tZ_TrendSmoothingPeriod, tZ_StopOffsetMultiplier, tZ_SignalQtyPerFlat, tZ_SignalQtyPerTrend, tZ_BullishThreshold, tZ_BearishThreshold, pK_Period, pK_Factor, pK_MiddlePeriod, pK_SignalBreakSplitBars, pK_SignalPullbackFindPeriod, enableExitSignals, aTR_Period, aTR_Multiplier, useMAExit, minBarsInTrade, arrowOffset, showLabel, longLabelText, shortLabelText, labelFontSize, longExitLabel, shortExitLabel, showTrailLine);
 		}
 
-		public BreakSignalCombined BreakSignalCombined(ISeries<double> input, ThunderZillaMAType tZ_TrendMAType, int tZ_TrendPeriod, bool tZ_TrendSmoothingEnabled, ThunderZillaMAType tZ_TrendSmoothingMethod, int tZ_TrendSmoothingPeriod, double tZ_StopOffsetMultiplier, int tZ_SignalQtyPerFlat, int tZ_SignalQtyPerTrend, double tZ_BullishThreshold, double tZ_BearishThreshold, int pK_Period, double pK_Factor, int pK_MiddlePeriod, int pK_SignalBreakSplitBars, int pK_SignalPullbackFindPeriod, int arrowOffset, bool showLabel, string longLabelText, string shortLabelText, int labelFontSize)
+		public BreakSignalCombined BreakSignalCombined(ISeries<double> input, ThunderZillaMAType tZ_TrendMAType, int tZ_TrendPeriod, bool tZ_TrendSmoothingEnabled, ThunderZillaMAType tZ_TrendSmoothingMethod, int tZ_TrendSmoothingPeriod, double tZ_StopOffsetMultiplier, int tZ_SignalQtyPerFlat, int tZ_SignalQtyPerTrend, double tZ_BullishThreshold, double tZ_BearishThreshold, int pK_Period, double pK_Factor, int pK_MiddlePeriod, int pK_SignalBreakSplitBars, int pK_SignalPullbackFindPeriod, bool enableExitSignals, int aTR_Period, double aTR_Multiplier, bool useMAExit, int minBarsInTrade, int arrowOffset, bool showLabel, string longLabelText, string shortLabelText, int labelFontSize, string longExitLabel, string shortExitLabel, bool showTrailLine)
 		{
 			if (cacheBreakSignalCombined != null)
 				for (int idx = 0; idx < cacheBreakSignalCombined.Length; idx++)
-					if (cacheBreakSignalCombined[idx] != null && cacheBreakSignalCombined[idx].TZ_TrendMAType == tZ_TrendMAType && cacheBreakSignalCombined[idx].TZ_TrendPeriod == tZ_TrendPeriod && cacheBreakSignalCombined[idx].TZ_TrendSmoothingEnabled == tZ_TrendSmoothingEnabled && cacheBreakSignalCombined[idx].TZ_TrendSmoothingMethod == tZ_TrendSmoothingMethod && cacheBreakSignalCombined[idx].TZ_TrendSmoothingPeriod == tZ_TrendSmoothingPeriod && cacheBreakSignalCombined[idx].TZ_StopOffsetMultiplier == tZ_StopOffsetMultiplier && cacheBreakSignalCombined[idx].TZ_SignalQtyPerFlat == tZ_SignalQtyPerFlat && cacheBreakSignalCombined[idx].TZ_SignalQtyPerTrend == tZ_SignalQtyPerTrend && cacheBreakSignalCombined[idx].TZ_BullishThreshold == tZ_BullishThreshold && cacheBreakSignalCombined[idx].TZ_BearishThreshold == tZ_BearishThreshold && cacheBreakSignalCombined[idx].PK_Period == pK_Period && cacheBreakSignalCombined[idx].PK_Factor == pK_Factor && cacheBreakSignalCombined[idx].PK_MiddlePeriod == pK_MiddlePeriod && cacheBreakSignalCombined[idx].PK_SignalBreakSplitBars == pK_SignalBreakSplitBars && cacheBreakSignalCombined[idx].PK_SignalPullbackFindPeriod == pK_SignalPullbackFindPeriod && cacheBreakSignalCombined[idx].ArrowOffset == arrowOffset && cacheBreakSignalCombined[idx].ShowLabel == showLabel && cacheBreakSignalCombined[idx].LongLabelText == longLabelText && cacheBreakSignalCombined[idx].ShortLabelText == shortLabelText && cacheBreakSignalCombined[idx].LabelFontSize == labelFontSize && cacheBreakSignalCombined[idx].EqualsInput(input))
+					if (cacheBreakSignalCombined[idx] != null && cacheBreakSignalCombined[idx].TZ_TrendMAType == tZ_TrendMAType && cacheBreakSignalCombined[idx].TZ_TrendPeriod == tZ_TrendPeriod && cacheBreakSignalCombined[idx].TZ_TrendSmoothingEnabled == tZ_TrendSmoothingEnabled && cacheBreakSignalCombined[idx].TZ_TrendSmoothingMethod == tZ_TrendSmoothingMethod && cacheBreakSignalCombined[idx].TZ_TrendSmoothingPeriod == tZ_TrendSmoothingPeriod && cacheBreakSignalCombined[idx].TZ_StopOffsetMultiplier == tZ_StopOffsetMultiplier && cacheBreakSignalCombined[idx].TZ_SignalQtyPerFlat == tZ_SignalQtyPerFlat && cacheBreakSignalCombined[idx].TZ_SignalQtyPerTrend == tZ_SignalQtyPerTrend && cacheBreakSignalCombined[idx].TZ_BullishThreshold == tZ_BullishThreshold && cacheBreakSignalCombined[idx].TZ_BearishThreshold == tZ_BearishThreshold && cacheBreakSignalCombined[idx].PK_Period == pK_Period && cacheBreakSignalCombined[idx].PK_Factor == pK_Factor && cacheBreakSignalCombined[idx].PK_MiddlePeriod == pK_MiddlePeriod && cacheBreakSignalCombined[idx].PK_SignalBreakSplitBars == pK_SignalBreakSplitBars && cacheBreakSignalCombined[idx].PK_SignalPullbackFindPeriod == pK_SignalPullbackFindPeriod && cacheBreakSignalCombined[idx].EnableExitSignals == enableExitSignals && cacheBreakSignalCombined[idx].ATR_Period == aTR_Period && cacheBreakSignalCombined[idx].ATR_Multiplier == aTR_Multiplier && cacheBreakSignalCombined[idx].UseMAExit == useMAExit && cacheBreakSignalCombined[idx].MinBarsInTrade == minBarsInTrade && cacheBreakSignalCombined[idx].ArrowOffset == arrowOffset && cacheBreakSignalCombined[idx].ShowLabel == showLabel && cacheBreakSignalCombined[idx].LongLabelText == longLabelText && cacheBreakSignalCombined[idx].ShortLabelText == shortLabelText && cacheBreakSignalCombined[idx].LabelFontSize == labelFontSize && cacheBreakSignalCombined[idx].LongExitLabel == longExitLabel && cacheBreakSignalCombined[idx].ShortExitLabel == shortExitLabel && cacheBreakSignalCombined[idx].ShowTrailLine == showTrailLine && cacheBreakSignalCombined[idx].EqualsInput(input))
 						return cacheBreakSignalCombined[idx];
-			return CacheIndicator<BreakSignalCombined>(new BreakSignalCombined(){ TZ_TrendMAType = tZ_TrendMAType, TZ_TrendPeriod = tZ_TrendPeriod, TZ_TrendSmoothingEnabled = tZ_TrendSmoothingEnabled, TZ_TrendSmoothingMethod = tZ_TrendSmoothingMethod, TZ_TrendSmoothingPeriod = tZ_TrendSmoothingPeriod, TZ_StopOffsetMultiplier = tZ_StopOffsetMultiplier, TZ_SignalQtyPerFlat = tZ_SignalQtyPerFlat, TZ_SignalQtyPerTrend = tZ_SignalQtyPerTrend, TZ_BullishThreshold = tZ_BullishThreshold, TZ_BearishThreshold = tZ_BearishThreshold, PK_Period = pK_Period, PK_Factor = pK_Factor, PK_MiddlePeriod = pK_MiddlePeriod, PK_SignalBreakSplitBars = pK_SignalBreakSplitBars, PK_SignalPullbackFindPeriod = pK_SignalPullbackFindPeriod, ArrowOffset = arrowOffset, ShowLabel = showLabel, LongLabelText = longLabelText, ShortLabelText = shortLabelText, LabelFontSize = labelFontSize }, input, ref cacheBreakSignalCombined);
+			return CacheIndicator<BreakSignalCombined>(new BreakSignalCombined(){ TZ_TrendMAType = tZ_TrendMAType, TZ_TrendPeriod = tZ_TrendPeriod, TZ_TrendSmoothingEnabled = tZ_TrendSmoothingEnabled, TZ_TrendSmoothingMethod = tZ_TrendSmoothingMethod, TZ_TrendSmoothingPeriod = tZ_TrendSmoothingPeriod, TZ_StopOffsetMultiplier = tZ_StopOffsetMultiplier, TZ_SignalQtyPerFlat = tZ_SignalQtyPerFlat, TZ_SignalQtyPerTrend = tZ_SignalQtyPerTrend, TZ_BullishThreshold = tZ_BullishThreshold, TZ_BearishThreshold = tZ_BearishThreshold, PK_Period = pK_Period, PK_Factor = pK_Factor, PK_MiddlePeriod = pK_MiddlePeriod, PK_SignalBreakSplitBars = pK_SignalBreakSplitBars, PK_SignalPullbackFindPeriod = pK_SignalPullbackFindPeriod, EnableExitSignals = enableExitSignals, ATR_Period = aTR_Period, ATR_Multiplier = aTR_Multiplier, UseMAExit = useMAExit, MinBarsInTrade = minBarsInTrade, ArrowOffset = arrowOffset, ShowLabel = showLabel, LongLabelText = longLabelText, ShortLabelText = shortLabelText, LabelFontSize = labelFontSize, LongExitLabel = longExitLabel, ShortExitLabel = shortExitLabel, ShowTrailLine = showTrailLine }, input, ref cacheBreakSignalCombined);
 		}
 	}
 }
@@ -397,14 +595,14 @@ namespace NinjaTrader.NinjaScript.MarketAnalyzerColumns
 {
 	public partial class MarketAnalyzerColumn : MarketAnalyzerColumnBase
 	{
-		public Indicators.BreakSignalCombined BreakSignalCombined(ThunderZillaMAType tZ_TrendMAType, int tZ_TrendPeriod, bool tZ_TrendSmoothingEnabled, ThunderZillaMAType tZ_TrendSmoothingMethod, int tZ_TrendSmoothingPeriod, double tZ_StopOffsetMultiplier, int tZ_SignalQtyPerFlat, int tZ_SignalQtyPerTrend, double tZ_BullishThreshold, double tZ_BearishThreshold, int pK_Period, double pK_Factor, int pK_MiddlePeriod, int pK_SignalBreakSplitBars, int pK_SignalPullbackFindPeriod, int arrowOffset, bool showLabel, string longLabelText, string shortLabelText, int labelFontSize)
+		public Indicators.BreakSignalCombined BreakSignalCombined(ThunderZillaMAType tZ_TrendMAType, int tZ_TrendPeriod, bool tZ_TrendSmoothingEnabled, ThunderZillaMAType tZ_TrendSmoothingMethod, int tZ_TrendSmoothingPeriod, double tZ_StopOffsetMultiplier, int tZ_SignalQtyPerFlat, int tZ_SignalQtyPerTrend, double tZ_BullishThreshold, double tZ_BearishThreshold, int pK_Period, double pK_Factor, int pK_MiddlePeriod, int pK_SignalBreakSplitBars, int pK_SignalPullbackFindPeriod, bool enableExitSignals, int aTR_Period, double aTR_Multiplier, bool useMAExit, int minBarsInTrade, int arrowOffset, bool showLabel, string longLabelText, string shortLabelText, int labelFontSize, string longExitLabel, string shortExitLabel, bool showTrailLine)
 		{
-			return indicator.BreakSignalCombined(Input, tZ_TrendMAType, tZ_TrendPeriod, tZ_TrendSmoothingEnabled, tZ_TrendSmoothingMethod, tZ_TrendSmoothingPeriod, tZ_StopOffsetMultiplier, tZ_SignalQtyPerFlat, tZ_SignalQtyPerTrend, tZ_BullishThreshold, tZ_BearishThreshold, pK_Period, pK_Factor, pK_MiddlePeriod, pK_SignalBreakSplitBars, pK_SignalPullbackFindPeriod, arrowOffset, showLabel, longLabelText, shortLabelText, labelFontSize);
+			return indicator.BreakSignalCombined(Input, tZ_TrendMAType, tZ_TrendPeriod, tZ_TrendSmoothingEnabled, tZ_TrendSmoothingMethod, tZ_TrendSmoothingPeriod, tZ_StopOffsetMultiplier, tZ_SignalQtyPerFlat, tZ_SignalQtyPerTrend, tZ_BullishThreshold, tZ_BearishThreshold, pK_Period, pK_Factor, pK_MiddlePeriod, pK_SignalBreakSplitBars, pK_SignalPullbackFindPeriod, enableExitSignals, aTR_Period, aTR_Multiplier, useMAExit, minBarsInTrade, arrowOffset, showLabel, longLabelText, shortLabelText, labelFontSize, longExitLabel, shortExitLabel, showTrailLine);
 		}
 
-		public Indicators.BreakSignalCombined BreakSignalCombined(ISeries<double> input , ThunderZillaMAType tZ_TrendMAType, int tZ_TrendPeriod, bool tZ_TrendSmoothingEnabled, ThunderZillaMAType tZ_TrendSmoothingMethod, int tZ_TrendSmoothingPeriod, double tZ_StopOffsetMultiplier, int tZ_SignalQtyPerFlat, int tZ_SignalQtyPerTrend, double tZ_BullishThreshold, double tZ_BearishThreshold, int pK_Period, double pK_Factor, int pK_MiddlePeriod, int pK_SignalBreakSplitBars, int pK_SignalPullbackFindPeriod, int arrowOffset, bool showLabel, string longLabelText, string shortLabelText, int labelFontSize)
+		public Indicators.BreakSignalCombined BreakSignalCombined(ISeries<double> input , ThunderZillaMAType tZ_TrendMAType, int tZ_TrendPeriod, bool tZ_TrendSmoothingEnabled, ThunderZillaMAType tZ_TrendSmoothingMethod, int tZ_TrendSmoothingPeriod, double tZ_StopOffsetMultiplier, int tZ_SignalQtyPerFlat, int tZ_SignalQtyPerTrend, double tZ_BullishThreshold, double tZ_BearishThreshold, int pK_Period, double pK_Factor, int pK_MiddlePeriod, int pK_SignalBreakSplitBars, int pK_SignalPullbackFindPeriod, bool enableExitSignals, int aTR_Period, double aTR_Multiplier, bool useMAExit, int minBarsInTrade, int arrowOffset, bool showLabel, string longLabelText, string shortLabelText, int labelFontSize, string longExitLabel, string shortExitLabel, bool showTrailLine)
 		{
-			return indicator.BreakSignalCombined(input, tZ_TrendMAType, tZ_TrendPeriod, tZ_TrendSmoothingEnabled, tZ_TrendSmoothingMethod, tZ_TrendSmoothingPeriod, tZ_StopOffsetMultiplier, tZ_SignalQtyPerFlat, tZ_SignalQtyPerTrend, tZ_BullishThreshold, tZ_BearishThreshold, pK_Period, pK_Factor, pK_MiddlePeriod, pK_SignalBreakSplitBars, pK_SignalPullbackFindPeriod, arrowOffset, showLabel, longLabelText, shortLabelText, labelFontSize);
+			return indicator.BreakSignalCombined(input, tZ_TrendMAType, tZ_TrendPeriod, tZ_TrendSmoothingEnabled, tZ_TrendSmoothingMethod, tZ_TrendSmoothingPeriod, tZ_StopOffsetMultiplier, tZ_SignalQtyPerFlat, tZ_SignalQtyPerTrend, tZ_BullishThreshold, tZ_BearishThreshold, pK_Period, pK_Factor, pK_MiddlePeriod, pK_SignalBreakSplitBars, pK_SignalPullbackFindPeriod, enableExitSignals, aTR_Period, aTR_Multiplier, useMAExit, minBarsInTrade, arrowOffset, showLabel, longLabelText, shortLabelText, labelFontSize, longExitLabel, shortExitLabel, showTrailLine);
 		}
 	}
 }
@@ -413,14 +611,14 @@ namespace NinjaTrader.NinjaScript.Strategies
 {
 	public partial class Strategy : NinjaTrader.Gui.NinjaScript.StrategyRenderBase
 	{
-		public Indicators.BreakSignalCombined BreakSignalCombined(ThunderZillaMAType tZ_TrendMAType, int tZ_TrendPeriod, bool tZ_TrendSmoothingEnabled, ThunderZillaMAType tZ_TrendSmoothingMethod, int tZ_TrendSmoothingPeriod, double tZ_StopOffsetMultiplier, int tZ_SignalQtyPerFlat, int tZ_SignalQtyPerTrend, double tZ_BullishThreshold, double tZ_BearishThreshold, int pK_Period, double pK_Factor, int pK_MiddlePeriod, int pK_SignalBreakSplitBars, int pK_SignalPullbackFindPeriod, int arrowOffset, bool showLabel, string longLabelText, string shortLabelText, int labelFontSize)
+		public Indicators.BreakSignalCombined BreakSignalCombined(ThunderZillaMAType tZ_TrendMAType, int tZ_TrendPeriod, bool tZ_TrendSmoothingEnabled, ThunderZillaMAType tZ_TrendSmoothingMethod, int tZ_TrendSmoothingPeriod, double tZ_StopOffsetMultiplier, int tZ_SignalQtyPerFlat, int tZ_SignalQtyPerTrend, double tZ_BullishThreshold, double tZ_BearishThreshold, int pK_Period, double pK_Factor, int pK_MiddlePeriod, int pK_SignalBreakSplitBars, int pK_SignalPullbackFindPeriod, bool enableExitSignals, int aTR_Period, double aTR_Multiplier, bool useMAExit, int minBarsInTrade, int arrowOffset, bool showLabel, string longLabelText, string shortLabelText, int labelFontSize, string longExitLabel, string shortExitLabel, bool showTrailLine)
 		{
-			return indicator.BreakSignalCombined(Input, tZ_TrendMAType, tZ_TrendPeriod, tZ_TrendSmoothingEnabled, tZ_TrendSmoothingMethod, tZ_TrendSmoothingPeriod, tZ_StopOffsetMultiplier, tZ_SignalQtyPerFlat, tZ_SignalQtyPerTrend, tZ_BullishThreshold, tZ_BearishThreshold, pK_Period, pK_Factor, pK_MiddlePeriod, pK_SignalBreakSplitBars, pK_SignalPullbackFindPeriod, arrowOffset, showLabel, longLabelText, shortLabelText, labelFontSize);
+			return indicator.BreakSignalCombined(Input, tZ_TrendMAType, tZ_TrendPeriod, tZ_TrendSmoothingEnabled, tZ_TrendSmoothingMethod, tZ_TrendSmoothingPeriod, tZ_StopOffsetMultiplier, tZ_SignalQtyPerFlat, tZ_SignalQtyPerTrend, tZ_BullishThreshold, tZ_BearishThreshold, pK_Period, pK_Factor, pK_MiddlePeriod, pK_SignalBreakSplitBars, pK_SignalPullbackFindPeriod, enableExitSignals, aTR_Period, aTR_Multiplier, useMAExit, minBarsInTrade, arrowOffset, showLabel, longLabelText, shortLabelText, labelFontSize, longExitLabel, shortExitLabel, showTrailLine);
 		}
 
-		public Indicators.BreakSignalCombined BreakSignalCombined(ISeries<double> input , ThunderZillaMAType tZ_TrendMAType, int tZ_TrendPeriod, bool tZ_TrendSmoothingEnabled, ThunderZillaMAType tZ_TrendSmoothingMethod, int tZ_TrendSmoothingPeriod, double tZ_StopOffsetMultiplier, int tZ_SignalQtyPerFlat, int tZ_SignalQtyPerTrend, double tZ_BullishThreshold, double tZ_BearishThreshold, int pK_Period, double pK_Factor, int pK_MiddlePeriod, int pK_SignalBreakSplitBars, int pK_SignalPullbackFindPeriod, int arrowOffset, bool showLabel, string longLabelText, string shortLabelText, int labelFontSize)
+		public Indicators.BreakSignalCombined BreakSignalCombined(ISeries<double> input , ThunderZillaMAType tZ_TrendMAType, int tZ_TrendPeriod, bool tZ_TrendSmoothingEnabled, ThunderZillaMAType tZ_TrendSmoothingMethod, int tZ_TrendSmoothingPeriod, double tZ_StopOffsetMultiplier, int tZ_SignalQtyPerFlat, int tZ_SignalQtyPerTrend, double tZ_BullishThreshold, double tZ_BearishThreshold, int pK_Period, double pK_Factor, int pK_MiddlePeriod, int pK_SignalBreakSplitBars, int pK_SignalPullbackFindPeriod, bool enableExitSignals, int aTR_Period, double aTR_Multiplier, bool useMAExit, int minBarsInTrade, int arrowOffset, bool showLabel, string longLabelText, string shortLabelText, int labelFontSize, string longExitLabel, string shortExitLabel, bool showTrailLine)
 		{
-			return indicator.BreakSignalCombined(input, tZ_TrendMAType, tZ_TrendPeriod, tZ_TrendSmoothingEnabled, tZ_TrendSmoothingMethod, tZ_TrendSmoothingPeriod, tZ_StopOffsetMultiplier, tZ_SignalQtyPerFlat, tZ_SignalQtyPerTrend, tZ_BullishThreshold, tZ_BearishThreshold, pK_Period, pK_Factor, pK_MiddlePeriod, pK_SignalBreakSplitBars, pK_SignalPullbackFindPeriod, arrowOffset, showLabel, longLabelText, shortLabelText, labelFontSize);
+			return indicator.BreakSignalCombined(input, tZ_TrendMAType, tZ_TrendPeriod, tZ_TrendSmoothingEnabled, tZ_TrendSmoothingMethod, tZ_TrendSmoothingPeriod, tZ_StopOffsetMultiplier, tZ_SignalQtyPerFlat, tZ_SignalQtyPerTrend, tZ_BullishThreshold, tZ_BearishThreshold, pK_Period, pK_Factor, pK_MiddlePeriod, pK_SignalBreakSplitBars, pK_SignalPullbackFindPeriod, enableExitSignals, aTR_Period, aTR_Multiplier, useMAExit, minBarsInTrade, arrowOffset, showLabel, longLabelText, shortLabelText, labelFontSize, longExitLabel, shortExitLabel, showTrailLine);
 		}
 	}
 }
