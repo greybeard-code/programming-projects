@@ -4,6 +4,11 @@ A NinjaTrader 8 indicator that combines two locked indicators —
 **ninZaPANAKanal** (ninZa.co) and **RenkoKings ThunderZilla** — into a single
 entry + optional exit signal system.
 
+> **Important:** This version of `BreakSignalCombined` is built against the
+> specific versions of `RenkoKings_ThunderZilla.cs` and `ninZaPANAKanal.cs`
+> included in this repository. It will not compile against other versions of
+> these indicators as the enum types and method signatures may differ.
+
 ---
 
 ## How It Works
