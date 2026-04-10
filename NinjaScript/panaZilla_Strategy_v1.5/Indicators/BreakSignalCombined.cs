@@ -1,4 +1,4 @@
-#region Using declarations
+﻿#region Using declarations
 using System;
 using System.Collections.Generic;
 using System.ComponentModel;
@@ -27,11 +27,11 @@ using NinjaTrader.NinjaScript.DrawingTools;
 //  Optionally fires ATR-trailed exit signals after each entry.
 //
 //  PANA Kanal Signal_Trade plot values (ninZa.co official docs):
-//    2  = Break Up      â† BULLISH BREAK  âœ“
+//    2  = Break Up      â† BULLISH BREAK  âœ"
 //    3  = Pullback Bullish
 //    1  = Uptrend Start
 //   -1  = Downtrend Start
-//   -2  = Break Down    â† BEARISH BREAK  âœ“
+//   -2  = Break Down    â† BEARISH BREAK  âœ"
 //   -3  = Pullback Bearish
 //    0  = No signal
 //
@@ -44,8 +44,8 @@ using NinjaTrader.NinjaScript.DrawingTools;
 //   -3  = Bearish signal (Per Trend)
 //
 //  DEFAULT COMBINED SIGNALS:
-//  LONG  â†’ PANA Kanal = 2 (Break Up)    AND ThunderZilla >= 1 (any bullish)
-//  SHORT â†’ PANA Kanal = -2 (Break Down) AND ThunderZilla <= -1 (any bearish)
+//  LONG  â†' PANA Kanal = 2 (Break Up)    AND ThunderZilla >= 1 (any bullish)
+//  SHORT â†' PANA Kanal = -2 (Break Down) AND ThunderZilla <= -1 (any bearish)
 //
 //  EXIT (when EnableExitSignals = true):
 //  A. ATR trailing stop breached         (primary)
@@ -133,13 +133,13 @@ namespace NinjaTrader.NinjaScript.Indicators
             else if (State == State.Configure)
             {
                 // Entry signal: 1 = long, -1 = short, 0 = none
-                AddPlot(new Stroke(Brushes.Transparent, 1), PlotStyle.Dot,  “EntrySignal”);
+                AddPlot(new Stroke(Brushes.Transparent, 1), PlotStyle.Dot,  "EntrySignal");
 
                 // Exit signal: 1 = long exit, -1 = short exit, 0 = none
-                AddPlot(new Stroke(Brushes.Transparent, 1), PlotStyle.Dot,  “ExitSignal”);
+                AddPlot(new Stroke(Brushes.Transparent, 1), PlotStyle.Dot,  "ExitSignal");
 
                 // Trail stop line
-                AddPlot(new Stroke(Brushes.Gray, 1), PlotStyle.Line, “TrailStop”);
+                AddPlot(new Stroke(Brushes.Gray, 1), PlotStyle.Line, "TrailStop");
             }
             else if (State == State.DataLoaded)
             {
