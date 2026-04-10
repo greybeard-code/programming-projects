@@ -114,7 +114,7 @@ namespace NinjaTrader.NinjaScript.Indicators
                 UseMAExit                   = true;
                 MinBarsInTrade              = 3;
 
-                // ---- Visuals â€” Entry ----
+                // ---- Visuals - Entry ----
                 LongArrowColor              = Brushes.Cyan;
                 ShortArrowColor             = Brushes.Magenta;
                 ArrowOffset                 = 3;
@@ -123,7 +123,7 @@ namespace NinjaTrader.NinjaScript.Indicators
                 ShortLabelText              = "Break Sell";
                 LabelFontSize               = 10;
 
-                // ---- Visuals â€” Exit ----
+                // ---- Visuals - Exit ----
                 LongExitColor               = Brushes.Orange;
                 ShortExitColor              = Brushes.Orange;
                 LongExitLabel               = "Exit Long";
@@ -463,7 +463,7 @@ namespace NinjaTrader.NinjaScript.Indicators
         public int MinBarsInTrade { get; set; }
 
         // =====================================================================
-        // GROUP 4: Visuals â€” Entry
+        // GROUP 4: Visuals - Entry
         // =====================================================================
 
         [XmlIgnore]
@@ -511,7 +511,7 @@ namespace NinjaTrader.NinjaScript.Indicators
         public int LabelFontSize { get; set; }
 
         // =====================================================================
-        // GROUP 5: Visuals â€” Exit
+        // GROUP 5: Visuals - Exit
         // =====================================================================
 
         [XmlIgnore]
