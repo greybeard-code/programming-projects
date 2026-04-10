@@ -134,31 +134,34 @@ The trail level is plotted as a gray line on the chart while in a trade
 
 ## Output Plots
 
-These plots are transparent on the chart but readable by NinjaTrader strategies
-and Market Analyzer columns.
+`EntrySignal` and `ExitSignal` are transparent on the chart but visible in the
+NT8 data box and readable by strategies and Market Analyzer columns.
+`TrailStop` is a gray line plotted on the chart while a trade is active.
 
 | Plot | Values | Use |
 |------|--------|-----|
-| `LongSignal` | `1` = long fired, `0` = none | Strategy entry trigger |
-| `ShortSignal` | `-1` = short fired, `0` = none | Strategy entry trigger |
-| `LongExit` | `1` = exit fired, `0` = none | Strategy exit trigger |
-| `ShortExit` | `-1` = exit fired, `0` = none | Strategy exit trigger |
-| `TrailStop` | Trail price level | Visual only (gray line on chart) |
+| `EntrySignal` | `1` = long entry, `-1` = short entry, `0` = none | Strategy entry trigger |
+| `ExitSignal` | `1` = long exit, `-1` = short exit, `0` = none | Strategy exit trigger |
+| `TrailStop` | ATR trail price level | Visual only (gray line on chart) |
 
 ### Reading plots from a strategy
 
 ```csharp
 private BreakSignalCombined bsc;
 
-// In OnStateChange → DataLoaded:
+// In OnStateChange -> DataLoaded:
 bsc = BreakSignalCombined(/* parameters */);
 
 // In OnBarUpdate:
-if (bsc.LongSignal[0] == 1)
+if (bsc.EntrySignal[0] == 1)
     EnterLong();
+else if (bsc.EntrySignal[0] == -1)
+    EnterShort();
 
-if (bsc.LongExit[0] == 1)
+if (bsc.ExitSignal[0] == 1)
     ExitLong();
+else if (bsc.ExitSignal[0] == -1)
+    ExitShort();
 ```
 
 ---
