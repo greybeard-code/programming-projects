@@ -113,7 +113,7 @@ namespace NinjaTrader.Gui.NinjaScript
 		private static readonly string[] QuarterlyMonths = { "03", "06", "09", "12" };
 		private static readonly string[] GoldMonths     = { "02", "04", "06", "08", "10", "12" };
 
-		private static readonly string[] TargetRoots = { "ES", "MES", "NQ", "MNQ", "GC", "MGC" };
+		private static readonly string[] TargetRoots = { "ES", "MES", "NQ", "MNQ", "YM", "MYM", "GC", "MGC", "CL", "MCL" };
 
 		public WeeklyUpdateWindow()
 		{
@@ -136,6 +136,15 @@ namespace NinjaTrader.Gui.NinjaScript
 		{
 			int year = DateTime.Now.Year;
 			int month = DateTime.Now.Month;
+
+			// CL and MCL use front month + 1
+			if (root == "CL" || root == "MCL")
+			{
+				int contractMonth = month + 1;
+				int contractYear  = year;
+				if (contractMonth > 12) { contractMonth = 1; contractYear++; }
+				return string.Format("{0} {1:D2}-{2:D2}", root, contractMonth, contractYear % 100);
+			}
 
 			string[] months = (root == "GC" || root == "MGC") ? GoldMonths : QuarterlyMonths;
 

@@ -52,14 +52,18 @@ A zero-configuration downloader that grabs the last 14 days of replay data for a
 
 ### Instruments
 
-| Symbol | Description |
-|---|---|
-| ES | E-mini S&P 500 |
-| MES | Micro E-mini S&P 500 |
-| NQ | E-mini Nasdaq-100 |
-| MNQ | Micro E-mini Nasdaq-100 |
-| GC | Gold futures |
-| MGC | Micro Gold futures |
+| Symbol | Description | Contract Roll |
+|---|---|---|
+| ES | E-mini S&P 500 | Quarterly (Mar/Jun/Sep/Dec) |
+| MES | Micro E-mini S&P 500 | Quarterly |
+| NQ | E-mini Nasdaq-100 | Quarterly |
+| MNQ | Micro E-mini Nasdaq-100 | Quarterly |
+| YM | E-mini Dow Jones | Quarterly |
+| MYM | Micro E-mini Dow Jones | Quarterly |
+| GC | Gold futures | Bi-monthly (Feb/Apr/Jun/Aug/Oct/Dec) |
+| MGC | Micro Gold futures | Bi-monthly |
+| CL | Crude Oil | Monthly (front month + 1) |
+| MCL | Micro Crude Oil | Monthly (front month + 1) |
 
 ### Usage
 
