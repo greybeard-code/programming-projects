@@ -2034,20 +2034,20 @@ namespace NinjaTrader.NinjaScript.Indicators
 {
 	public partial class Indicator : NinjaTrader.Gui.NinjaScript.IndicatorRenderBase
 	{
-		private gbPANAKanal[] cachegbPANAKanal;
+		private GreyBeard.KingPanaZilla.gbPANAKanal[] cachegbPANAKanal;
 
-		public gbPANAKanal gbPANAKanal(int period, double factor, int middlePeriod, int signalBreakSplit, int signalPullbackFindingPeriod)
+		public GreyBeard.KingPanaZilla.gbPANAKanal gbPANAKanal(int period, double factor, int middlePeriod, int signalBreakSplit, int signalPullbackFindingPeriod)
 		{
 			return gbPANAKanal(Input, period, factor, middlePeriod, signalBreakSplit, signalPullbackFindingPeriod);
 		}
 
-		public gbPANAKanal gbPANAKanal(ISeries<double> input, int period, double factor, int middlePeriod, int signalBreakSplit, int signalPullbackFindingPeriod)
+		public GreyBeard.KingPanaZilla.gbPANAKanal gbPANAKanal(ISeries<double> input, int period, double factor, int middlePeriod, int signalBreakSplit, int signalPullbackFindingPeriod)
 		{
 			if (cachegbPANAKanal != null)
 				for (int idx = 0; idx < cachegbPANAKanal.Length; idx++)
 					if (cachegbPANAKanal[idx].Period == period && cachegbPANAKanal[idx].Factor == factor && cachegbPANAKanal[idx].MiddlePeriod == middlePeriod && cachegbPANAKanal[idx].SignalBreakSplit == signalBreakSplit && cachegbPANAKanal[idx].SignalPullbackFindingPeriod == signalPullbackFindingPeriod && cachegbPANAKanal[idx].EqualsInput(input))
 						return cachegbPANAKanal[idx];
-			return CacheIndicator<gbPANAKanal>(new gbPANAKanal(){ Period = period, Factor = factor, MiddlePeriod = middlePeriod, SignalBreakSplit = signalBreakSplit, SignalPullbackFindingPeriod = signalPullbackFindingPeriod }, input, ref cachegbPANAKanal);
+			return CacheIndicator<GreyBeard.KingPanaZilla.gbPANAKanal>(new GreyBeard.KingPanaZilla.gbPANAKanal(){ Period = period, Factor = factor, MiddlePeriod = middlePeriod, SignalBreakSplit = signalBreakSplit, SignalPullbackFindingPeriod = signalPullbackFindingPeriod }, input, ref cachegbPANAKanal);
 		}
 	}
 }

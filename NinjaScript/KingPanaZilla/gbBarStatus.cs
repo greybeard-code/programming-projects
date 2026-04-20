@@ -1562,19 +1562,19 @@ namespace NinjaTrader.NinjaScript.Indicators
 {
 	public partial class Indicator : NinjaTrader.Gui.NinjaScript.IndicatorRenderBase
 	{
-		private gbBarStatus[] cachegbBarStatus;
-		public gbBarStatus gbBarStatus(int boundOffset)
+		private GreyBeard.KingPanaZilla.gbBarStatus[] cachegbBarStatus;
+		public GreyBeard.KingPanaZilla.gbBarStatus gbBarStatus(int boundOffset)
 		{
 			return gbBarStatus(Input, boundOffset);
 		}
 
-		public gbBarStatus gbBarStatus(ISeries<double> input, int boundOffset)
+		public GreyBeard.KingPanaZilla.gbBarStatus gbBarStatus(ISeries<double> input, int boundOffset)
 		{
 			if (cachegbBarStatus != null)
 				for (int idx = 0; idx < cachegbBarStatus.Length; idx++)
 					if (cachegbBarStatus[idx] != null && cachegbBarStatus[idx].BoundOffset == boundOffset && cachegbBarStatus[idx].EqualsInput(input))
 						return cachegbBarStatus[idx];
-			return CacheIndicator<gbBarStatus>(new gbBarStatus(){ BoundOffset = boundOffset }, input, ref cachegbBarStatus);
+			return CacheIndicator<GreyBeard.KingPanaZilla.gbBarStatus>(new GreyBeard.KingPanaZilla.gbBarStatus(){ BoundOffset = boundOffset }, input, ref cachegbBarStatus);
 		}
 	}
 }
