@@ -2,18 +2,12 @@
 using System;
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
-using System.Diagnostics;
 using System.Globalization;
-using System.IO;
-using System.Net;
 using System.Reflection;
 using System.Windows;
 using System.Windows.Controls;
-using System.Windows.Documents;
 using System.Windows.Input;
 using System.Windows.Media;
-using System.Windows.Media.Imaging;
-using System.Windows.Navigation;
 using System.Windows.Threading;
 using System.Xml.Serialization;
 using NinjaTrader.Cbi;
@@ -109,299 +103,7 @@ public class gbBarStatus : Indicator
 
 		}
 
-	private class TimeoutWebClient : WebClient
-	{
-		protected override WebRequest GetWebRequest(Uri uri)
-		{
-			WebRequest webRequest = base.GetWebRequest(uri);
-			webRequest.Timeout = 500;
-			return webRequest;
-		}
-
-		}
-
-	private class LinkCreator
-	{
-		internal static Hyperlink Create(string anchor, string uri)
-		{
-			Hyperlink hyperlink = new Hyperlink(new Run(anchor));
-			hyperlink.NavigateUri = new Uri(uri);
-			Hyperlink hyperlink2 = hyperlink;
-			hyperlink2.RequestNavigate += delegate(object sender, RequestNavigateEventArgs e)
-			{
-				Process.Start(e.Uri.AbsoluteUri);
-			};
-			return hyperlink2;
-		}
-
-		internal static Hyperlink Create(string uri)
-		{
-			return Create(uri, uri);
-		}
-
-		}
-
-	private class ImageCreator
-	{
-		internal static Image CreateMenuIcon()
-		{
-			string text = ninZaFolder + "MenuIconDataServer.ninZa";
-			string text2 = ninZaFolder + "MenuIconDataLocal.ninZa";
-			Image image = new Image();
-			image.Width = 13.0;
-			if (!File.Exists(text2) || !DateTimeFileManager.IsCached(DateTimeFileManager.pathMenuIcon))
-			{
-				TimeoutWebClient timeoutWebClient = new TimeoutWebClient();
-				timeoutWebClient.DownloadFile("http://ninza.co/wp-content/uploads/ninZaCenterIcon.png", text);
-				if (File.Exists(text))
-				{
-					File.Copy(text, text2, overwrite: true);
-					DateTimeFileManager.WriteFile(DateTimeFileManager.pathMenuIcon);
-				}
-				if (File.Exists(text2))
-				{
-					image.Source = CreateBmpFromPath(text2);
-				}
-				return image;
-			}
-			image.Source = CreateBmpFromPath(text2);
-			return image;
-		}
-
-		internal static Image CreateLogo()
-		{
-			string text = ninZaFolder + "LogoDataServer.ninZa";
-			string text2 = ninZaFolder + "LogoDataLocal.ninZa";
-			Image image = new Image();
-			if (!File.Exists(text2) || !DateTimeFileManager.IsCached(DateTimeFileManager.pathLogo))
-			{
-				TimeoutWebClient timeoutWebClient = new TimeoutWebClient();
-				timeoutWebClient.DownloadFile("http://ninza.co/wp-content/uploads/ninZaChartLogo.png", text);
-				if (File.Exists(text))
-				{
-					File.Copy(text, text2, overwrite: true);
-					DateTimeFileManager.WriteFile(DateTimeFileManager.pathLogo);
-				}
-				if (File.Exists(text2))
-				{
-					image.Source = CreateBmpFromPath(text2);
-				}
-				return image;
-			}
-			image.Source = CreateBmpFromPath(text2);
-			return image;
-		}
-
-		internal static Image CreateImageFromCode(string code)
-		{
-			Image image = new Image();
-			image.Source = CreateBmpFromCode(code);
-			return image;
-		}
-
-		private static BitmapImage CreateBmpFromPath(string path)
-		{
-			BitmapImage bitmapImage = new BitmapImage();
-			bitmapImage.BeginInit();
-			bitmapImage.CacheOption = BitmapCacheOption.OnLoad;
-			bitmapImage.UriSource = new Uri(path);
-			bitmapImage.EndInit();
-			return bitmapImage;
-		}
-
-		private static BitmapImage CreateBmpFromCode(string code)
-		{
-			byte[] buffer = Convert.FromBase64String(code);
-			BitmapImage bitmapImage = new BitmapImage();
-			bitmapImage.BeginInit();
-			bitmapImage.CacheOption = BitmapCacheOption.OnLoad;
-			bitmapImage.StreamSource = new MemoryStream(buffer);
-			bitmapImage.EndInit();
-			return bitmapImage;
-		}
-
-		}
-
-	private class TextFileManager
-	{
-		internal static string ReadFile(string path)
-		{
-			if (File.Exists(path))
-			{
-				StreamReader streamReader = new StreamReader(path);
-				return streamReader.ReadToEnd();
-			}
-			return string.Empty;
-		}
-
-		internal static void WriteFile(string path, string content)
-		{
-			StreamWriter streamWriter = File.CreateText(path);
-			streamWriter.Write(content);
-		}
-
-		}
-
-	private class DateTimeFileManager
-	{
-		internal static string pathNews;
-
-		internal static string pathMenu;
-
-		internal static string pathMenuIcon;
-
-		internal static string pathLogo;
-
-		internal static DateTime ReadFile(string path)
-		{
-			if (File.Exists(path))
-			{
-				string text = TextFileManager.ReadFile(path);
-				if (!long.TryParse(text.Trim(), out var result))
-				{
-					return DateTime.MinValue;
-				}
-				if (result < DateTime.MinValue.Ticks || result > DateTime.Now.Ticks)
-				{
-					return DateTime.MinValue;
-				}
-				return new DateTime(result);
-			}
-			return DateTime.MinValue;
-		}
-
-		internal static void WriteFile(string path)
-		{
-			TextFileManager.WriteFile(path, DateTime.Now.Ticks.ToString());
-		}
-
-		internal static bool IsCached(string path)
-		{
-			return DateTime.Now - ReadFile(path) < TimeSpan.FromHours(6.0);
-		}
-
-		}
-
-	private class InstructionPanel : StackPanel
-	{
-		internal TextBlock closeButton;
-
-		internal InstructionPanel(string caption)
-		{
-			Brush background = new SolidColorBrush(Color.FromRgb(211, 0, 0));
-			this.HorizontalAlignment = HorizontalAlignment.Left;
-			this.VerticalAlignment = VerticalAlignment.Top;
-			this.Margin = new Thickness(defaultMargin, defaultMargin, 0.0, 0.0);
-			this.Background = background;
-			closeButton = new TextBlock
-			{
-				Text = "\u2716"
-			};
-			DockPanel.SetDock(closeButton, Dock.Right);
-			closeButton.FontSize += 2.0;
-			closeButton.Foreground = Brushes.Lime;
-			closeButton.FontWeight = FontWeights.Bold;
-			closeButton.ToolTip = toolTipSpace + "Click to close (you can turn on this instruction again from the indicator-setting window).";
-			closeButton.Margin = new Thickness(2.0);
-			closeButton.Padding = new Thickness(4.0, 3.0, 4.0, 3.0);
-			TextBlock textBlock = closeButton;
-			textBlock.MouseEnter += delegate
-			{
-				closeButton.Background = Brushes.Black;
-			};
-			TextBlock textBlock2 = closeButton;
-			textBlock2.MouseLeave += delegate
-			{
-				closeButton.Background = Brushes.Transparent;
-			};
-			TextBlock textBlock3 = closeButton;
-			textBlock3.MouseLeftButtonUp += delegate
-			{
-				this.Visibility = Visibility.Collapsed;
-			};
-			TextBlock textBlock4 = new TextBlock
-			{
-				Text = caption
-			};
-			DockPanel.SetDock(textBlock4, Dock.Top);
-			textBlock4.Foreground = Brushes.White;
-			textBlock4.FontWeight = FontWeights.Bold;
-			textBlock4.HorizontalAlignment = HorizontalAlignment.Center;
-			textBlock4.VerticalAlignment = VerticalAlignment.Center;
-			textBlock4.Margin = new Thickness(6.0);
-			DockPanel element = new DockPanel
-			{
-				Children =
-				{
-					(UIElement)closeButton,
-					(UIElement)textBlock4
-				}
-			};
-			TextBlock element2 = new TextBlock
-			{
-				HorizontalAlignment = HorizontalAlignment.Center,
-				Padding = new Thickness(15.0),
-				Margin = new Thickness(2.0, 0.0, 2.0, 2.0),
-				Background = Brushes.White,
-				Foreground = Brushes.Black,
-				Inlines =
-				{
-					"You can encourage our developement of FREE indicators by:\n",
-					"+ Spreading the word about our free indicators\n",
-					"+ Sending us a lovely ",
-					(Inline)LinkCreator.Create("Facebook like", "http://ninza.co/instruction/facebook"),
-					" and/or ",
-					(Inline)LinkCreator.Create("Twitter follow", "http://ninza.co/instruction/twitter")
-				}
-			};
-			this.Children.Add(element);
-			this.Children.Add(element2);
-		}
-
-		}
-
-	private class LogoPanel : StackPanel
-	{
-		internal LogoPanel(bool placedOnLastChartPanel)
-		{
-			this.Children.Add(CreateImage());
-			this.Width = 100.0;
-			this.HorizontalAlignment = HorizontalAlignment.Left;
-			this.VerticalAlignment = VerticalAlignment.Bottom;
-			if (!placedOnLastChartPanel)
-			{
-				this.Margin = new Thickness(3.0, 0.0, 0.0, 3.0);
-			}
-			else
-			{
-				this.Margin = new Thickness(3.0, 0.0, 0.0, 17.0);
-			}
-		}
-
-		private Image CreateImage()
-		{
-			Image image = ImageCreator.CreateLogo();
-			image.ToolTip = toolTipSpace + "Double click to open the only door to ninZa.co's PRIORITY SUPPORT.";
-			image.Cursor = Cursors.Hand;
-			image.MouseDown += delegate(object sender, MouseButtonEventArgs e)
-			{
-				if (e.ClickCount >= 2 && e.ChangedButton == MouseButton.Left)
-				{
-					Process.Start("http://ninza.co/pu9aoijsae3tjc6e");
-				}
-			};
-			return image;
-		}
-
-		}
-
 	private const string boundOffsetDescription = "This parameter applies to price-based charts like Renko, ninZaRenko, Range.\nOffset = 0 indicates the farthest price limits at which the current bar is still developing (i.e. a new bar still does NOT open).\nA positive offset should be used if you would like to utilize the plots as trailing stops or entries.";
-
-	private static int defaultMargin;
-
-	private static string toolTipSpace;
-
-	private static string ninZaFolder;
 
 	private bool isPriceBased;
 
@@ -449,8 +151,6 @@ public class gbBarStatus : Indicator
 
 	private string prefix = "gbBarStatus";
 
-	private string indicatorNameFull;
-
 	private string indicatorName = "Bar Status";
 
 	private bool isCharting;
@@ -493,21 +193,8 @@ public class gbBarStatus : Indicator
 
 	private DispatcherTimer timer;
 
-	private InstructionPanel instructionPanel;
-
-	private LogoPanel logo;
-
-	[Display(Name = "Website", Order = 0, GroupName = "Developer")]
-	public string Website => "ninZa.co";
-
 	[Display(Name = "Update", Order = 10, GroupName = "Developer")]
 	public string Update => "28 Jun 2023";
-
-	[Display(Name = "Logo: Enabled", Order = 20, GroupName = "Developer")]
-	public bool LogoEnabled { get; set; }
-
-	[Display(Name = "Instruction: Enabled", Order = 30, GroupName = "Developer")]
-	public bool InstructionEnabled { get; set; }
 
 	[Display(Name = "Count Mode", Order = 0, GroupName = "General")]
 	public gbBarStatus_CountMode CountMode { get; set; }
@@ -708,7 +395,7 @@ public class gbBarStatus : Indicator
 		{
 			if (!(Parent is MarketAnalyzerColumnBase))
 			{
-				return indicatorName + " by ninZa.co" + GetUserNote();
+				return indicatorName + GetUserNote();
 			}
 			return DisplayName;
 		}
@@ -769,8 +456,6 @@ public class gbBarStatus : Indicator
 				ShowTransparentPlotsInDataBox = true;
 				AddPlot(Brushes.Transparent, "Upper Bound");
 				AddPlot(Brushes.Transparent, "Lower Bound");
-				LogoEnabled = true;
-				InstructionEnabled = true;
 				CountMode = gbBarStatus_CountMode.CountUp;
 				InteractiveClickEnabled = true;
 				ScreenDPI = 99;
@@ -804,11 +489,6 @@ public class gbBarStatus : Indicator
 				break;
 
 			case State.Configure:
-				indicatorNameFull = indicatorName + " by ninZa.co";
-				if (!Directory.Exists(ninZaFolder))
-				{
-					Directory.CreateDirectory(ninZaFolder);
-				}
 				Calculate = Calculate.OnEachTick;
 				IsOverlay = true;
 				timer = new DispatcherTimer();
@@ -865,17 +545,6 @@ public class gbBarStatus : Indicator
 				ChartControl.Dispatcher.InvokeAsync(delegate
 				{
 					((UIElement)(object)ChartPanel).MouseLeftButtonUp += OnMouseClick;
-					if (LogoEnabled && logo == null)
-					{
-						logo = new LogoPanel(ChartPanel.PanelIndex == ChartControl.ChartPanels.Count - 1);
-						UserControlCollection.Add(logo);
-					}
-					if (InstructionEnabled && instructionPanel == null)
-					{
-						instructionPanel = new InstructionPanel(indicatorNameFull);
-						instructionPanel.closeButton.MouseLeftButtonUp += OnInstructionClose;
-						UserControlCollection.Add(instructionPanel);
-					}
 				});
 				break;
 
@@ -885,15 +554,6 @@ public class gbBarStatus : Indicator
 					ChartControl.Dispatcher.InvokeAsync(delegate
 					{
 						((UIElement)(object)ChartPanel).MouseLeftButtonUp -= OnMouseClick;
-						if (logo != null)
-						{
-							logo = null;
-						}
-						if (instructionPanel != null)
-						{
-							instructionPanel.closeButton.MouseLeftButtonUp -= OnInstructionClose;
-							instructionPanel = null;
-						}
 					});
 				}
 				if (timer != null)
@@ -1522,24 +1182,6 @@ public class gbBarStatus : Indicator
 		return 100;
 	}
 
-	private void OnInstructionClose(object sender, RoutedEventArgs e)
-	{
-		TriggerCustomEvent((Action<object>)delegate
-		{
-			InstructionEnabled = false;
-		}, (object)e);
-	}
-
-	static gbBarStatus()
-	{
-		defaultMargin = 5;
-		toolTipSpace = "  ";
-		ninZaFolder = Path.Combine(Globals.UserDataDir, "ninZa.co\\");
-		DateTimeFileManager.pathNews = ninZaFolder + "NewsDateTime.ninZa";
-		DateTimeFileManager.pathMenu = ninZaFolder + "MenuDateTime.ninZa";
-		DateTimeFileManager.pathMenuIcon = ninZaFolder + "MenuIconDateTime.ninZa";
-		DateTimeFileManager.pathLogo = ninZaFolder + "LogoDateTime.ninZa";
-	}
 
 }
 }

@@ -376,11 +376,6 @@ public class gbPANAKanal : Indicator
 	[Display(Name = "Update", Order = 10, GroupName = "Developer")]
 	public new string Update => "05 Oct 2024";
 
-	[Display(Name = "Logo: Enabled", Order = 20, GroupName = "Developer")]
-	public bool LogoEnabled { get; set; }
-
-	[Display(Name = "Instruction: Enabled", Order = 30, GroupName = "Developer")]
-	public bool InstructionEnabled { get; set; }
 	[Display(Name = "Screen DPI", Order = 100, GroupName = "General")]
 	public int ScreenDPI { get; set; }
 
@@ -750,10 +745,6 @@ public class gbPANAKanal : Indicator
 
 			// Critical
 			SwitchedOn = true;
-
-			// Developer
-			LogoEnabled = false;
-			InstructionEnabled = false;
 
 			// General
 			ScreenDPI = 100;

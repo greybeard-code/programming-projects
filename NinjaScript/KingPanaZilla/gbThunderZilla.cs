@@ -417,11 +417,6 @@ public class gbThunderZilla : Indicator
 	[Display(Name = "Update", Order = 10, GroupName = "Developer")]
 	public string Update => "11 Aug 2025";
 
-	[Display(Name = "Logo: Enabled", Order = 20, GroupName = "Developer")]
-	public bool LogoEnabled { get; set; }
-
-	[Display(Name = "Instruction: Enabled", Order = 30, GroupName = "Developer")]
-	public bool InstructionEnabled { get; set; }
 	[Display(Name = "Screen DPI", Order = 100, GroupName = "General")]
 	public int ScreenDPI { get; set; }
 
@@ -972,8 +967,6 @@ public class gbThunderZilla : Indicator
 				MarkerOffset = 10;
 				AlertBlockingSeconds = 60;
 				SwitchedOn = true;
-				LogoEnabled = false;
-				InstructionEnabled = false;
 				ScreenDPI = 100;
 				PlotSlowEnabled = true;
 				PlotTrendUptrend = Brushes.DodgerBlue;
