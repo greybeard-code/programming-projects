@@ -739,6 +739,7 @@ public class gbPANAKanal : Indicator
 			IsSuspendedWhileInactive = true;
 			IsAutoScale = true;
 			BarsRequiredToPlot = 0;
+			ShowTransparentPlotsInDataBox = true;
 
 			// Parameters
 			Period = 20;

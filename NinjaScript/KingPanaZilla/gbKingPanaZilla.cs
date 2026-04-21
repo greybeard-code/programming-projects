@@ -1,0 +1,470 @@
+#region Using declarations
+using System;
+using System.ComponentModel;
+using System.ComponentModel.DataAnnotations;
+using System.Windows.Media;
+using System.Xml.Serialization;
+using NinjaTrader.Gui;
+using NinjaTrader.Gui.Chart;
+using NinjaTrader.Gui.NinjaScript;
+using NinjaTrader.NinjaScript.DrawingTools;
+#endregion
+
+// ============================================================
+//  gbKingPanaZilla  — GreyBeard composite signal indicator
+//
+//  Loads gbKingOrderBlock, gbPANAKanal, and gbThunderZilla and
+//  emits six cross-system buy/sell signal plots:
+//
+//  PanaZilliaBuy  — PanaKanal >= 2  AND  Thunder >= 3
+//  PanaZillaSell  — PanaKanal <= -2 AND  Thunder <= -3
+//  KingZillaBuy   — Thunder  >= 3   AND  KingOrder >= 1
+//  KingZillaSell  — Thunder  <= -3  AND  KingOrder <= -1
+//  KingPanaBuy    — PanaKanal >= 2  AND  KingOrder >= 1
+//  KingPanaSell   — PanaKanal <= -2 AND  KingOrder <= -1
+//
+//  Signal plot values: +1 = buy signal, -1 = sell signal, 0 = no signal.
+//
+//  gbPANAKanal Signal_Trade:
+//    1 = Trend Start Up,   -1 = Trend Start Down
+//    2 = Break Up,         -2 = Break Down
+//    3 = Pullback Bullish, -3 = Pullback Bearish
+//
+//  gbThunderZilla Signal_Trade:
+//    1 = Uptrend Start,    -1 = Downtrend Start
+//    2 = Downtrend Slowdn, -2 = Uptrend Slowdown
+//    3 = Uptrend Pullback, -3 = Downtrend Pullback
+//    4 = Move Stop Up,     -4 = Move Stop Down
+//
+//  gbKingOrderBlock Signal_Trade:
+//    1 = Return Bullish,   -1 = Return Bearish
+//    2 = Breakout Bullish, -2 = Breakout Bearish
+// ============================================================
+
+namespace NinjaTrader.NinjaScript.Indicators.GreyBeard.KingPanaZilla
+{
+[CategoryOrder("General",                    1000010)]
+[CategoryOrder("KingOrderBlock Parameters",  1000020)]
+[CategoryOrder("PANAKanal Parameters",       1000030)]
+[CategoryOrder("ThunderZilla Parameters",    1000040)]
+[CategoryOrder("Visuals",                    1000050)]
+public class gbKingPanaZilla : Indicator
+{
+	// ---- child indicator references -------------------------
+	private GreyBeard.KingPanaZilla.gbKingOrderBlock _king;
+	private GreyBeard.KingPanaZilla.gbPANAKanal      _pana;
+	private GreyBeard.KingPanaZilla.gbThunderZilla   _thunder;
+
+	// ---- signal output series (Values[0..5]) ----------------
+	[Browsable(false)]
+	[XmlIgnore]
+	public NinjaTrader.NinjaScript.Series<double> PanaZilliaBuy  => Values[0];
+
+	[Browsable(false)]
+	[XmlIgnore]
+	public NinjaTrader.NinjaScript.Series<double> PanaZillaSell  => Values[1];
+
+	[Browsable(false)]
+	[XmlIgnore]
+	public NinjaTrader.NinjaScript.Series<double> KingZillaBuy   => Values[2];
+
+	[Browsable(false)]
+	[XmlIgnore]
+	public NinjaTrader.NinjaScript.Series<double> KingZillaSell  => Values[3];
+
+	[Browsable(false)]
+	[XmlIgnore]
+	public NinjaTrader.NinjaScript.Series<double> KingPanaBuy    => Values[4];
+
+	[Browsable(false)]
+	[XmlIgnore]
+	public NinjaTrader.NinjaScript.Series<double> KingPanaSell   => Values[5];
+
+	// =========================================================
+	protected override void OnStateChange()
+	{
+		switch (State)
+		{
+		case State.SetDefaults:
+			Description              = "Composite signal indicator — combines gbKingOrderBlock, gbPANAKanal, and gbThunderZilla into six cross-system buy/sell signals.";
+			Name                     = "gbKingPanaZilla";
+			Calculate                = Calculate.OnBarClose;
+			IsOverlay                = true;
+			DisplayInDataBox         = true;
+			DrawOnPricePanel         = true;
+			PaintPriceMarkers        = false;
+			ScaleJustification       = ScaleJustification.Right;
+			IsSuspendedWhileInactive = false;
+			BarsRequiredToPlot       = 0;
+			ShowTransparentPlotsInDataBox = true;
+
+			// ---- KingOrderBlock defaults --------------------
+			King_SwingPointNeighborhood              = 5;
+			King_ImbalanceQualifying                 = 3;
+			King_OrderBlockFindingBosChochPeriod     = 50;
+			King_OrderBlockAge                       = 500;
+			King_OrderBlocksSameDirectionOffset      = 10;
+			King_OrderBlocksDifferenceDirectionOffset= 10;
+			King_SignalTradeQuantityPerOrderBlock     = 3;
+			King_SignalTradeSplitBars                 = 6;
+
+			// ---- PANAKanal defaults -------------------------
+			Pana_Period                              = 20;
+			Pana_Factor                              = 4.0;
+			Pana_MiddlePeriod                        = 14;
+			Pana_SignalBreakSplit                     = 20;
+			Pana_SignalPullbackFindingPeriod          = 10;
+
+			// ---- ThunderZilla defaults ----------------------
+			Thunder_TrendMAType                      = gbThunderZillaMAType.SMA;
+			Thunder_TrendPeriod                      = 100;
+			Thunder_TrendSmoothingEnabled            = false;
+			Thunder_TrendSmoothingMethod             = gbThunderZillaMAType.EMA;
+			Thunder_TrendSmoothingPeriod             = 10;
+			Thunder_StopOffsetMultiplierStop         = 60.0;
+			Thunder_SignalQuantityPerFlat             = 2;
+			Thunder_SignalQuantityPerTrend            = 999;
+
+			// ---- Visual defaults ----------------------------
+			PanaZilliaBuyBrush  = Brushes.Cyan;
+			PanaZillaSellBrush  = Brushes.Magenta;
+			KingZillaBuyBrush   = Brushes.DodgerBlue;
+			KingZillaSellBrush  = Brushes.DeepPink;
+			KingPanaBuyBrush    = Brushes.LimeGreen;
+			KingPanaSellBrush   = Brushes.OrangeRed;
+			ArrowOffset         = 3;
+			break;
+
+		case State.Configure:
+			// Transparent plots — values readable from DataBox and other scripts.
+			// Visual arrows are drawn in OnBarUpdate via Draw.ArrowUp/Down.
+			AddPlot(new Stroke(Brushes.Transparent, 1), PlotStyle.Dot, "PanaZillia Buy");
+			AddPlot(new Stroke(Brushes.Transparent, 1), PlotStyle.Dot, "PanaZillia Sell");
+			AddPlot(new Stroke(Brushes.Transparent, 1), PlotStyle.Dot, "KingZilla Buy");
+			AddPlot(new Stroke(Brushes.Transparent, 1), PlotStyle.Dot, "KingZilla Sell");
+			AddPlot(new Stroke(Brushes.Transparent, 1), PlotStyle.Dot, "KingPana Buy");
+			AddPlot(new Stroke(Brushes.Transparent, 1), PlotStyle.Dot, "KingPana Sell");
+			break;
+
+		case State.DataLoaded:
+			// Load child indicators via generated factory methods (no secondary series).
+			_king = gbKingOrderBlock(
+				King_SwingPointNeighborhood,
+				King_ImbalanceQualifying,
+				King_OrderBlockFindingBosChochPeriod,
+				King_OrderBlockAge,
+				King_OrderBlocksSameDirectionOffset,
+				King_OrderBlocksDifferenceDirectionOffset,
+				King_SignalTradeQuantityPerOrderBlock,
+				King_SignalTradeSplitBars);
+			AddChartIndicator(_king);
+
+			_pana = gbPANAKanal(
+				Pana_Period,
+				Pana_Factor,
+				Pana_MiddlePeriod,
+				Pana_SignalBreakSplit,
+				Pana_SignalPullbackFindingPeriod);
+			AddChartIndicator(_pana);
+
+			_thunder = gbThunderZilla(
+				Thunder_TrendMAType,
+				Thunder_TrendPeriod,
+				Thunder_TrendSmoothingEnabled,
+				Thunder_TrendSmoothingMethod,
+				Thunder_TrendSmoothingPeriod,
+				Thunder_StopOffsetMultiplierStop,
+				Thunder_SignalQuantityPerFlat,
+				Thunder_SignalQuantityPerTrend);
+			AddChartIndicator(_thunder);
+			break;
+
+		case State.Terminated:
+			_king    = null;
+			_pana    = null;
+			_thunder = null;
+			break;
+		}
+	}
+
+	// =========================================================
+	protected override void OnBarUpdate()
+	{
+		if (_pana == null || _thunder == null || _king == null)
+			return;
+
+		// Reset all signal plots each bar
+		Values[0][0] = Values[1][0] = Values[2][0] =
+		Values[3][0] = Values[4][0] = Values[5][0] = 0;
+
+		double pkSig = _pana.Signal_Trade[0];
+		double tzSig = _thunder.Signal_Trade[0];
+		double koSig = _king.Signal_Trade[0];
+
+		double buyOffset  = ArrowOffset * TickSize;
+		double sellOffset = ArrowOffset * TickSize;
+
+		// ---- PanaZillia Buy: PanaKanal >= 2  AND  Thunder >= 3 ----
+		if (pkSig >= 2 && tzSig >= 3)
+		{
+			Values[0][0] = 1;
+			Draw.ArrowUp(this, "KPZ_PZBuy_" + CurrentBar, false,
+				0, Low[0] - buyOffset, PanaZilliaBuyBrush);
+		}
+
+		// ---- PanaZillia Sell: PanaKanal <= -2  AND  Thunder <= -3 ----
+		if (pkSig <= -2 && tzSig <= -3)
+		{
+			Values[1][0] = -1;
+			Draw.ArrowDown(this, "KPZ_PZSell_" + CurrentBar, false,
+				0, High[0] + sellOffset, PanaZillaSellBrush);
+		}
+
+		// ---- KingZilla Buy: Thunder >= 3  AND  KingOrder >= 1 ----
+		if (tzSig >= 3 && koSig >= 1)
+		{
+			Values[2][0] = 1;
+			Draw.ArrowUp(this, "KPZ_KZBuy_" + CurrentBar, false,
+				0, Low[0] - buyOffset, KingZillaBuyBrush);
+		}
+
+		// ---- KingZilla Sell: Thunder <= -3  AND  KingOrder <= -1 ----
+		if (tzSig <= -3 && koSig <= -1)
+		{
+			Values[3][0] = -1;
+			Draw.ArrowDown(this, "KPZ_KZSell_" + CurrentBar, false,
+				0, High[0] + sellOffset, KingZillaSellBrush);
+		}
+
+		// ---- KingPana Buy: PanaKanal >= 2  AND  KingOrder >= 1 ----
+		if (pkSig >= 2 && koSig >= 1)
+		{
+			Values[4][0] = 1;
+			Draw.ArrowUp(this, "KPZ_KPBuy_" + CurrentBar, false,
+				0, Low[0] - buyOffset, KingPanaBuyBrush);
+		}
+
+		// ---- KingPana Sell: PanaKanal <= -2  AND  KingOrder <= -1 ----
+		if (pkSig <= -2 && koSig <= -1)
+		{
+			Values[5][0] = -1;
+			Draw.ArrowDown(this, "KPZ_KPSell_" + CurrentBar, false,
+				0, High[0] + sellOffset, KingPanaSellBrush);
+		}
+	}
+
+	// =========================================================
+	#region Properties
+
+	// ---- KingOrderBlock parameters --------------------------
+	[Display(Name = "Swing Point: Neighborhood", Order = 0, GroupName = "KingOrderBlock Parameters")]
+	[Range(1, int.MaxValue)]
+	public int King_SwingPointNeighborhood { get; set; }
+
+	[Display(Name = "Imbalance: Qualifying (Bars)", Order = 10, GroupName = "KingOrderBlock Parameters")]
+	[Range(1, int.MaxValue)]
+	public int King_ImbalanceQualifying { get; set; }
+
+	[Display(Name = "Order Block: Finding BOS/CHoCH Period", Order = 20, GroupName = "KingOrderBlock Parameters")]
+	[Range(1, int.MaxValue)]
+	public int King_OrderBlockFindingBosChochPeriod { get; set; }
+
+	[Display(Name = "Order Block: Age (Bars)", Order = 30, GroupName = "KingOrderBlock Parameters")]
+	[Range(0, int.MaxValue)]
+	public int King_OrderBlockAge { get; set; }
+
+	[Display(Name = "Order Blocks: Same Direction Offset (Ticks)", Order = 40, GroupName = "KingOrderBlock Parameters")]
+	[Range(0, int.MaxValue)]
+	public int King_OrderBlocksSameDirectionOffset { get; set; }
+
+	[Display(Name = "Order Blocks: Diff Direction Offset (Ticks)", Order = 50, GroupName = "KingOrderBlock Parameters")]
+	[Range(0, int.MaxValue)]
+	public int King_OrderBlocksDifferenceDirectionOffset { get; set; }
+
+	[Display(Name = "Signal Trade: Quantity Per OB", Order = 60, GroupName = "KingOrderBlock Parameters")]
+	[Range(1, int.MaxValue)]
+	public int King_SignalTradeQuantityPerOrderBlock { get; set; }
+
+	[Display(Name = "Signal Trade: Split (Bars)", Order = 70, GroupName = "KingOrderBlock Parameters")]
+	[Range(1, int.MaxValue)]
+	public int King_SignalTradeSplitBars { get; set; }
+
+	// ---- PANAKanal parameters --------------------------------
+	[Display(Name = "Period", Order = 0, GroupName = "PANAKanal Parameters")]
+	[Range(1, int.MaxValue)]
+	public int Pana_Period { get; set; }
+
+	[Display(Name = "Factor", Order = 10, GroupName = "PANAKanal Parameters")]
+	[Range(0.01, double.MaxValue)]
+	public double Pana_Factor { get; set; }
+
+	[Display(Name = "Middle Period", Order = 20, GroupName = "PANAKanal Parameters")]
+	[Range(1, int.MaxValue)]
+	public int Pana_MiddlePeriod { get; set; }
+
+	[Display(Name = "Signal Break Split (Bars)", Order = 30, GroupName = "PANAKanal Parameters")]
+	[Range(1, int.MaxValue)]
+	public int Pana_SignalBreakSplit { get; set; }
+
+	[Display(Name = "Signal Pullback Finding Period", Order = 40, GroupName = "PANAKanal Parameters")]
+	[Range(1, int.MaxValue)]
+	public int Pana_SignalPullbackFindingPeriod { get; set; }
+
+	// ---- ThunderZilla parameters ----------------------------
+	[Display(Name = "Trend: MA Type", Order = 0, GroupName = "ThunderZilla Parameters")]
+	public gbThunderZillaMAType Thunder_TrendMAType { get; set; }
+
+	[Display(Name = "Trend: Period", Order = 10, GroupName = "ThunderZilla Parameters")]
+	[Range(1, int.MaxValue)]
+	public int Thunder_TrendPeriod { get; set; }
+
+	[Display(Name = "Trend: Smoothing Enabled", Order = 20, GroupName = "ThunderZilla Parameters")]
+	public bool Thunder_TrendSmoothingEnabled { get; set; }
+
+	[Display(Name = "Trend: Smoothing Method", Order = 30, GroupName = "ThunderZilla Parameters")]
+	public gbThunderZillaMAType Thunder_TrendSmoothingMethod { get; set; }
+
+	[Display(Name = "Trend: Smoothing Period", Order = 40, GroupName = "ThunderZilla Parameters")]
+	[Range(1, int.MaxValue)]
+	public int Thunder_TrendSmoothingPeriod { get; set; }
+
+	[Display(Name = "Stop: Offset Multiplier (Ticks)", Order = 50, GroupName = "ThunderZilla Parameters")]
+	[Range(0.0, double.MaxValue)]
+	public double Thunder_StopOffsetMultiplierStop { get; set; }
+
+	[Display(Name = "Signal: Quantity Per Flat", Order = 60, GroupName = "ThunderZilla Parameters")]
+	[Range(1, int.MaxValue)]
+	public int Thunder_SignalQuantityPerFlat { get; set; }
+
+	[Display(Name = "Signal: Quantity Per Trend", Order = 70, GroupName = "ThunderZilla Parameters")]
+	[Range(1, int.MaxValue)]
+	public int Thunder_SignalQuantityPerTrend { get; set; }
+
+	// ---- Visual parameters -----------------------------------
+	[Display(Name = "PanaZillia Buy Color", Order = 0, GroupName = "Visuals")]
+	[XmlIgnore]
+	public Brush PanaZilliaBuyBrush { get; set; }
+	[Browsable(false)]
+	public string PanaZilliaBuyBrushSerialize
+	{
+		get { return Serialize.BrushToString(PanaZilliaBuyBrush); }
+		set { PanaZilliaBuyBrush = Serialize.StringToBrush(value); }
+	}
+
+	[Display(Name = "PanaZillia Sell Color", Order = 1, GroupName = "Visuals")]
+	[XmlIgnore]
+	public Brush PanaZillaSellBrush { get; set; }
+	[Browsable(false)]
+	public string PanaZillaSellBrushSerialize
+	{
+		get { return Serialize.BrushToString(PanaZillaSellBrush); }
+		set { PanaZillaSellBrush = Serialize.StringToBrush(value); }
+	}
+
+	[Display(Name = "KingZilla Buy Color", Order = 2, GroupName = "Visuals")]
+	[XmlIgnore]
+	public Brush KingZillaBuyBrush { get; set; }
+	[Browsable(false)]
+	public string KingZillaBuyBrushSerialize
+	{
+		get { return Serialize.BrushToString(KingZillaBuyBrush); }
+		set { KingZillaBuyBrush = Serialize.StringToBrush(value); }
+	}
+
+	[Display(Name = "KingZilla Sell Color", Order = 3, GroupName = "Visuals")]
+	[XmlIgnore]
+	public Brush KingZillaSellBrush { get; set; }
+	[Browsable(false)]
+	public string KingZillaSellBrushSerialize
+	{
+		get { return Serialize.BrushToString(KingZillaSellBrush); }
+		set { KingZillaSellBrush = Serialize.StringToBrush(value); }
+	}
+
+	[Display(Name = "KingPana Buy Color", Order = 4, GroupName = "Visuals")]
+	[XmlIgnore]
+	public Brush KingPanaBuyBrush { get; set; }
+	[Browsable(false)]
+	public string KingPanaBuyBrushSerialize
+	{
+		get { return Serialize.BrushToString(KingPanaBuyBrush); }
+		set { KingPanaBuyBrush = Serialize.StringToBrush(value); }
+	}
+
+	[Display(Name = "KingPana Sell Color", Order = 5, GroupName = "Visuals")]
+	[XmlIgnore]
+	public Brush KingPanaSellBrush { get; set; }
+	[Browsable(false)]
+	public string KingPanaSellBrushSerialize
+	{
+		get { return Serialize.BrushToString(KingPanaSellBrush); }
+		set { KingPanaSellBrush = Serialize.StringToBrush(value); }
+	}
+
+	[Display(Name = "Arrow Offset (Ticks)", Order = 6, GroupName = "Visuals")]
+	[Range(0, int.MaxValue)]
+	public int ArrowOffset { get; set; }
+
+	#endregion
+
+} // class gbKingPanaZilla
+
+} // namespace NinjaTrader.NinjaScript.Indicators.GreyBeard.KingPanaZilla
+
+#region NinjaScript generated code. Neither change nor remove.
+
+namespace NinjaTrader.NinjaScript.Indicators
+{
+	public partial class Indicator : NinjaTrader.Gui.NinjaScript.IndicatorRenderBase
+	{
+		private GreyBeard.KingPanaZilla.gbKingPanaZilla[] cachegbKingPanaZilla;
+
+		public GreyBeard.KingPanaZilla.gbKingPanaZilla gbKingPanaZilla()
+		{
+			return gbKingPanaZilla(Input);
+		}
+
+		public GreyBeard.KingPanaZilla.gbKingPanaZilla gbKingPanaZilla(ISeries<double> input)
+		{
+			if (cachegbKingPanaZilla != null)
+				for (int idx = 0; idx < cachegbKingPanaZilla.Length; idx++)
+					if (cachegbKingPanaZilla[idx] != null && cachegbKingPanaZilla[idx].EqualsInput(input))
+						return cachegbKingPanaZilla[idx];
+			return CacheIndicator<GreyBeard.KingPanaZilla.gbKingPanaZilla>(new GreyBeard.KingPanaZilla.gbKingPanaZilla(){}, input, ref cachegbKingPanaZilla);
+		}
+	}
+}
+
+namespace NinjaTrader.NinjaScript.MarketAnalyzerColumns
+{
+	public partial class MarketAnalyzerColumn : MarketAnalyzerColumnBase
+	{
+		public Indicators.GreyBeard.KingPanaZilla.gbKingPanaZilla gbKingPanaZilla()
+		{
+			return indicator.gbKingPanaZilla(Input);
+		}
+
+		public Indicators.GreyBeard.KingPanaZilla.gbKingPanaZilla gbKingPanaZilla(ISeries<double> input)
+		{
+			return indicator.gbKingPanaZilla(input);
+		}
+	}
+}
+
+namespace NinjaTrader.NinjaScript.Strategies
+{
+	public partial class Strategy : NinjaTrader.Gui.NinjaScript.StrategyRenderBase
+	{
+		public Indicators.GreyBeard.KingPanaZilla.gbKingPanaZilla gbKingPanaZilla()
+		{
+			return indicator.gbKingPanaZilla(Input);
+		}
+
+		public Indicators.GreyBeard.KingPanaZilla.gbKingPanaZilla gbKingPanaZilla(ISeries<double> input)
+		{
+			return indicator.gbKingPanaZilla(input);
+		}
+	}
+}
+
+#endregion

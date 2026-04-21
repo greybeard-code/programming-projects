@@ -932,6 +932,7 @@ public class gbThunderZilla : Indicator
 				ScaleJustification = ScaleJustification.Right;
 				IsSuspendedWhileInactive = false;
 				BarsRequiredToPlot = 0;
+				ShowTransparentPlotsInDataBox = true;
 				ConditionTrendStart = false;
 				ConditionSlowdown = true;
 				ConditionTrendPullback = true;
@@ -2070,3 +2071,61 @@ public class gbThunderZilla_SoundConverter : TypeConverter
 		return true;
 	}
 }
+
+#region NinjaScript generated code. Neither change nor remove.
+
+namespace NinjaTrader.NinjaScript.Indicators
+{
+	public partial class Indicator : NinjaTrader.Gui.NinjaScript.IndicatorRenderBase
+	{
+		private GreyBeard.KingPanaZilla.gbThunderZilla[] cachegbThunderZilla;
+
+		public GreyBeard.KingPanaZilla.gbThunderZilla gbThunderZilla(GreyBeard.KingPanaZilla.gbThunderZillaMAType trendMAType, int trendPeriod, bool trendSmoothingEnabled, GreyBeard.KingPanaZilla.gbThunderZillaMAType trendSmoothingMethod, int trendSmoothingPeriod, double stopOffsetMultiplierStop, int signalQuantityPerFlat, int signalQuantityPerTrend)
+		{
+			return gbThunderZilla(Input, trendMAType, trendPeriod, trendSmoothingEnabled, trendSmoothingMethod, trendSmoothingPeriod, stopOffsetMultiplierStop, signalQuantityPerFlat, signalQuantityPerTrend);
+		}
+
+		public GreyBeard.KingPanaZilla.gbThunderZilla gbThunderZilla(ISeries<double> input, GreyBeard.KingPanaZilla.gbThunderZillaMAType trendMAType, int trendPeriod, bool trendSmoothingEnabled, GreyBeard.KingPanaZilla.gbThunderZillaMAType trendSmoothingMethod, int trendSmoothingPeriod, double stopOffsetMultiplierStop, int signalQuantityPerFlat, int signalQuantityPerTrend)
+		{
+			if (cachegbThunderZilla != null)
+				for (int idx = 0; idx < cachegbThunderZilla.Length; idx++)
+					if (cachegbThunderZilla[idx] != null && cachegbThunderZilla[idx].TrendMAType == trendMAType && cachegbThunderZilla[idx].TrendPeriod == trendPeriod && cachegbThunderZilla[idx].TrendSmoothingEnabled == trendSmoothingEnabled && cachegbThunderZilla[idx].TrendSmoothingMethod == trendSmoothingMethod && cachegbThunderZilla[idx].TrendSmoothingPeriod == trendSmoothingPeriod && cachegbThunderZilla[idx].StopOffsetMultiplierStop == stopOffsetMultiplierStop && cachegbThunderZilla[idx].SignalQuantityPerFlat == signalQuantityPerFlat && cachegbThunderZilla[idx].SignalQuantityPerTrend == signalQuantityPerTrend && cachegbThunderZilla[idx].EqualsInput(input))
+						return cachegbThunderZilla[idx];
+			return CacheIndicator<GreyBeard.KingPanaZilla.gbThunderZilla>(new GreyBeard.KingPanaZilla.gbThunderZilla(){ TrendMAType = trendMAType, TrendPeriod = trendPeriod, TrendSmoothingEnabled = trendSmoothingEnabled, TrendSmoothingMethod = trendSmoothingMethod, TrendSmoothingPeriod = trendSmoothingPeriod, StopOffsetMultiplierStop = stopOffsetMultiplierStop, SignalQuantityPerFlat = signalQuantityPerFlat, SignalQuantityPerTrend = signalQuantityPerTrend }, input, ref cachegbThunderZilla);
+		}
+	}
+}
+
+namespace NinjaTrader.NinjaScript.MarketAnalyzerColumns
+{
+	public partial class MarketAnalyzerColumn : MarketAnalyzerColumnBase
+	{
+		public Indicators.GreyBeard.KingPanaZilla.gbThunderZilla gbThunderZilla(GreyBeard.KingPanaZilla.gbThunderZillaMAType trendMAType, int trendPeriod, bool trendSmoothingEnabled, GreyBeard.KingPanaZilla.gbThunderZillaMAType trendSmoothingMethod, int trendSmoothingPeriod, double stopOffsetMultiplierStop, int signalQuantityPerFlat, int signalQuantityPerTrend)
+		{
+			return indicator.gbThunderZilla(Input, trendMAType, trendPeriod, trendSmoothingEnabled, trendSmoothingMethod, trendSmoothingPeriod, stopOffsetMultiplierStop, signalQuantityPerFlat, signalQuantityPerTrend);
+		}
+
+		public Indicators.GreyBeard.KingPanaZilla.gbThunderZilla gbThunderZilla(ISeries<double> input, GreyBeard.KingPanaZilla.gbThunderZillaMAType trendMAType, int trendPeriod, bool trendSmoothingEnabled, GreyBeard.KingPanaZilla.gbThunderZillaMAType trendSmoothingMethod, int trendSmoothingPeriod, double stopOffsetMultiplierStop, int signalQuantityPerFlat, int signalQuantityPerTrend)
+		{
+			return indicator.gbThunderZilla(input, trendMAType, trendPeriod, trendSmoothingEnabled, trendSmoothingMethod, trendSmoothingPeriod, stopOffsetMultiplierStop, signalQuantityPerFlat, signalQuantityPerTrend);
+		}
+	}
+}
+
+namespace NinjaTrader.NinjaScript.Strategies
+{
+	public partial class Strategy : NinjaTrader.Gui.NinjaScript.StrategyRenderBase
+	{
+		public Indicators.GreyBeard.KingPanaZilla.gbThunderZilla gbThunderZilla(GreyBeard.KingPanaZilla.gbThunderZillaMAType trendMAType, int trendPeriod, bool trendSmoothingEnabled, GreyBeard.KingPanaZilla.gbThunderZillaMAType trendSmoothingMethod, int trendSmoothingPeriod, double stopOffsetMultiplierStop, int signalQuantityPerFlat, int signalQuantityPerTrend)
+		{
+			return indicator.gbThunderZilla(Input, trendMAType, trendPeriod, trendSmoothingEnabled, trendSmoothingMethod, trendSmoothingPeriod, stopOffsetMultiplierStop, signalQuantityPerFlat, signalQuantityPerTrend);
+		}
+
+		public Indicators.GreyBeard.KingPanaZilla.gbThunderZilla gbThunderZilla(ISeries<double> input, GreyBeard.KingPanaZilla.gbThunderZillaMAType trendMAType, int trendPeriod, bool trendSmoothingEnabled, GreyBeard.KingPanaZilla.gbThunderZillaMAType trendSmoothingMethod, int trendSmoothingPeriod, double stopOffsetMultiplierStop, int signalQuantityPerFlat, int signalQuantityPerTrend)
+		{
+			return indicator.gbThunderZilla(input, trendMAType, trendPeriod, trendSmoothingEnabled, trendSmoothingMethod, trendSmoothingPeriod, stopOffsetMultiplierStop, signalQuantityPerFlat, signalQuantityPerTrend);
+		}
+	}
+}
+
+#endregion

@@ -1414,6 +1414,7 @@ public class gbKingOrderBlock : Indicator
 				base.ScaleJustification = ScaleJustification.Right;
 				base.IsSuspendedWhileInactive = false;
 				base.BarsRequiredToPlot = 0;
+				ShowTransparentPlotsInDataBox = true;
 				ConditionReturn = true;
 				ConditionBreakout = false;
 				PopupEnabled = false;
