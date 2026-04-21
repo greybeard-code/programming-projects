@@ -104,8 +104,6 @@ public class gbPANAKanal : Indicator
 
 	private bool isOnBarCloseMode;
 
-	private const string nickname = "panakanal";
-
 	private bool isUptrend;
 
 	private Window alertWindow;
@@ -117,10 +115,6 @@ public class gbPANAKanal : Indicator
 	private const string prefix = "gbPANAKanal";
 
 	private const string indicatorName = "PANA Kanal";
-
-	private const string indicatorNameFull = "PANA Kanal by GreyBeard";
-
-	private const string receiverEmail = "receiver@example.com";
 
 	private bool isCharting;
 
@@ -918,7 +912,10 @@ public class gbPANAKanal : Indicator
 					ChartControl.Dispatcher.InvokeAsync(delegate { alertWindow.Close(); });
 			}
 			if (rearmTimer != null)
+			{
 				rearmTimer.Stop();
+				rearmTimer = null;
+			}
 			break;
 		}
 	}
@@ -1256,8 +1253,8 @@ public class gbPANAKanal : Indicator
 			TraillingStop = ((!isUptrend) ? seriesDown[0] : seriesUp[0])
 		};
 		double num = result.TraillingStop - extremum;
-		result.Fibonacci1 = extremum + num * 0.618;
-		result.Fibonacci2 = extremum + num * 0.786;
+		result.Fibonacci1 = extremum + num * swingArmFibonacciLevel1;
+		result.Fibonacci2 = extremum + num * swingArmFibonacciLevel2;
 		return result;
 	}
 
@@ -1961,7 +1958,7 @@ public class gbPANAKanal : Indicator
 			{
 				ChartControl.Dispatcher.InvokeAsync(delegate
 				{
-					if (alertWindow == null || !!alertWindow.IsVisible)
+					if (alertWindow == null || alertWindow.IsVisible)
 					{
 						if (DateTime.Now >= nextRearm)
 						{

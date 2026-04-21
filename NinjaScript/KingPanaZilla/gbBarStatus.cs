@@ -959,7 +959,6 @@ public class gbBarStatus : Indicator
 						CountMode = gbBarStatus_CountMode.CountUp;
 					}
 					ChartControl.InvalidateVisual();
-					ChartControl.InvalidateVisual();
 				}
 			}
 		}, (object)e);
@@ -1175,7 +1174,7 @@ public class gbBarStatus : Indicator
 	private int GetDPI()
 	{
 		PropertyInfo property = typeof(SystemParameters).GetProperty("DpiX", BindingFlags.Static | BindingFlags.NonPublic);
-		if (!(property == null))
+		if (property != null)
 		{
 			return Math.Max(100, Convert.ToInt32(property.GetValue(null, null)) * 100 / 96);
 		}

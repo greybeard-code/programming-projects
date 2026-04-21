@@ -162,8 +162,6 @@ public class gbThunderZilla : Indicator
 
 	private Brush cloudMixBrush;
 
-	private const string nickname = "thunderzilla:exc";
-
 	private bool swIsUptrend;
 
 	private bool sumoIsUptrend;
@@ -181,8 +179,6 @@ public class gbThunderZilla : Indicator
 	private const string indicatorName = "ThunderZilla";
 
 	private const string indicatorNameFull = "ThunderZilla by GreyBeard";
-
-	private const string receiverEmail = "receiver@example.com";
 
 	private bool isCharting;
 
