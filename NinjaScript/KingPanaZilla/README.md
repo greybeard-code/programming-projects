@@ -2,11 +2,48 @@
 
 **Namespace:** `NinjaTrader.NinjaScript.Indicators.GreyBeard.KingPanaZilla`
 
-A curated collection of four NinjaTrader 8 indicators unified under the GreyBeard namespace. Each indicator was reworked from its original vendor source into a consistent `gb`-prefixed naming convention, sharing a common visual style (toggle button, gradient zones, custom marker rendering, popup/sound/email alerts).
+A curated collection of five NinjaTrader 8 indicators unified under the GreyBeard namespace. Four core indicators were reworked from their original vendor sources into a consistent `gb`-prefixed naming convention, sharing a common visual style (toggle button, gradient zones, custom marker rendering, popup/sound/email alerts). A fifth composite indicator — `gbKingPanaZilla` — loads the three signal-emitting indicators and combines their outputs into three cross-system trade signals.
 
 ---
 
 ## Indicators
+
+### gbKingPanaZilla — Composite Signal Indicator
+
+A **meta-indicator** that loads `gbKingOrderBlock`, `gbPANAKanal`, and `gbThunderZilla` and cross-combines their `Signal_Trade` values into three unified trade signals. Add this single indicator to a chart to get all three child indicators' signals in one place, or reference it from a Strategy via `gbKingPanaZilla()`.
+
+**How it works:**
+
+The three child indicators are instantiated via their factory methods (`CacheIndicator`) in `State.DataLoaded`, placing them in NinjaTrader's `NinjaScripts` collection so their `OnBarUpdate` runs automatically each bar.
+
+Each of the three output plots uses **+1 (buy), −1 (sell), 0 (no signal)**:
+
+| Plot | Condition (buy) | Condition (sell) |
+|---|---|---|
+| `PanaZillia_Trade` | PanaKanal `Signal_Trade ≥ 2` **AND** ThunderZilla `Signal_Trade ≥ 3` | PanaKanal `≤ −2` AND ThunderZilla `≤ −3` |
+| `KingZilla_Trade` | ThunderZilla `Signal_Trade ≥ 3` **AND** KingOrderBlock `Signal_Trade ≥ 1` | ThunderZilla `≤ −3` AND KingOrderBlock `≤ −1` |
+| `KingPana_Trade` | PanaKanal `Signal_Trade ≥ 2` **AND** KingOrderBlock `Signal_Trade ≥ 1` | PanaKanal `≤ −2` AND KingOrderBlock `≤ −1` |
+
+The signal thresholds capture the **highest-conviction sub-signals** from each child:
+- PanaKanal ≥ 2 = Break or Pullback confirmation (not just a raw trend flip)
+- ThunderZilla ≥ 3 = Pullback signal (both SolarWind + Sumo aligned with a pullback)
+- KingOrderBlock ≥ 1 = any Return or Breakout signal
+
+**Output plots:** `PanaZillia_Trade`, `KingZilla_Trade`, `KingPana_Trade`
+
+**Child indicator signal scales (for reference):**
+
+| Indicator | Positive value | Negative value |
+|---|---|---|
+| `gbPANAKanal Signal_Trade` | 1=Trend Start, 2=Break, 3=Pullback | −1/−2/−3 mirror |
+| `gbThunderZilla Signal_Trade` | 1=Trend Start, 2=Slowdown, 3=Pullback, 4=Move Stop | −1/−2/−3/−4 mirror |
+| `gbKingOrderBlock Signal_Trade` | 1=Return, 2=Breakout | −1/−2 mirror |
+
+**Visual output:** `Draw.ArrowUp` / `Draw.ArrowDown` markers painted on the price panel at configurable tick offsets above/below each signal bar.
+
+**Key parameters:** all `King_*`, `Pana_*`, and `Thunder_*` parameters mirror the child indicator defaults. Visual: `PanaZilliaBrush`, `KingZillaBrush`, `KingPanaBrush`, `ArrowOffset`
+
+---
 
 ### gbKingOrderBlock — King Order Block
 
@@ -108,6 +145,7 @@ A **bar-completion progress indicator** that shows how far through the current b
 
 ```
 KingPanaZilla/
+├── gbKingPanaZilla.cs      — Composite: combines the three signal indicators below
 ├── gbKingOrderBlock.cs     — Order Block / Imbalance / BOS/CHoCH zones
 ├── gbPANAKanal.cs          — Keltner channel trend + Fibonacci pullback signals
 ├── gbThunderZilla.cs       — SolarWind + Sumo dual-system trend indicator
@@ -121,13 +159,15 @@ KingPanaZilla/
 
 ## Installation
 
-Copy the four `gb*.cs` files into your NinjaTrader 8 custom indicators folder:
+Copy all five `gb*.cs` files into your NinjaTrader 8 custom indicators folder:
 
 ```
 Documents\NinjaTrader 8\bin\Custom\Indicators\
 ```
 
 Then compile via **NinjaTrader → Tools → Edit NinjaScript → Compile**.
+
+`gbKingPanaZilla` requires the other three signal indicators (`gbKingOrderBlock`, `gbPANAKanal`, `gbThunderZilla`) to be present — all five files must be compiled together. `gbBarStatus` is standalone.
 
 ---
 
