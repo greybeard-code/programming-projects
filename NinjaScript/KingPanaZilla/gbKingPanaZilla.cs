@@ -147,7 +147,10 @@ public class gbKingPanaZilla : Indicator
 			break;
 
 		case State.DataLoaded:
-			// Load child indicators via generated factory methods (no secondary series).
+			// Factory methods (CacheIndicator) add child indicators to NinjaScripts so
+			// their OnBarUpdate runs automatically. AddChartIndicator is Strategy-only;
+			// add the three child indicators directly to the chart if visual rendering
+			// of their zones/stops is also needed.
 			_king = gbKingOrderBlock(
 				King_SwingPointNeighborhood,
 				King_ImbalanceQualifying,
@@ -157,7 +160,6 @@ public class gbKingPanaZilla : Indicator
 				King_OrderBlocksDifferenceDirectionOffset,
 				King_SignalTradeQuantityPerOrderBlock,
 				King_SignalTradeSplitBars);
-			AddChartIndicator(_king);
 
 			_pana = gbPANAKanal(
 				Pana_Period,
@@ -165,7 +167,6 @@ public class gbKingPanaZilla : Indicator
 				Pana_MiddlePeriod,
 				Pana_SignalBreakSplit,
 				Pana_SignalPullbackFindingPeriod);
-			AddChartIndicator(_pana);
 
 			_thunder = gbThunderZilla(
 				Thunder_TrendMAType,
@@ -176,7 +177,6 @@ public class gbKingPanaZilla : Indicator
 				Thunder_StopOffsetMultiplierStop,
 				Thunder_SignalQuantityPerFlat,
 				Thunder_SignalQuantityPerTrend);
-			AddChartIndicator(_thunder);
 			break;
 
 		case State.Terminated:
