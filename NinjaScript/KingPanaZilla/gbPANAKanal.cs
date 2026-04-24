@@ -29,7 +29,6 @@ namespace NinjaTrader.NinjaScript.Indicators.GreyBeard.KingPanaZilla
 [CategoryOrder("Developer", 0)]
 [CategoryOrder("Special", 1000060)]
 [CategoryOrder("Graphics", 1000020)]
-[CategoryOrder("Toggle", 1000050)]
 [CategoryOrder("General", 1000010)]
 [CategoryOrder("Alerts", 1000040)]
 [CategoryOrder("Gradient", 1000030)]
@@ -76,10 +75,6 @@ public class gbPANAKanal : Indicator
 		Pullback
 	}
 
-	private gbPANAKanalTextPosition togglePositionAlignment;
-
-	private const int defaultMargin = 5;
-
 	private Series<double> seriesDiffHighLow;
 
 	private Series<double> seriesTrueRange;
@@ -107,10 +102,6 @@ public class gbPANAKanal : Indicator
 	private bool isUptrend;
 
 	private Window alertWindow;
-
-	private Grid toggle;
-	private System.Windows.Controls.Button toggleButton;
-	private Thumb toggleDrag;
 
 	private const string prefix = "gbPANAKanal";
 
@@ -361,9 +352,6 @@ public class gbPANAKanal : Indicator
 	[Display(Name = "Alert Blocking (Seconds)", Order = 50, GroupName = "Alerts", Description = "The minimum interval between 2 consecutive alerts")]
 	public int AlertBlockingSeconds { get; set; }
 
-	[Display(Name = "Switched On", Order = 0, GroupName = "Critical")]
-	public bool SwitchedOn { get; set; }
-
 	[Display(Name = "Telegram:", Order = 0, GroupName = "Developer")]
 	public string Website => "https://t.me/val1312q";
 
@@ -526,134 +514,6 @@ public class gbPANAKanal : Indicator
 	[NinjaScriptProperty]
 	public int SignalPullbackFindingPeriod { get; set; }
 
-	[Display(Name = "Enabled", Order = 0, GroupName = "Toggle")]
-	public bool ToggleEnabled { get; set; }
-
-	[XmlIgnore]
-	[Display(Name = "Background: On", Order = 10, GroupName = "Toggle")]
-	public Brush ToggleBackBrushOn { get; set; }
-
-	[Browsable(false)]
-	public string ToggleBackBrushOnSerialize
-	{
-		get
-		{
-			return Serialize.BrushToString(ToggleBackBrushOn);
-		}
-		set
-		{
-			ToggleBackBrushOn = Serialize.StringToBrush(value);
-		}
-	}
-
-	[XmlIgnore]
-	[Display(Name = "Background: Off", Order = 11, GroupName = "Toggle")]
-	public Brush ToggleBackBrushOff { get; set; }
-
-	[Browsable(false)]
-	public string ToggleBackBrushOffSerialize
-	{
-		get
-		{
-			return Serialize.BrushToString(ToggleBackBrushOff);
-		}
-		set
-		{
-			ToggleBackBrushOff = Serialize.StringToBrush(value);
-		}
-	}
-
-	[Display(Name = "Text: String", Order = 20, GroupName = "Toggle")]
-	public string ToggleTextString { get; set; }
-
-	[XmlIgnore]
-	[Display(Name = "Text: Color", Order = 21, GroupName = "Toggle")]
-	public Brush ToggleTextBrush { get; set; }
-
-	[Browsable(false)]
-	public string ToggleTextBrushSerialize
-	{
-		get
-		{
-			return Serialize.BrushToString(ToggleTextBrush);
-		}
-		set
-		{
-			ToggleTextBrush = Serialize.StringToBrush(value);
-		}
-	}
-	[Display(Name = "Text: Size", Order = 22, GroupName = "Toggle")]
-	public int ToggleTextSize { get; set; }
-
-	[Display(Name = "Drag Bar: Color", Order = 30, GroupName = "Toggle")]
-	[XmlIgnore]
-	public Brush ToggleDragBrush { get; set; }
-
-	[Browsable(false)]
-	public string ToggleDragBrushSerialize
-	{
-		get
-		{
-			return Serialize.BrushToString(ToggleDragBrush);
-		}
-		set
-		{
-			ToggleDragBrush = Serialize.StringToBrush(value);
-		}
-	}
-
-	[Display(Name = "Position: Alignment", Order = 40, GroupName = "Toggle")]
-	public gbPANAKanalTextPosition TogglePositionAlignment
-	{
-		get
-		{
-			return togglePositionAlignment;
-		}
-		set
-		{
-			if ((int)value == 3)
-			{
-				TogglePositionMarginLeft = 5.0;
-				TogglePositionMarginTop = 5.0;
-			}
-			if ((int)value == 4)
-			{
-				TogglePositionMarginRight = 5.0;
-				TogglePositionMarginTop = 5.0;
-			}
-			if ((int)value == 1)
-			{
-				TogglePositionMarginRight = 5.0;
-				TogglePositionMarginBottom = 5.0;
-			}
-			if ((int)value == 0)
-			{
-				TogglePositionMarginLeft = 5.0;
-				TogglePositionMarginBottom = 5.0;
-			}
-			if ((int)value == 2)
-			{
-				TogglePositionMarginBottom = 5.0;
-				TogglePositionMarginRight = 5.0;
-				TogglePositionMarginTop = 5.0;
-				TogglePositionMarginLeft = 5.0;
-			}
-			togglePositionAlignment = value;
-		}
-	}
-
-	[Display(Name = "Position: Margin Left", Order = 41, GroupName = "Toggle")]
-	public double TogglePositionMarginLeft { get; set; }
-
-	[Display(Name = "Position: Margin Top", Order = 42, GroupName = "Toggle")]
-	public double TogglePositionMarginTop { get; set; }
-
-	[Display(Name = "Position: Margin Right", Order = 43, GroupName = "Toggle")]
-	public double TogglePositionMarginRight { get; set; }
-
-	[Display(Name = "Position: Margin Bottom", Order = 44, GroupName = "Toggle")]
-	public double TogglePositionMarginBottom { get; set; }
-
 	[Display(Name = "Z Order", Order = 0, GroupName = "Special")]
 	public int IndicatorZOrder { get; set; }
 
@@ -725,7 +585,7 @@ public class gbPANAKanal : Indicator
 			IsOverlay = true;
 			DisplayInDataBox = true;
 			DrawOnPricePanel = true;
-			IsSuspendedWhileInactive = true;
+			IsSuspendedWhileInactive = false;
 			IsAutoScale = true;
 			BarsRequiredToPlot = 0;
 			ShowTransparentPlotsInDataBox = true;
@@ -736,9 +596,6 @@ public class gbPANAKanal : Indicator
 			MiddlePeriod = 14;
 			SignalBreakSplit = 20;
 			SignalPullbackFindingPeriod = 10;
-
-			// Critical
-			SwitchedOn = true;
 
 			// General
 			ScreenDPI = 100;
@@ -798,20 +655,6 @@ public class gbPANAKanal : Indicator
 			MarkerOffset = 10;
 			AlertBlockingSeconds = 60;
 
-			// Toggle
-			ToggleEnabled = true;
-			ToggleBackBrushOn = Brushes.DodgerBlue;        // #FF1E90FF
-			ToggleBackBrushOff = Brushes.Silver;           // #FFC0C0C0
-			ToggleTextString = "PANA Kanal";
-			ToggleTextBrush = Brushes.White;
-			ToggleTextSize = 10;
-			ToggleDragBrush = Brushes.LimeGreen;           // #FF32CD32
-			TogglePositionAlignment = gbPANAKanalTextPosition.TopLeft;
-			TogglePositionMarginLeft = 5.0;
-			TogglePositionMarginTop = 5.0;
-			TogglePositionMarginRight = 5.0;
-			TogglePositionMarginBottom = 5.0;
-
 			// Special
 			IndicatorZOrder = 0;
 			UserNote = "instrument (period)";
@@ -843,71 +686,11 @@ public class gbPANAKanal : Indicator
 
 		case State.Historical:
 			isCharting = ChartControl != null;
-			if (isCharting)
-			{
-				ChartControl.Dispatcher.InvokeAsync(delegate
-				{
-					if (ToggleEnabled)
-					{
-						toggle = new Grid();
-						toggle.HorizontalAlignment = (TogglePositionAlignment == gbPANAKanalTextPosition.TopLeft || TogglePositionAlignment == gbPANAKanalTextPosition.BottomLeft) ? HorizontalAlignment.Left : ((TogglePositionAlignment == gbPANAKanalTextPosition.Center) ? HorizontalAlignment.Center : HorizontalAlignment.Right);
-						toggle.VerticalAlignment = (TogglePositionAlignment == gbPANAKanalTextPosition.TopLeft || TogglePositionAlignment == gbPANAKanalTextPosition.TopRight) ? VerticalAlignment.Top : ((TogglePositionAlignment == gbPANAKanalTextPosition.Center) ? VerticalAlignment.Center : VerticalAlignment.Bottom);
-						toggle.Margin = new Thickness(TogglePositionMarginLeft, TogglePositionMarginTop, TogglePositionMarginRight, TogglePositionMarginBottom);
-						toggle.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-						toggle.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(6) });
-
-						toggleButton = new System.Windows.Controls.Button
-						{
-							Content = ToggleTextString,
-							Foreground = ToggleTextBrush,
-							FontSize = ToggleTextSize,
-							Background = SwitchedOn ? ToggleBackBrushOn : ToggleBackBrushOff,
-							BorderThickness = new Thickness(0),
-							Padding = new Thickness(6, 2, 6, 2),
-							Cursor = System.Windows.Input.Cursors.Hand
-						};
-						Grid.SetColumn(toggleButton, 0);
-						toggle.Children.Add(toggleButton);
-
-						toggleDrag = new Thumb
-						{
-							Width = 6,
-							Background = ToggleDragBrush,
-							Cursor = System.Windows.Input.Cursors.SizeAll,
-							Opacity = 0.8
-						};
-						toggleDrag.Template = new ControlTemplate(typeof(Thumb))
-						{
-							VisualTree = new FrameworkElementFactory(typeof(System.Windows.Shapes.Rectangle))
-						};
-						var rectFactory = new FrameworkElementFactory(typeof(System.Windows.Shapes.Rectangle));
-						rectFactory.SetValue(System.Windows.Shapes.Shape.FillProperty, ToggleDragBrush);
-						toggleDrag.Template = new ControlTemplate(typeof(Thumb)) { VisualTree = rectFactory };
-						Grid.SetColumn(toggleDrag, 1);
-						toggle.Children.Add(toggleDrag);
-
-						toggleButton.Click += OnToggleClick;
-						toggleDrag.DragDelta += OnToggleDrag;
-						if (ChartControl.Parent is Grid chartGrid)
-							chartGrid.Children.Add(toggle);
-					}
-				});
-			}
 			break;
 
 		case State.Terminated:
 			if (isCharting)
 			{
-				if (toggle != null)
-				{
-					toggleButton.Click -= OnToggleClick;
-					toggleDrag.DragDelta -= OnToggleDrag;
-					ChartControl.Dispatcher.InvokeAsync(delegate
-					{
-						if (toggle.Parent is Panel p)
-							p.Children.Remove(toggle);
-					});
-				}
 				if (alertWindow != null)
 					ChartControl.Dispatcher.InvokeAsync(delegate { alertWindow.Close(); });
 			}
@@ -1174,10 +957,7 @@ public class gbPANAKanal : Indicator
 					}
 				}
 			}
-			if (SwitchedOn)
-			{
-				PaintBar(isUptrend);
-			}
+			PaintBar(isUptrend);
 			if (!isCharting || !RegionEnabled)
 			{
 				return;
@@ -1239,11 +1019,7 @@ public class gbPANAKanal : Indicator
 				tagRegion2 = "gbPANAKanal.cloud2." + ((!isUptrend) ? crossDownIndex : crossUpIndex);
 			}
 		}
-		Region region = Draw.Region(this, (tagIndex != 1) ? tagRegion2 : tagRegion1, barsAgo, (!updateTag) ? 1 : 0, series1, series2, Brushes.Transparent, regionBrush, regionOpacity);
-		if (!SwitchedOn)
-		{
-			((NinjaScript)region).IsVisible = false;
-		}
+		Draw.Region(this, (tagIndex != 1) ? tagRegion2 : tagRegion1, barsAgo, (!updateTag) ? 1 : 0, series1, series2, Brushes.Transparent, regionBrush, regionOpacity);
 	}
 
 	private TraillingStopAndFibonacciInfo ComputeTraillingStopAndFibonacci(bool isUptrend, double extremum)
@@ -1534,7 +1310,7 @@ public class gbPANAKanal : Indicator
 
 	protected override void OnRender(ChartControl chartControl, ChartScale chartScale)
 	{
-		if (ChartControl != null && SwitchedOn && !IsInHitTest)
+		if (ChartControl != null && !IsInHitTest)
 		{
 			DrawLines(chartScale);
 			DrawMarkers(chartScale);
@@ -1691,82 +1467,6 @@ public class gbPANAKanal : Indicator
 				}
 			}
 		}
-	}
-
-	private void OnToggleDrag(object sender, DragDeltaEventArgs e)
-	{
-		TriggerCustomEvent((Action<object>)delegate
-		{
-			if (isCharting)
-			{
-				ChartControl.Dispatcher.InvokeAsync(delegate
-				{
-					var m = toggle.Margin;
-					toggle.Margin = new Thickness(m.Left + e.HorizontalChange, m.Top + e.VerticalChange, m.Right - e.HorizontalChange, m.Bottom - e.VerticalChange);
-					TogglePositionMarginLeft = toggle.Margin.Left;
-					TogglePositionMarginTop = toggle.Margin.Top;
-					TogglePositionMarginRight = toggle.Margin.Right;
-					TogglePositionMarginBottom = toggle.Margin.Bottom;
-				});
-			}
-		}, (object)e);
-	}
-
-	private void OnToggleClick(object sender, RoutedEventArgs e)
-	{
-		TriggerCustomEvent((Action<object>)delegate
-		{
-			if (isCharting)
-			{
-				ChartControl.Dispatcher.InvokeAsync(delegate
-				{
-					SwitchedOn = !SwitchedOn;
-					toggleButton.Background = SwitchedOn ? ToggleBackBrushOn : ToggleBackBrushOff;
-					if (BarEnabled)
-					{
-						if (!SwitchedOn)
-						{
-							for (int num = CurrentBar; num >= 0; num--)
-							{
-								int num2 = CurrentBar - num;
-								CandleOutlineBrushes[num2] = ChartBars.Properties.ChartStyle.Stroke2.Brush;
-								double valueAt = Close.GetValueAt(num);
-								double valueAt2 = Open.GetValueAt(num);
-								if (MathExtentions.ApproxCompare(valueAt, valueAt2) > 0)
-								{
-									BarBrushes[num2] = ChartBars.Properties.ChartStyle.UpBrush;
-								}
-								if (MathExtentions.ApproxCompare(valueAt, valueAt2) < 0)
-								{
-									BarBrushes[num2] = ChartBars.Properties.ChartStyle.DownBrush;
-								}
-							}
-						}
-						else
-						{
-							for (int num3 = CurrentBar; num3 >= 0; num3--)
-							{
-								if (Signal_Trend.IsValidDataPointAt(num3))
-								{
-									int num4 = Convert.ToInt32(Signal_Trend.GetValueAt(num3));
-									PaintBar(num4 > 0, isToggleClickEvent: true, num3);
-								}
-							}
-						}
-					}
-					IEnumerator<IDrawingTool> enumerator = ((IEnumerable<IDrawingTool>)DrawObjects).GetEnumerator();
-					while (enumerator.MoveNext())
-					{
-						IDrawingTool current = enumerator.Current;
-						if (current.Tag.Contains("gbPANAKanal"))
-						{
-							((IChartObject)current).IsVisible = SwitchedOn;
-						}
-					}
-					ChartControl.InvalidateVisual();
-				});
-			}
-		}, (object)e);
 	}
 
 	private void PrintMarker(bool isBullish, SignalInfo signalInfo)
