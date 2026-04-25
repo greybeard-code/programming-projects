@@ -651,18 +651,18 @@ namespace NinjaTrader.Gui.NinjaScript
 
                 string contractSuffix = null;
 
-                // Special case: CL uses current month + 1
+                // Special case: CL expires ~20th of prior month, so active contract is current month + 2
 		        if (root.Equals("CL", StringComparison.OrdinalIgnoreCase))
 		        {
-		            int nextMonth = currentMonth + 1;
+		            int nextMonth = currentMonth + 2;
 		            int year = currentYear;
-		
+
 		            if (nextMonth > 12)
 		            {
-		                nextMonth = 1;
+		                nextMonth -= 12;
 		                year++;
 		            }
-		
+
 		            contractSuffix = string.Format("{0:D2}-{1:D2}", nextMonth, year % 100);
 		        }
 		        else

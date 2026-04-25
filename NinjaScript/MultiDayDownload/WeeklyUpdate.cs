@@ -137,12 +137,12 @@ namespace NinjaTrader.Gui.NinjaScript
 			int year = DateTime.Now.Year;
 			int month = DateTime.Now.Month;
 
-			// CL and MCL use front month + 1
+			// CL and MCL: expires ~20th of the prior month, so active contract is current month + 2
 			if (root == "CL" || root == "MCL")
 			{
-				int contractMonth = month + 1;
+				int contractMonth = month + 2;
 				int contractYear  = year;
-				if (contractMonth > 12) { contractMonth = 1; contractYear++; }
+				if (contractMonth > 12) { contractMonth -= 12; contractYear++; }
 				return string.Format("{0} {1:D2}-{2:D2}", root, contractMonth, contractYear % 100);
 			}
 
