@@ -513,10 +513,6 @@ public class gbKingOrderBlock : Indicator
 
 	private const string indicatorName = "King Order Block";
 
-	private const string indicatorNameFull = "King Order Block by GreyBeard";
-
-	private const string receiverEmail = "receiver@example.com";
-
 	private bool isCharting;
 
 	private bool isLastBarOnEachTick;
@@ -1451,7 +1447,7 @@ public class gbKingOrderBlock : Indicator
 					if (rearmTimer == null)
 					{
 						rearmTimer = new DispatcherTimer();
-						rearmTimer.Interval = TimeSpan.FromMilliseconds(100.0);
+						rearmTimer.Interval = TimeSpan.FromSeconds(1);
 						rearmTimer.Tick += OnRearmTimerTick;
 					}
 				});

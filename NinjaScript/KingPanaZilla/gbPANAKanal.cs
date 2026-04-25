@@ -549,7 +549,7 @@ public class gbPANAKanal : Indicator
 			{
 				return "PANA Kanal by GreyBeard" + GetUserNote();
 			}
-			return DisplayName;
+			return base.DisplayName;
 		}
 	}
 
@@ -1658,17 +1658,17 @@ public class gbPANAKanal : Indicator
 			{
 				ChartControl.Dispatcher.InvokeAsync(delegate
 				{
-					if (alertWindow == null || alertWindow.IsVisible)
+					if (alertWindow != null && !alertWindow.IsVisible)
+					{
+						rearmTimer.Stop();
+					}
+					else
 					{
 						if (DateTime.Now >= nextRearm)
 						{
 							nextRearm = DateTime.Now + TimeSpan.FromSeconds(SoundRearmSeconds);
 							PlaySound(soundPath);
 						}
-					}
-					else
-					{
-						rearmTimer.Stop();
 					}
 				});
 			}
@@ -1678,14 +1678,6 @@ public class gbPANAKanal : Indicator
 
 }
 
-public enum gbPANAKanalTextPosition
-{
-	BottomLeft,
-	BottomRight,
-	Center,
-	TopLeft,
-	TopRight
-}
 
 public enum gbPANAKanal_MarkerRenderingMethod
 {

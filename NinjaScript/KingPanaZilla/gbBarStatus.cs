@@ -397,7 +397,7 @@ public class gbBarStatus : Indicator
 			{
 				return indicatorName + GetUserNote();
 			}
-			return DisplayName;
+			return base.DisplayName;
 		}
 	}
 

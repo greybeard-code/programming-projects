@@ -4,7 +4,6 @@ using System.Collections.Generic;
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
 using System.IO;
-using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
@@ -168,8 +167,6 @@ public class gbThunderZilla : Indicator
 	private const string prefix = "gbThunderZilla";
 
 	private const string indicatorName = "ThunderZilla";
-
-	private const string indicatorNameFull = "ThunderZilla by GreyBeard";
 
 	private bool isCharting;
 
@@ -672,7 +669,7 @@ public class gbThunderZilla : Indicator
 			{
 				return "ThunderZilla by GreyBeard" + GetUserNote();
 			}
-			return DisplayName;
+			return base.DisplayName;
 		}
 	}
 
@@ -867,7 +864,7 @@ public class gbThunderZilla : Indicator
 				seriesSumoFair = new Series<double>(this, MaximumBarsLookBack.TwoHundredFiftySix);
 				seriesOBOSSignalState = new Series<int>(this, MaximumBarsLookBack.TwoHundredFiftySix);
 				rearmTimer = new DispatcherTimer();
-				rearmTimer.Interval = TimeSpan.FromMilliseconds(100.0);
+				rearmTimer.Interval = TimeSpan.FromSeconds(1);
 				rearmTimer.Tick += OnRearmTimerTick;
 				cloudMixBrush = CreateAverageBrush(CloudUptrend, CloudDowntrend);
 				isCustomRenderingMethod = MarkerRenderingMethod == gbThunderZilla_RenderingMethod.Custom;
@@ -1312,9 +1309,8 @@ public class gbThunderZilla : Indicator
 		double num2 = EMA(Input, 14)[0];
 		double num3 = EMA(Input, 30)[0];
 		double num4 = EMA(Input, 45)[0];
-		double[] source = new double[4] { num, num2, num3, num4 };
-		double num5 = source.Max();
-		double num6 = source.Min();
+		double num5 = Math.Max(Math.Max(num, num2), Math.Max(num3, num4));
+		double num6 = Math.Min(Math.Min(num, num2), Math.Min(num3, num4));
 		if (MathExtentions.ApproxCompare(close0, open0) <= 0 || MathExtentions.ApproxCompare(Close[1], Open[1]) >= 0)
 		{
 			if (MathExtentions.ApproxCompare(close0, open0) < 0 && MathExtentions.ApproxCompare(Close[1], Open[1]) > 0 && MathExtentions.ApproxCompare(num6, low0) > 0 && MathExtentions.ApproxCompare(num5, high0) < 0 && MathExtentions.ApproxCompare(num, num5) == 0)
@@ -1393,7 +1389,7 @@ public class gbThunderZilla : Indicator
 		{
 			sumoIsUptrend = false;
 		}
-		seriesSumoFair[0] = source.Average();
+		seriesSumoFair[0] = (num + num2 + num3 + num4) * 0.25;
 	}
 
 	private void ComputeMultiOscOBOSOverlap()
@@ -1727,15 +1723,6 @@ public enum gbThunderZillaMAType
 	WMA = 8,
 	WilderMA = 9,
 	ZLEMA = 10
-}
-
-public enum gbThunderZillaTextPosition
-{
-	BottomLeft = 0,
-	BottomRight = 1,
-	Center = 2,
-	TopLeft = 3,
-	TopRight = 4
 }
 
 public enum gbThunderZilla_RenderingMethod
