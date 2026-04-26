@@ -2,8 +2,11 @@
 using System;
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
+using System.IO;
+using System.Text;
 using System.Windows.Media;
 using System.Xml.Serialization;
+using NinjaTrader.Core;
 using NinjaTrader.Gui;
 using NinjaTrader.Gui.Chart;
 using NinjaTrader.Gui.NinjaScript;
@@ -48,12 +51,16 @@ namespace NinjaTrader.NinjaScript.Indicators.GreyBeard.KingPanaZilla
 [CategoryOrder("PANAKanal Parameters",       1000030)]
 [CategoryOrder("ThunderZilla Parameters",    1000040)]
 [CategoryOrder("Visuals",                    1000050)]
+[CategoryOrder("Logging",                    1000060)]
 public class gbKingPanaZilla : Indicator
 {
 	// ---- child indicator references -------------------------
 	private GreyBeard.KingPanaZilla.gbKingOrderBlock _king;
 	private GreyBeard.KingPanaZilla.gbPANAKanal      _pana;
 	private GreyBeard.KingPanaZilla.gbThunderZilla   _thunder;
+
+	// ---- CSV logging ----------------------------------------
+	private StreamWriter _logWriter;
 
 	// ---- signal output series (Values[0..2]) ----------------
 	// +1 = buy signal, -1 = sell signal, 0 = no signal
@@ -119,6 +126,9 @@ public class gbKingPanaZilla : Indicator
 			KingZillaBrush  = Brushes.DodgerBlue;
 			KingPanaBrush   = Brushes.LimeGreen;
 			ArrowOffset     = 3;
+
+			// ---- Logging defaults ---------------------------
+			LogEnabled = false;
 			break;
 
 		case State.Configure:
@@ -134,6 +144,16 @@ public class gbKingPanaZilla : Indicator
 			// their OnBarUpdate runs automatically. AddChartIndicator is Strategy-only;
 			// add the three child indicators directly to the chart if visual rendering
 			// of their zones/stops is also needed.
+			if (LogEnabled)
+			{
+				string logPath = Path.Combine(
+					Globals.UserDataDir,
+					"gbKPZlog_" + DateTime.Now.ToString("yyyyMMdd_HHmmss") + ".csv");
+				_logWriter = new StreamWriter(logPath, append: false, encoding: Encoding.UTF8);
+				_logWriter.WriteLine("DateTime,Instrument,Price,PanaZillia_Trade,KingZilla_Trade,KingPana_Trade");
+				_logWriter.Flush();
+			}
+
 			_king = gbKingOrderBlock(
 				King_SwingPointNeighborhood,
 				King_ImbalanceQualifying,
@@ -166,6 +186,12 @@ public class gbKingPanaZilla : Indicator
 			_king    = null;
 			_pana    = null;
 			_thunder = null;
+			if (_logWriter != null)
+			{
+				_logWriter.Flush();
+				_logWriter.Dispose();
+				_logWriter = null;
+			}
 			break;
 		}
 	}
@@ -224,6 +250,19 @@ public class gbKingPanaZilla : Indicator
 			Values[2][0] = -1;
 			Draw.ArrowDown(this, "KPZ_KP_" + CurrentBar, false,
 				0, High[0] + offset, KingPanaBrush);
+		}
+
+		// ---- CSV log (any signal fires) ---------------------
+		if (_logWriter != null && (Values[0][0] != 0 || Values[1][0] != 0 || Values[2][0] != 0))
+		{
+			_logWriter.WriteLine(string.Format("{0},\"{1}\",{2},{3},{4},{5}",
+				Time[0].ToString("yyyy-MM-dd HH:mm:ss"),
+				Instrument.FullName,
+				Instrument.MasterInstrument.FormatPriceMarker(Close[0]),
+				(int)Values[0][0],
+				(int)Values[1][0],
+				(int)Values[2][0]));
+			_logWriter.Flush();
 		}
 	}
 
@@ -348,6 +387,13 @@ public class gbKingPanaZilla : Indicator
 	[Display(Name = "Arrow Offset (Ticks)", Order = 3, GroupName = "Visuals")]
 	[Range(0, int.MaxValue)]
 	public int ArrowOffset { get; set; }
+
+	// ---- Logging properties ---------------------------------
+	[Display(Name = "Enabled", Order = 0, GroupName = "Logging",
+		Description = "Write a CSV signal log to the NinjaTrader user data folder. "
+		            + "File is named gbKPZlog_YYYYMMDD_HHmmss.csv and created when the indicator loads. "
+		            + "One row is written per bar on which at least one trade signal fires.")]
+	public bool LogEnabled { get; set; }
 
 	#endregion
 
