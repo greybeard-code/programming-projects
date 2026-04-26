@@ -43,6 +43,33 @@ The signal thresholds capture the **highest-conviction sub-signals** from each c
 
 **Key parameters:** all `King_*`, `Pana_*`, and `Thunder_*` parameters mirror the child indicator defaults. Visual: `PanaZilliaBrush`, `KingZillaBrush`, `KingPanaBrush`, `ArrowOffset`
 
+**CSV Logging:**
+
+Enable the **Logging → Enabled** toggle to write a signal log to the NinjaTrader user data folder (`Documents\NinjaTrader 8\`). The file is named with the activation timestamp:
+
+```
+gbKPZlog_YYYYMMDD_HHmmss.csv
+```
+
+The file is created at indicator load with a header row. One row is appended for each bar on which at least one trade signal fires:
+
+```
+DateTime,Instrument,Price,PanaZillia_Trade,KingZilla_Trade,KingPana_Trade
+2026-04-26 09:31:00,"NQ 06-26",21483.50,1,1,0
+2026-04-26 10:15:00,"NQ 06-26",21510.25,0,0,-1
+```
+
+| Column | Content |
+|---|---|
+| `DateTime` | Bar close time — `yyyy-MM-dd HH:mm:ss` |
+| `Instrument` | Full contract name (quoted) |
+| `Price` | Close price formatted to instrument tick precision |
+| `PanaZillia_Trade` | −1 / 0 / 1 |
+| `KingZilla_Trade` | −1 / 0 / 1 |
+| `KingPana_Trade` | −1 / 0 / 1 |
+
+The writer is flushed after every row and closed cleanly when the indicator is removed or the chart is closed. Logging is **off by default**.
+
 ---
 
 ### gbKingOrderBlock — King Order Block
