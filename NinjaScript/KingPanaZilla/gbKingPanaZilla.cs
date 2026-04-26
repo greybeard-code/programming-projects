@@ -27,6 +27,12 @@ using NinjaTrader.NinjaScript.DrawingTools;
 using NinjaTrader.NinjaScript.Indicators;
 using SharpDX;
 using SharpDX.Direct2D1;
+// Disambiguate 'Brush': both SharpDX.Direct2D1 and System.Windows.Media define it.
+// All D2D1 concrete types (LinearGradientBrush, SolidColorBrush, etc.) are
+// referenced by their fully-qualified SharpDX.Direct2D1.* names in drawing code,
+// so these two aliases are the only ones needed.
+using Brush   = System.Windows.Media.Brush;
+using Brushes = System.Windows.Media.Brushes;
 #endregion
 
 // ============================================================
