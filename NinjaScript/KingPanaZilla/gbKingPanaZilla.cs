@@ -55,9 +55,16 @@ namespace NinjaTrader.NinjaScript.Indicators.GreyBeard.KingPanaZilla
 public class gbKingPanaZilla : Indicator
 {
 	// ---- child indicator references -------------------------
-	private GreyBeard.KingPanaZilla.gbKingOrderBlock _king;
-	private GreyBeard.KingPanaZilla.gbPANAKanal      _pana;
-	private GreyBeard.KingPanaZilla.gbThunderZilla   _thunder;
+	// Cache arrays let us call CacheIndicator<T> directly, bypassing the
+	// named factory methods (gbKingOrderBlock(...) etc.). This prevents NT8's
+	// compiler from injecting duplicate factory declarations into this file's
+	// generated-code section when all four files are compiled together.
+	private GreyBeard.KingPanaZilla.gbKingOrderBlock   _king;
+	private GreyBeard.KingPanaZilla.gbPANAKanal        _pana;
+	private GreyBeard.KingPanaZilla.gbThunderZilla     _thunder;
+	private GreyBeard.KingPanaZilla.gbKingOrderBlock[] _cacheKing;
+	private GreyBeard.KingPanaZilla.gbPANAKanal[]      _cachePana;
+	private GreyBeard.KingPanaZilla.gbThunderZilla[]   _cacheThunder;
 
 	// ---- CSV logging ----------------------------------------
 	private StreamWriter _logWriter;
@@ -154,38 +161,53 @@ public class gbKingPanaZilla : Indicator
 				_logWriter.Flush();
 			}
 
-			_king = gbKingOrderBlock(
-				King_SwingPointNeighborhood,
-				King_ImbalanceQualifying,
-				King_OrderBlockFindingBosChochPeriod,
-				King_OrderBlockAge,
-				King_OrderBlocksSameDirectionOffset,
-				King_OrderBlocksDifferenceDirectionOffset,
-				King_SignalTradeQuantityPerOrderBlock,
-				King_SignalTradeSplitBars);
+			_king = CacheIndicator<GreyBeard.KingPanaZilla.gbKingOrderBlock>(
+				new GreyBeard.KingPanaZilla.gbKingOrderBlock
+				{
+					SwingPointNeighborhood               = King_SwingPointNeighborhood,
+					ImbalanceQualifying                  = King_ImbalanceQualifying,
+					OrderBlockFindingBosChochPeriod      = King_OrderBlockFindingBosChochPeriod,
+					OrderBlockAge                        = King_OrderBlockAge,
+					OrderBlocksSameDirectionOffset       = King_OrderBlocksSameDirectionOffset,
+					OrderBlocksDifferenceDirectionOffset = King_OrderBlocksDifferenceDirectionOffset,
+					SignalTradeQuantityPerOrderBlock      = King_SignalTradeQuantityPerOrderBlock,
+					SignalTradeSplitBars                 = King_SignalTradeSplitBars
+				},
+				Input, ref _cacheKing);
 
-			_pana = gbPANAKanal(
-				Pana_Period,
-				Pana_Factor,
-				Pana_MiddlePeriod,
-				Pana_SignalBreakSplit,
-				Pana_SignalPullbackFindingPeriod);
+			_pana = CacheIndicator<GreyBeard.KingPanaZilla.gbPANAKanal>(
+				new GreyBeard.KingPanaZilla.gbPANAKanal
+				{
+					Period                      = Pana_Period,
+					Factor                      = Pana_Factor,
+					MiddlePeriod                = Pana_MiddlePeriod,
+					SignalBreakSplit             = Pana_SignalBreakSplit,
+					SignalPullbackFindingPeriod  = Pana_SignalPullbackFindingPeriod
+				},
+				Input, ref _cachePana);
 
-			_thunder = gbThunderZilla(
-				Thunder_TrendMAType,
-				Thunder_TrendPeriod,
-				Thunder_TrendSmoothingEnabled,
-				Thunder_TrendSmoothingMethod,
-				Thunder_TrendSmoothingPeriod,
-				Thunder_StopOffsetMultiplierStop,
-				Thunder_SignalQuantityPerFlat,
-				Thunder_SignalQuantityPerTrend);
+			_thunder = CacheIndicator<GreyBeard.KingPanaZilla.gbThunderZilla>(
+				new GreyBeard.KingPanaZilla.gbThunderZilla
+				{
+					TrendMAType               = Thunder_TrendMAType,
+					TrendPeriod               = Thunder_TrendPeriod,
+					TrendSmoothingEnabled     = Thunder_TrendSmoothingEnabled,
+					TrendSmoothingMethod      = Thunder_TrendSmoothingMethod,
+					TrendSmoothingPeriod      = Thunder_TrendSmoothingPeriod,
+					StopOffsetMultiplierStop  = Thunder_StopOffsetMultiplierStop,
+					SignalQuantityPerFlat      = Thunder_SignalQuantityPerFlat,
+					SignalQuantityPerTrend     = Thunder_SignalQuantityPerTrend
+				},
+				Input, ref _cacheThunder);
 			break;
 
 		case State.Terminated:
-			_king    = null;
-			_pana    = null;
-			_thunder = null;
+			_king         = null;
+			_pana         = null;
+			_thunder      = null;
+			_cacheKing    = null;
+			_cachePana    = null;
+			_cacheThunder = null;
 			if (_logWriter != null)
 			{
 				_logWriter.Flush();
