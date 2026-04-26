@@ -425,17 +425,67 @@ public class gbKingPanaZilla : Indicator
 
 #region NinjaScript generated code. Neither change nor remove.
 
+// Consolidated generated code for the entire KingPanaZilla suite.
+// All four indicators' factory methods live here so NT8's compiler
+// finds a complete section and never appends a duplicate block.
+// The child indicator files (gbKingOrderBlock, gbPANAKanal,
+// gbThunderZilla) carry no generated-code region of their own.
+
 namespace NinjaTrader.NinjaScript.Indicators
 {
 	public partial class Indicator : NinjaTrader.Gui.NinjaScript.IndicatorRenderBase
 	{
-		private GreyBeard.KingPanaZilla.gbKingPanaZilla[] cachegbKingPanaZilla;
+		// ---- gbKingOrderBlock ----------------------------------
+		private GreyBeard.KingPanaZilla.gbKingOrderBlock[] cachegbKingOrderBlock;
+		public GreyBeard.KingPanaZilla.gbKingOrderBlock gbKingOrderBlock(int swingPointNeighborhood, int imbalanceQualifying, int orderBlockFindingBosChochPeriod, int orderBlockAge, int orderBlocksSameDirectionOffset, int orderBlocksDifferenceDirectionOffset, int signalTradeQuantityPerOrderBlock, int signalTradeSplitBars)
+		{
+			return gbKingOrderBlock(Input, swingPointNeighborhood, imbalanceQualifying, orderBlockFindingBosChochPeriod, orderBlockAge, orderBlocksSameDirectionOffset, orderBlocksDifferenceDirectionOffset, signalTradeQuantityPerOrderBlock, signalTradeSplitBars);
+		}
+		public GreyBeard.KingPanaZilla.gbKingOrderBlock gbKingOrderBlock(ISeries<double> input, int swingPointNeighborhood, int imbalanceQualifying, int orderBlockFindingBosChochPeriod, int orderBlockAge, int orderBlocksSameDirectionOffset, int orderBlocksDifferenceDirectionOffset, int signalTradeQuantityPerOrderBlock, int signalTradeSplitBars)
+		{
+			if (cachegbKingOrderBlock != null)
+				for (int idx = 0; idx < cachegbKingOrderBlock.Length; idx++)
+					if (cachegbKingOrderBlock[idx] != null && cachegbKingOrderBlock[idx].SwingPointNeighborhood == swingPointNeighborhood && cachegbKingOrderBlock[idx].ImbalanceQualifying == imbalanceQualifying && cachegbKingOrderBlock[idx].OrderBlockFindingBosChochPeriod == orderBlockFindingBosChochPeriod && cachegbKingOrderBlock[idx].OrderBlockAge == orderBlockAge && cachegbKingOrderBlock[idx].OrderBlocksSameDirectionOffset == orderBlocksSameDirectionOffset && cachegbKingOrderBlock[idx].OrderBlocksDifferenceDirectionOffset == orderBlocksDifferenceDirectionOffset && cachegbKingOrderBlock[idx].SignalTradeQuantityPerOrderBlock == signalTradeQuantityPerOrderBlock && cachegbKingOrderBlock[idx].SignalTradeSplitBars == signalTradeSplitBars && cachegbKingOrderBlock[idx].EqualsInput(input))
+						return cachegbKingOrderBlock[idx];
+			return CacheIndicator<GreyBeard.KingPanaZilla.gbKingOrderBlock>(new GreyBeard.KingPanaZilla.gbKingOrderBlock(){ SwingPointNeighborhood = swingPointNeighborhood, ImbalanceQualifying = imbalanceQualifying, OrderBlockFindingBosChochPeriod = orderBlockFindingBosChochPeriod, OrderBlockAge = orderBlockAge, OrderBlocksSameDirectionOffset = orderBlocksSameDirectionOffset, OrderBlocksDifferenceDirectionOffset = orderBlocksDifferenceDirectionOffset, SignalTradeQuantityPerOrderBlock = signalTradeQuantityPerOrderBlock, SignalTradeSplitBars = signalTradeSplitBars }, input, ref cachegbKingOrderBlock);
+		}
 
+		// ---- gbPANAKanal ---------------------------------------
+		private GreyBeard.KingPanaZilla.gbPANAKanal[] cachegbPANAKanal;
+		public GreyBeard.KingPanaZilla.gbPANAKanal gbPANAKanal(int period, double factor, int middlePeriod, int signalBreakSplit, int signalPullbackFindingPeriod)
+		{
+			return gbPANAKanal(Input, period, factor, middlePeriod, signalBreakSplit, signalPullbackFindingPeriod);
+		}
+		public GreyBeard.KingPanaZilla.gbPANAKanal gbPANAKanal(ISeries<double> input, int period, double factor, int middlePeriod, int signalBreakSplit, int signalPullbackFindingPeriod)
+		{
+			if (cachegbPANAKanal != null)
+				for (int idx = 0; idx < cachegbPANAKanal.Length; idx++)
+					if (cachegbPANAKanal[idx].Period == period && cachegbPANAKanal[idx].Factor == factor && cachegbPANAKanal[idx].MiddlePeriod == middlePeriod && cachegbPANAKanal[idx].SignalBreakSplit == signalBreakSplit && cachegbPANAKanal[idx].SignalPullbackFindingPeriod == signalPullbackFindingPeriod && cachegbPANAKanal[idx].EqualsInput(input))
+						return cachegbPANAKanal[idx];
+			return CacheIndicator<GreyBeard.KingPanaZilla.gbPANAKanal>(new GreyBeard.KingPanaZilla.gbPANAKanal(){ Period = period, Factor = factor, MiddlePeriod = middlePeriod, SignalBreakSplit = signalBreakSplit, SignalPullbackFindingPeriod = signalPullbackFindingPeriod }, input, ref cachegbPANAKanal);
+		}
+
+		// ---- gbThunderZilla ------------------------------------
+		private GreyBeard.KingPanaZilla.gbThunderZilla[] cachegbThunderZilla;
+		public GreyBeard.KingPanaZilla.gbThunderZilla gbThunderZilla(global::gbThunderZillaMAType trendMAType, int trendPeriod, bool trendSmoothingEnabled, global::gbThunderZillaMAType trendSmoothingMethod, int trendSmoothingPeriod, double stopOffsetMultiplierStop, int signalQuantityPerFlat, int signalQuantityPerTrend)
+		{
+			return gbThunderZilla(Input, trendMAType, trendPeriod, trendSmoothingEnabled, trendSmoothingMethod, trendSmoothingPeriod, stopOffsetMultiplierStop, signalQuantityPerFlat, signalQuantityPerTrend);
+		}
+		public GreyBeard.KingPanaZilla.gbThunderZilla gbThunderZilla(ISeries<double> input, global::gbThunderZillaMAType trendMAType, int trendPeriod, bool trendSmoothingEnabled, global::gbThunderZillaMAType trendSmoothingMethod, int trendSmoothingPeriod, double stopOffsetMultiplierStop, int signalQuantityPerFlat, int signalQuantityPerTrend)
+		{
+			if (cachegbThunderZilla != null)
+				for (int idx = 0; idx < cachegbThunderZilla.Length; idx++)
+					if (cachegbThunderZilla[idx] != null && cachegbThunderZilla[idx].TrendMAType == trendMAType && cachegbThunderZilla[idx].TrendPeriod == trendPeriod && cachegbThunderZilla[idx].TrendSmoothingEnabled == trendSmoothingEnabled && cachegbThunderZilla[idx].TrendSmoothingMethod == trendSmoothingMethod && cachegbThunderZilla[idx].TrendSmoothingPeriod == trendSmoothingPeriod && cachegbThunderZilla[idx].StopOffsetMultiplierStop == stopOffsetMultiplierStop && cachegbThunderZilla[idx].SignalQuantityPerFlat == signalQuantityPerFlat && cachegbThunderZilla[idx].SignalQuantityPerTrend == signalQuantityPerTrend && cachegbThunderZilla[idx].EqualsInput(input))
+						return cachegbThunderZilla[idx];
+			return CacheIndicator<GreyBeard.KingPanaZilla.gbThunderZilla>(new GreyBeard.KingPanaZilla.gbThunderZilla(){ TrendMAType = trendMAType, TrendPeriod = trendPeriod, TrendSmoothingEnabled = trendSmoothingEnabled, TrendSmoothingMethod = trendSmoothingMethod, TrendSmoothingPeriod = trendSmoothingPeriod, StopOffsetMultiplierStop = stopOffsetMultiplierStop, SignalQuantityPerFlat = signalQuantityPerFlat, SignalQuantityPerTrend = signalQuantityPerTrend }, input, ref cachegbThunderZilla);
+		}
+
+		// ---- gbKingPanaZilla -----------------------------------
+		private GreyBeard.KingPanaZilla.gbKingPanaZilla[] cachegbKingPanaZilla;
 		public GreyBeard.KingPanaZilla.gbKingPanaZilla gbKingPanaZilla()
 		{
 			return gbKingPanaZilla(Input);
 		}
-
 		public GreyBeard.KingPanaZilla.gbKingPanaZilla gbKingPanaZilla(ISeries<double> input)
 		{
 			if (cachegbKingPanaZilla != null)
@@ -451,11 +501,41 @@ namespace NinjaTrader.NinjaScript.MarketAnalyzerColumns
 {
 	public partial class MarketAnalyzerColumn : MarketAnalyzerColumnBase
 	{
+		// ---- gbKingOrderBlock ----------------------------------
+		public Indicators.GreyBeard.KingPanaZilla.gbKingOrderBlock gbKingOrderBlock(int swingPointNeighborhood, int imbalanceQualifying, int orderBlockFindingBosChochPeriod, int orderBlockAge, int orderBlocksSameDirectionOffset, int orderBlocksDifferenceDirectionOffset, int signalTradeQuantityPerOrderBlock, int signalTradeSplitBars)
+		{
+			return indicator.gbKingOrderBlock(Input, swingPointNeighborhood, imbalanceQualifying, orderBlockFindingBosChochPeriod, orderBlockAge, orderBlocksSameDirectionOffset, orderBlocksDifferenceDirectionOffset, signalTradeQuantityPerOrderBlock, signalTradeSplitBars);
+		}
+		public Indicators.GreyBeard.KingPanaZilla.gbKingOrderBlock gbKingOrderBlock(ISeries<double> input, int swingPointNeighborhood, int imbalanceQualifying, int orderBlockFindingBosChochPeriod, int orderBlockAge, int orderBlocksSameDirectionOffset, int orderBlocksDifferenceDirectionOffset, int signalTradeQuantityPerOrderBlock, int signalTradeSplitBars)
+		{
+			return indicator.gbKingOrderBlock(input, swingPointNeighborhood, imbalanceQualifying, orderBlockFindingBosChochPeriod, orderBlockAge, orderBlocksSameDirectionOffset, orderBlocksDifferenceDirectionOffset, signalTradeQuantityPerOrderBlock, signalTradeSplitBars);
+		}
+
+		// ---- gbPANAKanal ---------------------------------------
+		public Indicators.GreyBeard.KingPanaZilla.gbPANAKanal gbPANAKanal(int period, double factor, int middlePeriod, int signalBreakSplit, int signalPullbackFindingPeriod)
+		{
+			return indicator.gbPANAKanal(Input, period, factor, middlePeriod, signalBreakSplit, signalPullbackFindingPeriod);
+		}
+		public Indicators.GreyBeard.KingPanaZilla.gbPANAKanal gbPANAKanal(ISeries<double> input, int period, double factor, int middlePeriod, int signalBreakSplit, int signalPullbackFindingPeriod)
+		{
+			return indicator.gbPANAKanal(input, period, factor, middlePeriod, signalBreakSplit, signalPullbackFindingPeriod);
+		}
+
+		// ---- gbThunderZilla ------------------------------------
+		public NinjaTrader.NinjaScript.Indicators.GreyBeard.KingPanaZilla.gbThunderZilla gbThunderZilla(global::gbThunderZillaMAType trendMAType, int trendPeriod, bool trendSmoothingEnabled, global::gbThunderZillaMAType trendSmoothingMethod, int trendSmoothingPeriod, double stopOffsetMultiplierStop, int signalQuantityPerFlat, int signalQuantityPerTrend)
+		{
+			return indicator.gbThunderZilla(Input, trendMAType, trendPeriod, trendSmoothingEnabled, trendSmoothingMethod, trendSmoothingPeriod, stopOffsetMultiplierStop, signalQuantityPerFlat, signalQuantityPerTrend);
+		}
+		public NinjaTrader.NinjaScript.Indicators.GreyBeard.KingPanaZilla.gbThunderZilla gbThunderZilla(ISeries<double> input, global::gbThunderZillaMAType trendMAType, int trendPeriod, bool trendSmoothingEnabled, global::gbThunderZillaMAType trendSmoothingMethod, int trendSmoothingPeriod, double stopOffsetMultiplierStop, int signalQuantityPerFlat, int signalQuantityPerTrend)
+		{
+			return indicator.gbThunderZilla(input, trendMAType, trendPeriod, trendSmoothingEnabled, trendSmoothingMethod, trendSmoothingPeriod, stopOffsetMultiplierStop, signalQuantityPerFlat, signalQuantityPerTrend);
+		}
+
+		// ---- gbKingPanaZilla -----------------------------------
 		public Indicators.GreyBeard.KingPanaZilla.gbKingPanaZilla gbKingPanaZilla()
 		{
 			return indicator.gbKingPanaZilla(Input);
 		}
-
 		public Indicators.GreyBeard.KingPanaZilla.gbKingPanaZilla gbKingPanaZilla(ISeries<double> input)
 		{
 			return indicator.gbKingPanaZilla(input);
@@ -467,11 +547,41 @@ namespace NinjaTrader.NinjaScript.Strategies
 {
 	public partial class Strategy : NinjaTrader.Gui.NinjaScript.StrategyRenderBase
 	{
+		// ---- gbKingOrderBlock ----------------------------------
+		public Indicators.GreyBeard.KingPanaZilla.gbKingOrderBlock gbKingOrderBlock(int swingPointNeighborhood, int imbalanceQualifying, int orderBlockFindingBosChochPeriod, int orderBlockAge, int orderBlocksSameDirectionOffset, int orderBlocksDifferenceDirectionOffset, int signalTradeQuantityPerOrderBlock, int signalTradeSplitBars)
+		{
+			return indicator.gbKingOrderBlock(Input, swingPointNeighborhood, imbalanceQualifying, orderBlockFindingBosChochPeriod, orderBlockAge, orderBlocksSameDirectionOffset, orderBlocksDifferenceDirectionOffset, signalTradeQuantityPerOrderBlock, signalTradeSplitBars);
+		}
+		public Indicators.GreyBeard.KingPanaZilla.gbKingOrderBlock gbKingOrderBlock(ISeries<double> input, int swingPointNeighborhood, int imbalanceQualifying, int orderBlockFindingBosChochPeriod, int orderBlockAge, int orderBlocksSameDirectionOffset, int orderBlocksDifferenceDirectionOffset, int signalTradeQuantityPerOrderBlock, int signalTradeSplitBars)
+		{
+			return indicator.gbKingOrderBlock(input, swingPointNeighborhood, imbalanceQualifying, orderBlockFindingBosChochPeriod, orderBlockAge, orderBlocksSameDirectionOffset, orderBlocksDifferenceDirectionOffset, signalTradeQuantityPerOrderBlock, signalTradeSplitBars);
+		}
+
+		// ---- gbPANAKanal ---------------------------------------
+		public Indicators.GreyBeard.KingPanaZilla.gbPANAKanal gbPANAKanal(int period, double factor, int middlePeriod, int signalBreakSplit, int signalPullbackFindingPeriod)
+		{
+			return indicator.gbPANAKanal(Input, period, factor, middlePeriod, signalBreakSplit, signalPullbackFindingPeriod);
+		}
+		public Indicators.GreyBeard.KingPanaZilla.gbPANAKanal gbPANAKanal(ISeries<double> input, int period, double factor, int middlePeriod, int signalBreakSplit, int signalPullbackFindingPeriod)
+		{
+			return indicator.gbPANAKanal(input, period, factor, middlePeriod, signalBreakSplit, signalPullbackFindingPeriod);
+		}
+
+		// ---- gbThunderZilla ------------------------------------
+		public NinjaTrader.NinjaScript.Indicators.GreyBeard.KingPanaZilla.gbThunderZilla gbThunderZilla(global::gbThunderZillaMAType trendMAType, int trendPeriod, bool trendSmoothingEnabled, global::gbThunderZillaMAType trendSmoothingMethod, int trendSmoothingPeriod, double stopOffsetMultiplierStop, int signalQuantityPerFlat, int signalQuantityPerTrend)
+		{
+			return indicator.gbThunderZilla(Input, trendMAType, trendPeriod, trendSmoothingEnabled, trendSmoothingMethod, trendSmoothingPeriod, stopOffsetMultiplierStop, signalQuantityPerFlat, signalQuantityPerTrend);
+		}
+		public NinjaTrader.NinjaScript.Indicators.GreyBeard.KingPanaZilla.gbThunderZilla gbThunderZilla(ISeries<double> input, global::gbThunderZillaMAType trendMAType, int trendPeriod, bool trendSmoothingEnabled, global::gbThunderZillaMAType trendSmoothingMethod, int trendSmoothingPeriod, double stopOffsetMultiplierStop, int signalQuantityPerFlat, int signalQuantityPerTrend)
+		{
+			return indicator.gbThunderZilla(input, trendMAType, trendPeriod, trendSmoothingEnabled, trendSmoothingMethod, trendSmoothingPeriod, stopOffsetMultiplierStop, signalQuantityPerFlat, signalQuantityPerTrend);
+		}
+
+		// ---- gbKingPanaZilla -----------------------------------
 		public Indicators.GreyBeard.KingPanaZilla.gbKingPanaZilla gbKingPanaZilla()
 		{
 			return indicator.gbKingPanaZilla(Input);
 		}
-
 		public Indicators.GreyBeard.KingPanaZilla.gbKingPanaZilla gbKingPanaZilla(ISeries<double> input)
 		{
 			return indicator.gbKingPanaZilla(input);
