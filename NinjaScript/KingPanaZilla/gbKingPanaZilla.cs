@@ -27,12 +27,12 @@ using NinjaTrader.NinjaScript.DrawingTools;
 using NinjaTrader.NinjaScript.Indicators;
 using SharpDX;
 using SharpDX.Direct2D1;
-// Disambiguate 'Brush': both SharpDX.Direct2D1 and System.Windows.Media define it.
-// All D2D1 concrete types (LinearGradientBrush, SolidColorBrush, etc.) are
-// referenced by their fully-qualified SharpDX.Direct2D1.* names in drawing code,
-// so these two aliases are the only ones needed.
-using Brush   = System.Windows.Media.Brush;
-using Brushes = System.Windows.Media.Brushes;
+// Disambiguate types that exist in both SharpDX.Direct2D1 and System.Windows.Media.
+// All D2D1 concrete draw types are referenced fully-qualified in OnRender code
+// (SharpDX.Direct2D1.LinearGradientBrush etc.), so these aliases are sufficient.
+using Brush           = System.Windows.Media.Brush;
+using Brushes         = System.Windows.Media.Brushes;
+using SolidColorBrush = System.Windows.Media.SolidColorBrush;
 #endregion
 
 // ============================================================
@@ -6454,7 +6454,6 @@ public class gbThunderZilla : Indicator
 [CategoryOrder("PANAKanal Parameters",       1000030)]
 [CategoryOrder("ThunderZilla Parameters",    1000040)]
 [CategoryOrder("Visuals",                    1000050)]
-[CategoryOrder("Display",                    1000055)]
 [CategoryOrder("Logging",                    1000060)]
 public class gbKingPanaZilla : Indicator
 {
@@ -6469,9 +6468,6 @@ public class gbKingPanaZilla : Indicator
 	private GreyBeard.KingPanaZilla.gbKingOrderBlock[] _cacheKing;
 	private GreyBeard.KingPanaZilla.gbPANAKanal[]      _cachePana;
 	private GreyBeard.KingPanaZilla.gbThunderZilla[]   _cacheThunder;
-
-	// ---- chart panel index (saved at DataLoaded for Terminated cleanup) --
-	private int _chartPanelIndex = -1;
 
 	// ---- CSV logging ----------------------------------------
 	private StreamWriter _logWriter;
@@ -6541,11 +6537,6 @@ public class gbKingPanaZilla : Indicator
 			KingPanaBrush   = Brushes.LimeGreen;
 			ArrowOffset     = 3;
 
-			// ---- Display defaults ---------------------------
-			ShowKingOrderBlock = true;
-			ShowPANAKanal      = true;
-			ShowThunderZilla   = true;
-
 			// ---- Logging defaults ---------------------------
 			LogEnabled = false;
 			break;
@@ -6611,53 +6602,12 @@ public class gbKingPanaZilla : Indicator
 					SignalQuantityPerTrend     = Thunder_SignalQuantityPerTrend
 				},
 				Input, ref _cacheThunder);
-
-			// Add child indicators to the chart panel so their OnRender runs and their
-			// visual drawings (zones, channels, clouds) appear on screen.
-			// CacheIndicator wires them into the data pipeline; this wires them into
-			// the rendering pipeline of the same panel gbKingPanaZilla lives on.
-			if (ChartControl != null && ChartPanel != null)
-			{
-				_chartPanelIndex = ChartPanel.PanelIndex;
-				var king    = _king;
-				var pana    = _pana;
-				var thunder = _thunder;
-				int pidx    = _chartPanelIndex;
-
-				ChartControl.Dispatcher.InvokeAsync(() =>
-				{
-					if (pidx >= ChartControl.ChartPanels.Count) return;
-					var panel = ChartControl.ChartPanels[pidx];
-					if (ShowKingOrderBlock && king    != null && !panel.NinjaScripts.Contains(king))
-						panel.NinjaScripts.Add(king);
-					if (ShowPANAKanal      && pana    != null && !panel.NinjaScripts.Contains(pana))
-						panel.NinjaScripts.Add(pana);
-					if (ShowThunderZilla   && thunder != null && !panel.NinjaScripts.Contains(thunder))
-						panel.NinjaScripts.Add(thunder);
-				});
-			}
+			// CacheIndicator registers child indicators in NT8's full NinjaScript
+			// pipeline — their OnBarUpdate AND OnRender both run automatically.
+			// No additional chart-panel manipulation is required for visual output.
 			break;
 
 		case State.Terminated:
-			// Remove child indicators from the chart rendering pipeline.
-			// Capture refs before nulling; the lambda closes over the local copies.
-			if (ChartControl != null && _chartPanelIndex >= 0)
-			{
-				var kingRef    = _king;
-				var panaRef    = _pana;
-				var thunderRef = _thunder;
-				int pidx       = _chartPanelIndex;
-
-				ChartControl.Dispatcher.InvokeAsync(() =>
-				{
-					if (pidx >= ChartControl.ChartPanels.Count) return;
-					var panel = ChartControl.ChartPanels[pidx];
-					if (kingRef    != null) panel.NinjaScripts.Remove(kingRef);
-					if (panaRef    != null) panel.NinjaScripts.Remove(panaRef);
-					if (thunderRef != null) panel.NinjaScripts.Remove(thunderRef);
-				});
-			}
-			_chartPanelIndex = -1;
 			_king         = null;
 			_pana         = null;
 			_thunder      = null;
@@ -6865,19 +6815,6 @@ public class gbKingPanaZilla : Indicator
 	[Display(Name = "Arrow Offset (Ticks)", Order = 3, GroupName = "Visuals")]
 	[Range(0, int.MaxValue)]
 	public int ArrowOffset { get; set; }
-
-	// ---- Display properties ---------------------------------
-	[Display(Name = "Show KingOrderBlock", Order = 0, GroupName = "Display",
-		Description = "Display gbKingOrderBlock order block zones, BOS/CHoCH levels, and imbalance zones on the chart.")]
-	public bool ShowKingOrderBlock { get; set; }
-
-	[Display(Name = "Show PANAKanal", Order = 1, GroupName = "Display",
-		Description = "Display gbPANAKanal channel bands, trend bar colouring, and Fibonacci pullback zones on the chart.")]
-	public bool ShowPANAKanal { get; set; }
-
-	[Display(Name = "Show ThunderZilla", Order = 2, GroupName = "Display",
-		Description = "Display gbThunderZilla SolarWind/Sumo cloud, trend MA, and trailing stop on the chart.")]
-	public bool ShowThunderZilla { get; set; }
 
 	// ---- Logging properties ---------------------------------
 	[Display(Name = "Enabled", Order = 0, GroupName = "Logging",
