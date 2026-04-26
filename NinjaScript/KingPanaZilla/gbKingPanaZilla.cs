@@ -258,7 +258,7 @@ public class gbKingPanaZilla : Indicator
 			_logWriter.WriteLine(string.Format("{0},\"{1}\",{2},{3},{4},{5}",
 				Time[0].ToString("yyyy-MM-dd HH:mm:ss"),
 				Instrument.FullName,
-				Instrument.MasterInstrument.FormatPriceMarker(Close[0]),
+				Close[0].ToString(System.Globalization.CultureInfo.InvariantCulture),
 				(int)Values[0][0],
 				(int)Values[1][0],
 				(int)Values[2][0]));
