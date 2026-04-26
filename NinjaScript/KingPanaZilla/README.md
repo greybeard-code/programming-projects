@@ -43,6 +43,8 @@ The signal thresholds capture the **highest-conviction sub-signals** from each c
 
 **Key parameters:** all `King_*`, `Pana_*`, and `Thunder_*` parameters mirror the child indicator defaults. Visual: `PanaZilliaBrush`, `KingZillaBrush`, `KingPanaBrush`, `ArrowOffset`
 
+**Display parameters:** `ShowKingOrderBlock`, `ShowPANAKanal`, `ShowThunderZilla` (all default `true`) — when enabled, the corresponding child indicator's drawings (zones, channels, clouds) are rendered on the same chart panel as `gbKingPanaZilla`. Each can be toggled off independently to reduce visual clutter while retaining its signal in the combined plots.
+
 **CSV Logging:**
 
 Enable the **Logging → Enabled** toggle to write a signal log to the NinjaTrader user data folder (`Documents\NinjaTrader 8\`). The file is named with the activation timestamp:
@@ -172,11 +174,9 @@ A **bar-completion progress indicator** that shows how far through the current b
 
 ```
 KingPanaZilla/
-├── gbKingPanaZilla.cs      — Composite: combines the three signal indicators below
-├── gbKingOrderBlock.cs     — Order Block / Imbalance / BOS/CHoCH zones
-├── gbPANAKanal.cs          — Keltner channel trend + Fibonacci pullback signals
-├── gbThunderZilla.cs       — SolarWind + Sumo dual-system trend indicator
-├── gbBarStatus.cs          — Bar completion progress display
+├── gbKingPanaZilla.cs      — Combined single-file build: gbKingOrderBlock + gbPANAKanal +
+│                             gbThunderZilla + gbKingPanaZilla (composite) in one file
+├── gbBarStatus.cs          — Bar completion progress display (standalone)
 └── originals/              — Unmodified vendor source files
     ├── RenkoKings_KingOrderBlock.cs
     ├── RenkoKings_ThunderZilla.cs
@@ -184,9 +184,11 @@ KingPanaZilla/
     └── ninZaBarStatus.cs
 ```
 
+All four indicator classes and their generated factory methods live in `gbKingPanaZilla.cs`. NT8's compiler finds a single complete `#region NinjaScript generated code` section and never appends a duplicate block.
+
 ## Installation
 
-Copy all five `gb*.cs` files into your NinjaTrader 8 custom indicators folder:
+Copy both `gb*.cs` files into your NinjaTrader 8 custom indicators folder:
 
 ```
 Documents\NinjaTrader 8\bin\Custom\Indicators\
@@ -194,7 +196,7 @@ Documents\NinjaTrader 8\bin\Custom\Indicators\
 
 Then compile via **NinjaTrader → Tools → Edit NinjaScript → Compile**.
 
-`gbKingPanaZilla` requires the other three signal indicators (`gbKingOrderBlock`, `gbPANAKanal`, `gbThunderZilla`) to be present — all five files must be compiled together. `gbBarStatus` is standalone.
+Both files compile independently — `gbBarStatus` is fully standalone and `gbKingPanaZilla.cs` contains everything it needs in a single file.
 
 ---
 
