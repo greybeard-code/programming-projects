@@ -129,11 +129,14 @@ public class gbKingPanaZilla : Strategy
 			break;
 
 		case State.Configure:
-			// Factory methods (defined in the generated section below) delegate to
-			// indicator.gbXxx() → CacheIndicator<T>, which properly wires each child
-			// into NT8's bar-data pipeline so its series are populated on every bar.
-			// AddChartIndicator then registers each child for chart rendering.
-			_king = gbKingOrderBlock(
+			// Call through `indicator.gbXxx(Input, ...)` so NT8's source scanner
+			// does not detect a bare factory-method call and inject duplicate
+			// declarations into the generated section.  The Indicator partial-class
+			// factory (defined in each child's generated section) delegates to
+			// CacheIndicator<T>, which properly wires BarsArray, Input, and
+			// OnBarUpdate before any bar arrives.  AddChartIndicator then registers
+			// each child for chart rendering so its visual drawings appear.
+			_king = indicator.gbKingOrderBlock(Input,
 				King_SwingPointNeighborhood,
 				King_ImbalanceQualifying,
 				King_OrderBlockFindingBosChochPeriod,
@@ -144,7 +147,7 @@ public class gbKingPanaZilla : Strategy
 				King_SignalTradeSplitBars);
 			AddChartIndicator(_king);
 
-			_pana = gbPANAKanal(
+			_pana = indicator.gbPANAKanal(Input,
 				Pana_Period,
 				Pana_Factor,
 				Pana_MiddlePeriod,
@@ -152,7 +155,7 @@ public class gbKingPanaZilla : Strategy
 				Pana_SignalPullbackFindingPeriod);
 			AddChartIndicator(_pana);
 
-			_thunder = gbThunderZilla(
+			_thunder = indicator.gbThunderZilla(Input,
 				Thunder_TrendMAType,
 				Thunder_TrendPeriod,
 				Thunder_TrendSmoothingEnabled,
@@ -409,42 +412,14 @@ public class gbKingPanaZilla : Strategy
 
 #region NinjaScript generated code. Neither change nor remove.
 
-// Strategy factories for the three child indicators are consolidated here.
-// The indicator files (gbKingOrderBlock.cs, gbPANAKanal.cs, gbThunderZilla.cs)
-// carry only Indicator + MarketAnalyzerColumn factories in their generated
-// sections — Strategy factories live exclusively in this file so there are
-// no duplicate partial-class method definitions across the compiled set.
+// Configure uses indicator.gbXxx(Input, ...) rather than bare factory-method
+// calls, so NT8's source scanner never detects a factory trigger and never
+// injects declarations here.  This section stays intentionally empty.
 
 namespace NinjaTrader.NinjaScript.Strategies
 {
 	public partial class Strategy : NinjaTrader.Gui.NinjaScript.StrategyRenderBase
 	{
-		public Indicators.GreyBeard.KingPanaZilla.gbKingOrderBlock gbKingOrderBlock(int swingPointNeighborhood, int imbalanceQualifying, int orderBlockFindingBosChochPeriod, int orderBlockAge, int orderBlocksSameDirectionOffset, int orderBlocksDifferenceDirectionOffset, int signalTradeQuantityPerOrderBlock, int signalTradeSplitBars)
-		{
-			return indicator.gbKingOrderBlock(Input, swingPointNeighborhood, imbalanceQualifying, orderBlockFindingBosChochPeriod, orderBlockAge, orderBlocksSameDirectionOffset, orderBlocksDifferenceDirectionOffset, signalTradeQuantityPerOrderBlock, signalTradeSplitBars);
-		}
-		public Indicators.GreyBeard.KingPanaZilla.gbKingOrderBlock gbKingOrderBlock(ISeries<double> input, int swingPointNeighborhood, int imbalanceQualifying, int orderBlockFindingBosChochPeriod, int orderBlockAge, int orderBlocksSameDirectionOffset, int orderBlocksDifferenceDirectionOffset, int signalTradeQuantityPerOrderBlock, int signalTradeSplitBars)
-		{
-			return indicator.gbKingOrderBlock(input, swingPointNeighborhood, imbalanceQualifying, orderBlockFindingBosChochPeriod, orderBlockAge, orderBlocksSameDirectionOffset, orderBlocksDifferenceDirectionOffset, signalTradeQuantityPerOrderBlock, signalTradeSplitBars);
-		}
-
-		public Indicators.GreyBeard.KingPanaZilla.gbPANAKanal gbPANAKanal(int period, double factor, int middlePeriod, int signalBreakSplit, int signalPullbackFindingPeriod)
-		{
-			return indicator.gbPANAKanal(Input, period, factor, middlePeriod, signalBreakSplit, signalPullbackFindingPeriod);
-		}
-		public Indicators.GreyBeard.KingPanaZilla.gbPANAKanal gbPANAKanal(ISeries<double> input, int period, double factor, int middlePeriod, int signalBreakSplit, int signalPullbackFindingPeriod)
-		{
-			return indicator.gbPANAKanal(input, period, factor, middlePeriod, signalBreakSplit, signalPullbackFindingPeriod);
-		}
-
-		public NinjaTrader.NinjaScript.Indicators.GreyBeard.KingPanaZilla.gbThunderZilla gbThunderZilla(global::gbThunderZillaMAType trendMAType, int trendPeriod, bool trendSmoothingEnabled, global::gbThunderZillaMAType trendSmoothingMethod, int trendSmoothingPeriod, double stopOffsetMultiplierStop, int signalQuantityPerFlat, int signalQuantityPerTrend)
-		{
-			return indicator.gbThunderZilla(Input, trendMAType, trendPeriod, trendSmoothingEnabled, trendSmoothingMethod, trendSmoothingPeriod, stopOffsetMultiplierStop, signalQuantityPerFlat, signalQuantityPerTrend);
-		}
-		public NinjaTrader.NinjaScript.Indicators.GreyBeard.KingPanaZilla.gbThunderZilla gbThunderZilla(ISeries<double> input, global::gbThunderZillaMAType trendMAType, int trendPeriod, bool trendSmoothingEnabled, global::gbThunderZillaMAType trendSmoothingMethod, int trendSmoothingPeriod, double stopOffsetMultiplierStop, int signalQuantityPerFlat, int signalQuantityPerTrend)
-		{
-			return indicator.gbThunderZilla(input, trendMAType, trendPeriod, trendSmoothingEnabled, trendSmoothingMethod, trendSmoothingPeriod, stopOffsetMultiplierStop, signalQuantityPerFlat, signalQuantityPerTrend);
-		}
 	}
 }
 
