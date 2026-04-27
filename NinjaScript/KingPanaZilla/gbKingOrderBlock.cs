@@ -8,7 +8,6 @@ using System.Linq;
 using System.Reflection;
 using System.Windows;
 using System.Windows.Controls;
-using System.Windows.Controls.Primitives;
 using System.Windows.Media;
 using System.Windows.Threading;
 using System.Xml.Serialization;
@@ -27,15 +26,6 @@ using SharpDX.Direct2D1;
 
 namespace NinjaTrader.NinjaScript.Indicators.GreyBeard.KingPanaZilla
 {
-
-public enum gbKingOrderBlockTextPosition
-{
-	BottomLeft = 0,
-	BottomRight = 1,
-	Center = 2,
-	TopLeft = 3,
-	TopRight = 4
-}
 
 public enum gbKingOrderBlock_MarkerRenderingMethod
 {
@@ -402,6 +392,8 @@ public class gbKingOrderBlock : Indicator
 		Breakout
 	}
 
+	private const int defaultMargin = 5;
+
 	private const string toolTipSpace = "  ";
 
 	private float barOutlineWidth;
@@ -512,6 +504,10 @@ public class gbKingOrderBlock : Indicator
 	private const string prefix = "gbKingOrderBlock";
 
 	private const string indicatorName = "King Order Block";
+
+	private const string indicatorNameFull = "King Order Block by GreyBeard";
+
+	private const string receiverEmail = "receiver@example.com";
 
 	private bool isCharting;
 
@@ -1447,7 +1443,7 @@ public class gbKingOrderBlock : Indicator
 					if (rearmTimer == null)
 					{
 						rearmTimer = new DispatcherTimer();
-						rearmTimer.Interval = TimeSpan.FromSeconds(1);
+						rearmTimer.Interval = TimeSpan.FromMilliseconds(100.0);
 						rearmTimer.Tick += OnRearmTimerTick;
 					}
 				});
@@ -3010,7 +3006,6 @@ public class gbKingOrderBlock : Indicator
 
 } // namespace
 
-
 #region NinjaScript generated code. Neither change nor remove.
 
 namespace NinjaTrader.NinjaScript.Indicators
@@ -3022,6 +3017,7 @@ namespace NinjaTrader.NinjaScript.Indicators
 		{
 			return gbKingOrderBlock(Input, swingPointNeighborhood, imbalanceQualifying, orderBlockFindingBosChochPeriod, orderBlockAge, orderBlocksSameDirectionOffset, orderBlocksDifferenceDirectionOffset, signalTradeQuantityPerOrderBlock, signalTradeSplitBars);
 		}
+
 		public GreyBeard.KingPanaZilla.gbKingOrderBlock gbKingOrderBlock(ISeries<double> input, int swingPointNeighborhood, int imbalanceQualifying, int orderBlockFindingBosChochPeriod, int orderBlockAge, int orderBlocksSameDirectionOffset, int orderBlocksDifferenceDirectionOffset, int signalTradeQuantityPerOrderBlock, int signalTradeSplitBars)
 		{
 			if (cachegbKingOrderBlock != null)
@@ -3041,7 +3037,24 @@ namespace NinjaTrader.NinjaScript.MarketAnalyzerColumns
 		{
 			return indicator.gbKingOrderBlock(Input, swingPointNeighborhood, imbalanceQualifying, orderBlockFindingBosChochPeriod, orderBlockAge, orderBlocksSameDirectionOffset, orderBlocksDifferenceDirectionOffset, signalTradeQuantityPerOrderBlock, signalTradeSplitBars);
 		}
-		public Indicators.GreyBeard.KingPanaZilla.gbKingOrderBlock gbKingOrderBlock(ISeries<double> input, int swingPointNeighborhood, int imbalanceQualifying, int orderBlockFindingBosChochPeriod, int orderBlockAge, int orderBlocksSameDirectionOffset, int orderBlocksDifferenceDirectionOffset, int signalTradeQuantityPerOrderBlock, int signalTradeSplitBars)
+
+		public Indicators.GreyBeard.KingPanaZilla.gbKingOrderBlock gbKingOrderBlock(ISeries<double> input , int swingPointNeighborhood, int imbalanceQualifying, int orderBlockFindingBosChochPeriod, int orderBlockAge, int orderBlocksSameDirectionOffset, int orderBlocksDifferenceDirectionOffset, int signalTradeQuantityPerOrderBlock, int signalTradeSplitBars)
+		{
+			return indicator.gbKingOrderBlock(input, swingPointNeighborhood, imbalanceQualifying, orderBlockFindingBosChochPeriod, orderBlockAge, orderBlocksSameDirectionOffset, orderBlocksDifferenceDirectionOffset, signalTradeQuantityPerOrderBlock, signalTradeSplitBars);
+		}
+	}
+}
+
+namespace NinjaTrader.NinjaScript.Strategies
+{
+	public partial class Strategy : NinjaTrader.Gui.NinjaScript.StrategyRenderBase
+	{
+		public Indicators.GreyBeard.KingPanaZilla.gbKingOrderBlock gbKingOrderBlock(int swingPointNeighborhood, int imbalanceQualifying, int orderBlockFindingBosChochPeriod, int orderBlockAge, int orderBlocksSameDirectionOffset, int orderBlocksDifferenceDirectionOffset, int signalTradeQuantityPerOrderBlock, int signalTradeSplitBars)
+		{
+			return indicator.gbKingOrderBlock(Input, swingPointNeighborhood, imbalanceQualifying, orderBlockFindingBosChochPeriod, orderBlockAge, orderBlocksSameDirectionOffset, orderBlocksDifferenceDirectionOffset, signalTradeQuantityPerOrderBlock, signalTradeSplitBars);
+		}
+
+		public Indicators.GreyBeard.KingPanaZilla.gbKingOrderBlock gbKingOrderBlock(ISeries<double> input , int swingPointNeighborhood, int imbalanceQualifying, int orderBlockFindingBosChochPeriod, int orderBlockAge, int orderBlocksSameDirectionOffset, int orderBlocksDifferenceDirectionOffset, int signalTradeQuantityPerOrderBlock, int signalTradeSplitBars)
 		{
 			return indicator.gbKingOrderBlock(input, swingPointNeighborhood, imbalanceQualifying, orderBlockFindingBosChochPeriod, orderBlockAge, orderBlocksSameDirectionOffset, orderBlocksDifferenceDirectionOffset, signalTradeQuantityPerOrderBlock, signalTradeSplitBars);
 		}

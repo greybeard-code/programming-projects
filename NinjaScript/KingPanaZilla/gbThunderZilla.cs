@@ -4,9 +4,9 @@ using System.Collections.Generic;
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
 using System.IO;
+using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
-using System.Windows.Controls.Primitives;
 using System.Windows.Media;
 using System.Windows.Threading;
 using System.Xml.Serialization;
@@ -136,6 +136,8 @@ public class gbThunderZilla : Indicator
 
 	private const int oBOSSafeReversalPeriod = 3;
 
+	private const int defaultMargin = 5;
+
 	private const string toolTipSpace = "  ";
 
 	private string tag;
@@ -167,6 +169,8 @@ public class gbThunderZilla : Indicator
 	private const string prefix = "gbThunderZilla";
 
 	private const string indicatorName = "ThunderZilla";
+
+	private const string indicatorNameFull = "ThunderZilla by GreyBeard";
 
 	private bool isCharting;
 
@@ -669,7 +673,7 @@ public class gbThunderZilla : Indicator
 			{
 				return "ThunderZilla by GreyBeard" + GetUserNote();
 			}
-			return base.DisplayName;
+			return DisplayName;
 		}
 	}
 
@@ -864,7 +868,7 @@ public class gbThunderZilla : Indicator
 				seriesSumoFair = new Series<double>(this, MaximumBarsLookBack.TwoHundredFiftySix);
 				seriesOBOSSignalState = new Series<int>(this, MaximumBarsLookBack.TwoHundredFiftySix);
 				rearmTimer = new DispatcherTimer();
-				rearmTimer.Interval = TimeSpan.FromSeconds(1);
+				rearmTimer.Interval = TimeSpan.FromMilliseconds(100.0);
 				rearmTimer.Tick += OnRearmTimerTick;
 				cloudMixBrush = CreateAverageBrush(CloudUptrend, CloudDowntrend);
 				isCustomRenderingMethod = MarkerRenderingMethod == gbThunderZilla_RenderingMethod.Custom;
@@ -891,6 +895,10 @@ public class gbThunderZilla : Indicator
 					SetZOrder(IndicatorZOrder);
 				}
 				isCharting = ChartControl != null;
+				if (!isCharting)
+				{
+					return;
+				}
 				break;
 
 			case State.Historical:
@@ -1309,8 +1317,9 @@ public class gbThunderZilla : Indicator
 		double num2 = EMA(Input, 14)[0];
 		double num3 = EMA(Input, 30)[0];
 		double num4 = EMA(Input, 45)[0];
-		double num5 = Math.Max(Math.Max(num, num2), Math.Max(num3, num4));
-		double num6 = Math.Min(Math.Min(num, num2), Math.Min(num3, num4));
+		double[] source = new double[4] { num, num2, num3, num4 };
+		double num5 = source.Max();
+		double num6 = source.Min();
 		if (MathExtentions.ApproxCompare(close0, open0) <= 0 || MathExtentions.ApproxCompare(Close[1], Open[1]) >= 0)
 		{
 			if (MathExtentions.ApproxCompare(close0, open0) < 0 && MathExtentions.ApproxCompare(Close[1], Open[1]) > 0 && MathExtentions.ApproxCompare(num6, low0) > 0 && MathExtentions.ApproxCompare(num5, high0) < 0 && MathExtentions.ApproxCompare(num, num5) == 0)
@@ -1389,7 +1398,7 @@ public class gbThunderZilla : Indicator
 		{
 			sumoIsUptrend = false;
 		}
-		seriesSumoFair[0] = (num + num2 + num3 + num4) * 0.25;
+		seriesSumoFair[0] = source.Average();
 	}
 
 	private void ComputeMultiOscOBOSOverlap()
@@ -1545,65 +1554,33 @@ public class gbThunderZilla : Indicator
 		}
 	}
 
-	private void PaintBar(SignalTradeInfo trendState, bool isToggleClickEvent = false, int barIndex = 0)
+	private void PaintBar(SignalTradeInfo trendState)
 	{
 		if (!isCharting || !BarEnabled)
-		{
 			return;
-		}
-		Brush brush = ((trendState == SignalTradeInfo.NoSignal) ? BarNeutral : ((trendState != SignalTradeInfo.UptrendStart) ? BarDowntrend : BarUptrend));
-		int num = ((!isToggleClickEvent) ? MathExtentions.ApproxCompare(Close[0], Open[0]) : MathExtentions.ApproxCompare(Close.GetValueAt(barIndex), Open.GetValueAt(barIndex)));
-		int num2 = ((trendState != SignalTradeInfo.NoSignal) ? ((trendState == SignalTradeInfo.UptrendStart) ? 1 : (-1)) : 0);
-		int num3 = CurrentBar - barIndex;
+
+		Brush brush = (trendState == SignalTradeInfo.NoSignal) ? BarNeutral
+		            : (trendState == SignalTradeInfo.UptrendStart)  ? BarUptrend : BarDowntrend;
+		int num  = MathExtentions.ApproxCompare(Close[0], Open[0]);
+		int num2 = (trendState == SignalTradeInfo.NoSignal) ? 0
+		         : (trendState == SignalTradeInfo.UptrendStart) ? 1 : -1;
+
 		if (BarOutlineEnabled && !BrushExtensions.IsTransparent(brush))
-		{
-			if (!isToggleClickEvent)
-			{
-				CandleOutlineBrush = brush;
-			}
-			else
-			{
-				CandleOutlineBrushes[num3] = brush;
-			}
-		}
+			CandleOutlineBrush = brush;
+
 		if (!BarBiasBased)
 		{
 			if (num != 0)
-			{
-				if (!isToggleClickEvent)
-				{
-					BarBrush = brush;
-				}
-				else
-				{
-					BarBrushes[num3] = brush;
-				}
-			}
+				BarBrush = brush;
 		}
 		else if (!BrushExtensions.IsTransparent(brush))
 		{
 			if (num != 0)
-			{
-				if (!isToggleClickEvent)
-				{
-					BarBrush = ((num2 * num <= 0) ? Brushes.Transparent : brush);
-				}
-				else
-				{
-					BarBrushes[num3] = ((num2 * num <= 0) ? Brushes.Transparent : brush);
-				}
-			}
+				BarBrush = (num2 * num <= 0) ? Brushes.Transparent : brush;
 		}
 		else if (num2 * num < 0)
 		{
-			if (!isToggleClickEvent)
-			{
-				BarBrush = Brushes.Transparent;
-			}
-			else
-			{
-				BarBrushes[num3] = Brushes.Transparent;
-			}
+			BarBrush = Brushes.Transparent;
 		}
 	}
 
@@ -1754,7 +1731,6 @@ public class gbThunderZilla_SoundConverter : TypeConverter
 	}
 }
 
-
 #region NinjaScript generated code. Neither change nor remove.
 
 namespace NinjaTrader.NinjaScript.Indicators
@@ -1762,11 +1738,12 @@ namespace NinjaTrader.NinjaScript.Indicators
 	public partial class Indicator : NinjaTrader.Gui.NinjaScript.IndicatorRenderBase
 	{
 		private GreyBeard.KingPanaZilla.gbThunderZilla[] cachegbThunderZilla;
-		public GreyBeard.KingPanaZilla.gbThunderZilla gbThunderZilla(global::gbThunderZillaMAType trendMAType, int trendPeriod, bool trendSmoothingEnabled, global::gbThunderZillaMAType trendSmoothingMethod, int trendSmoothingPeriod, double stopOffsetMultiplierStop, int signalQuantityPerFlat, int signalQuantityPerTrend)
+		public GreyBeard.KingPanaZilla.gbThunderZilla gbThunderZilla(gbThunderZillaMAType trendMAType, int trendPeriod, bool trendSmoothingEnabled, gbThunderZillaMAType trendSmoothingMethod, int trendSmoothingPeriod, double stopOffsetMultiplierStop, int signalQuantityPerFlat, int signalQuantityPerTrend)
 		{
 			return gbThunderZilla(Input, trendMAType, trendPeriod, trendSmoothingEnabled, trendSmoothingMethod, trendSmoothingPeriod, stopOffsetMultiplierStop, signalQuantityPerFlat, signalQuantityPerTrend);
 		}
-		public GreyBeard.KingPanaZilla.gbThunderZilla gbThunderZilla(ISeries<double> input, global::gbThunderZillaMAType trendMAType, int trendPeriod, bool trendSmoothingEnabled, global::gbThunderZillaMAType trendSmoothingMethod, int trendSmoothingPeriod, double stopOffsetMultiplierStop, int signalQuantityPerFlat, int signalQuantityPerTrend)
+
+		public GreyBeard.KingPanaZilla.gbThunderZilla gbThunderZilla(ISeries<double> input, gbThunderZillaMAType trendMAType, int trendPeriod, bool trendSmoothingEnabled, gbThunderZillaMAType trendSmoothingMethod, int trendSmoothingPeriod, double stopOffsetMultiplierStop, int signalQuantityPerFlat, int signalQuantityPerTrend)
 		{
 			if (cachegbThunderZilla != null)
 				for (int idx = 0; idx < cachegbThunderZilla.Length; idx++)
@@ -1781,11 +1758,28 @@ namespace NinjaTrader.NinjaScript.MarketAnalyzerColumns
 {
 	public partial class MarketAnalyzerColumn : MarketAnalyzerColumnBase
 	{
-		public NinjaTrader.NinjaScript.Indicators.GreyBeard.KingPanaZilla.gbThunderZilla gbThunderZilla(global::gbThunderZillaMAType trendMAType, int trendPeriod, bool trendSmoothingEnabled, global::gbThunderZillaMAType trendSmoothingMethod, int trendSmoothingPeriod, double stopOffsetMultiplierStop, int signalQuantityPerFlat, int signalQuantityPerTrend)
+		public Indicators.GreyBeard.KingPanaZilla.gbThunderZilla gbThunderZilla(gbThunderZillaMAType trendMAType, int trendPeriod, bool trendSmoothingEnabled, gbThunderZillaMAType trendSmoothingMethod, int trendSmoothingPeriod, double stopOffsetMultiplierStop, int signalQuantityPerFlat, int signalQuantityPerTrend)
 		{
 			return indicator.gbThunderZilla(Input, trendMAType, trendPeriod, trendSmoothingEnabled, trendSmoothingMethod, trendSmoothingPeriod, stopOffsetMultiplierStop, signalQuantityPerFlat, signalQuantityPerTrend);
 		}
-		public NinjaTrader.NinjaScript.Indicators.GreyBeard.KingPanaZilla.gbThunderZilla gbThunderZilla(ISeries<double> input, global::gbThunderZillaMAType trendMAType, int trendPeriod, bool trendSmoothingEnabled, global::gbThunderZillaMAType trendSmoothingMethod, int trendSmoothingPeriod, double stopOffsetMultiplierStop, int signalQuantityPerFlat, int signalQuantityPerTrend)
+
+		public Indicators.GreyBeard.KingPanaZilla.gbThunderZilla gbThunderZilla(ISeries<double> input , gbThunderZillaMAType trendMAType, int trendPeriod, bool trendSmoothingEnabled, gbThunderZillaMAType trendSmoothingMethod, int trendSmoothingPeriod, double stopOffsetMultiplierStop, int signalQuantityPerFlat, int signalQuantityPerTrend)
+		{
+			return indicator.gbThunderZilla(input, trendMAType, trendPeriod, trendSmoothingEnabled, trendSmoothingMethod, trendSmoothingPeriod, stopOffsetMultiplierStop, signalQuantityPerFlat, signalQuantityPerTrend);
+		}
+	}
+}
+
+namespace NinjaTrader.NinjaScript.Strategies
+{
+	public partial class Strategy : NinjaTrader.Gui.NinjaScript.StrategyRenderBase
+	{
+		public Indicators.GreyBeard.KingPanaZilla.gbThunderZilla gbThunderZilla(gbThunderZillaMAType trendMAType, int trendPeriod, bool trendSmoothingEnabled, gbThunderZillaMAType trendSmoothingMethod, int trendSmoothingPeriod, double stopOffsetMultiplierStop, int signalQuantityPerFlat, int signalQuantityPerTrend)
+		{
+			return indicator.gbThunderZilla(Input, trendMAType, trendPeriod, trendSmoothingEnabled, trendSmoothingMethod, trendSmoothingPeriod, stopOffsetMultiplierStop, signalQuantityPerFlat, signalQuantityPerTrend);
+		}
+
+		public Indicators.GreyBeard.KingPanaZilla.gbThunderZilla gbThunderZilla(ISeries<double> input , gbThunderZillaMAType trendMAType, int trendPeriod, bool trendSmoothingEnabled, gbThunderZillaMAType trendSmoothingMethod, int trendSmoothingPeriod, double stopOffsetMultiplierStop, int signalQuantityPerFlat, int signalQuantityPerTrend)
 		{
 			return indicator.gbThunderZilla(input, trendMAType, trendPeriod, trendSmoothingEnabled, trendSmoothingMethod, trendSmoothingPeriod, stopOffsetMultiplierStop, signalQuantityPerFlat, signalQuantityPerTrend);
 		}

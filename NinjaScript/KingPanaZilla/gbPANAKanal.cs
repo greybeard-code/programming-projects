@@ -1,4 +1,4 @@
-﻿#region Using declarations
+#region Using declarations
 using System;
 using System.Collections.Generic;
 using System.ComponentModel;
@@ -8,7 +8,6 @@ using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Windows;
 using System.Windows.Controls;
-using System.Windows.Controls.Primitives;
 using System.Windows.Media;
 using System.Windows.Threading;
 using System.Xml.Serialization;
@@ -74,6 +73,8 @@ public class gbPANAKanal : Indicator
 		Break,
 		Pullback
 	}
+
+	private const int defaultMargin = 5;
 
 	private Series<double> seriesDiffHighLow;
 
@@ -549,7 +550,7 @@ public class gbPANAKanal : Indicator
 			{
 				return "PANA Kanal by GreyBeard" + GetUserNote();
 			}
-			return base.DisplayName;
+			return DisplayName;
 		}
 	}
 
@@ -585,7 +586,7 @@ public class gbPANAKanal : Indicator
 			IsOverlay = true;
 			DisplayInDataBox = true;
 			DrawOnPricePanel = true;
-			IsSuspendedWhileInactive = false;
+			IsSuspendedWhileInactive = true;
 			IsAutoScale = true;
 			BarsRequiredToPlot = 0;
 			ShowTransparentPlotsInDataBox = true;
@@ -1502,65 +1503,31 @@ public class gbPANAKanal : Indicator
 		return 1;
 	}
 
-	private void PaintBar(bool isUptrend, bool isToggleClickEvent = false, int barIndex = 0)
+	private void PaintBar(bool isUptrend)
 	{
 		if (!isCharting || !BarEnabled)
-		{
 			return;
-		}
-		Brush brush = ((!isUptrend) ? BarDowntrend : BarUptrend);
-		int num = ((!isToggleClickEvent) ? MathExtentions.ApproxCompare(Close[0], Open[0]) : MathExtentions.ApproxCompare(Close.GetValueAt(barIndex), Open.GetValueAt(barIndex)));
-		int num2 = (isUptrend ? 1 : (-1));
-		int num3 = CurrentBar - barIndex;
+
+		Brush brush = isUptrend ? BarUptrend : BarDowntrend;
+		int num  = MathExtentions.ApproxCompare(Close[0], Open[0]);
+		int num2 = isUptrend ? 1 : -1;
+
 		if (BarOutlineEnabled && !BrushExtensions.IsTransparent(brush))
-		{
-			if (!isToggleClickEvent)
-			{
-				CandleOutlineBrush = brush;
-			}
-			else
-			{
-				CandleOutlineBrushes[num3] = brush;
-			}
-		}
+			CandleOutlineBrush = brush;
+
 		if (!BarBiasBased)
 		{
 			if (num != 0)
-			{
-				if (!isToggleClickEvent)
-				{
-					BarBrush = brush;
-				}
-				else
-				{
-					BarBrushes[num3] = brush;
-				}
-			}
+				BarBrush = brush;
 		}
 		else if (!BrushExtensions.IsTransparent(brush))
 		{
 			if (num != 0)
-			{
-				if (!isToggleClickEvent)
-				{
-					BarBrush = ((num2 * num <= 0) ? Brushes.Transparent : brush);
-				}
-				else
-				{
-					BarBrushes[num3] = ((num2 * num <= 0) ? Brushes.Transparent : brush);
-				}
-			}
+				BarBrush = (num2 * num <= 0) ? Brushes.Transparent : brush;
 		}
 		else if (num2 * num < 0)
 		{
-			if (!isToggleClickEvent)
-			{
-				BarBrush = Brushes.Transparent;
-			}
-			else
-			{
-				BarBrushes[num3] = Brushes.Transparent;
-			}
+			BarBrush = Brushes.Transparent;
 		}
 	}
 
@@ -1658,17 +1625,17 @@ public class gbPANAKanal : Indicator
 			{
 				ChartControl.Dispatcher.InvokeAsync(delegate
 				{
-					if (alertWindow != null && !alertWindow.IsVisible)
-					{
-						rearmTimer.Stop();
-					}
-					else
+					if (alertWindow == null || alertWindow.IsVisible)
 					{
 						if (DateTime.Now >= nextRearm)
 						{
 							nextRearm = DateTime.Now + TimeSpan.FromSeconds(SoundRearmSeconds);
 							PlaySound(soundPath);
 						}
+					}
+					else
+					{
+						rearmTimer.Stop();
 					}
 				});
 			}
@@ -1677,7 +1644,6 @@ public class gbPANAKanal : Indicator
 
 
 }
-
 
 public enum gbPANAKanal_MarkerRenderingMethod
 {
@@ -1709,7 +1675,6 @@ public class gbPANAKanal_SoundConverter : TypeConverter
 }
 }
 
-
 #region NinjaScript generated code. Neither change nor remove.
 
 namespace NinjaTrader.NinjaScript.Indicators
@@ -1721,11 +1686,12 @@ namespace NinjaTrader.NinjaScript.Indicators
 		{
 			return gbPANAKanal(Input, period, factor, middlePeriod, signalBreakSplit, signalPullbackFindingPeriod);
 		}
+
 		public GreyBeard.KingPanaZilla.gbPANAKanal gbPANAKanal(ISeries<double> input, int period, double factor, int middlePeriod, int signalBreakSplit, int signalPullbackFindingPeriod)
 		{
 			if (cachegbPANAKanal != null)
 				for (int idx = 0; idx < cachegbPANAKanal.Length; idx++)
-					if (cachegbPANAKanal[idx].Period == period && cachegbPANAKanal[idx].Factor == factor && cachegbPANAKanal[idx].MiddlePeriod == middlePeriod && cachegbPANAKanal[idx].SignalBreakSplit == signalBreakSplit && cachegbPANAKanal[idx].SignalPullbackFindingPeriod == signalPullbackFindingPeriod && cachegbPANAKanal[idx].EqualsInput(input))
+					if (cachegbPANAKanal[idx] != null && cachegbPANAKanal[idx].Period == period && cachegbPANAKanal[idx].Factor == factor && cachegbPANAKanal[idx].MiddlePeriod == middlePeriod && cachegbPANAKanal[idx].SignalBreakSplit == signalBreakSplit && cachegbPANAKanal[idx].SignalPullbackFindingPeriod == signalPullbackFindingPeriod && cachegbPANAKanal[idx].EqualsInput(input))
 						return cachegbPANAKanal[idx];
 			return CacheIndicator<GreyBeard.KingPanaZilla.gbPANAKanal>(new GreyBeard.KingPanaZilla.gbPANAKanal(){ Period = period, Factor = factor, MiddlePeriod = middlePeriod, SignalBreakSplit = signalBreakSplit, SignalPullbackFindingPeriod = signalPullbackFindingPeriod }, input, ref cachegbPANAKanal);
 		}
@@ -1740,7 +1706,24 @@ namespace NinjaTrader.NinjaScript.MarketAnalyzerColumns
 		{
 			return indicator.gbPANAKanal(Input, period, factor, middlePeriod, signalBreakSplit, signalPullbackFindingPeriod);
 		}
-		public Indicators.GreyBeard.KingPanaZilla.gbPANAKanal gbPANAKanal(ISeries<double> input, int period, double factor, int middlePeriod, int signalBreakSplit, int signalPullbackFindingPeriod)
+
+		public Indicators.GreyBeard.KingPanaZilla.gbPANAKanal gbPANAKanal(ISeries<double> input , int period, double factor, int middlePeriod, int signalBreakSplit, int signalPullbackFindingPeriod)
+		{
+			return indicator.gbPANAKanal(input, period, factor, middlePeriod, signalBreakSplit, signalPullbackFindingPeriod);
+		}
+	}
+}
+
+namespace NinjaTrader.NinjaScript.Strategies
+{
+	public partial class Strategy : NinjaTrader.Gui.NinjaScript.StrategyRenderBase
+	{
+		public Indicators.GreyBeard.KingPanaZilla.gbPANAKanal gbPANAKanal(int period, double factor, int middlePeriod, int signalBreakSplit, int signalPullbackFindingPeriod)
+		{
+			return indicator.gbPANAKanal(Input, period, factor, middlePeriod, signalBreakSplit, signalPullbackFindingPeriod);
+		}
+
+		public Indicators.GreyBeard.KingPanaZilla.gbPANAKanal gbPANAKanal(ISeries<double> input , int period, double factor, int middlePeriod, int signalBreakSplit, int signalPullbackFindingPeriod)
 		{
 			return indicator.gbPANAKanal(input, period, factor, middlePeriod, signalBreakSplit, signalPullbackFindingPeriod);
 		}
