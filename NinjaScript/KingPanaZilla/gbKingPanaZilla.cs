@@ -19,9 +19,9 @@ using NinjaTrader.NinjaScript.Indicators.GreyBeard.KingPanaZilla;
 // ============================================================
 //  gbKingPanaZilla  — GreyBeard composite STRATEGY
 //
-//  Loads gbKingOrderBlock, gbPANAKanal, and gbThunderZilla via
-//  AddChartIndicator so their signals drive trade entries AND
-//  their full visual drawings appear on chart.
+//  Loads gbKingOrderBlock, gbPANAKanal, and gbThunderZilla via the
+//  indicator factory methods + AddChartIndicator so their signals
+//  drive trade entries AND their visual drawings appear on chart.
 //
 //  Three cross-system signal combinations:
 //
@@ -38,7 +38,7 @@ using NinjaTrader.NinjaScript.Indicators.GreyBeard.KingPanaZilla;
 //    gbKingOrderBlock Signal_Trade: 1=Return, 2=Breakout  (mirror negative)
 // ============================================================
 
-namespace NinjaTrader.NinjaScript.Strategies
+namespace NinjaTrader.NinjaScript.Strategies.GreyBeard
 {
 [CategoryOrder("General",                    1000010)]
 [CategoryOrder("Signal Selection",           1000015)]
@@ -129,43 +129,38 @@ public class gbKingPanaZilla : Strategy
 			break;
 
 		case State.Configure:
-			// AddChartIndicator handles the full indicator lifecycle (Configure →
-			// DataLoaded) and registers each child for rendering; signal values
-			// are then readable from the indicator's output series in OnBarUpdate.
-			_king = new gbKingOrderBlock
-			{
-				SwingPointNeighborhood               = King_SwingPointNeighborhood,
-				ImbalanceQualifying                  = King_ImbalanceQualifying,
-				OrderBlockFindingBosChochPeriod      = King_OrderBlockFindingBosChochPeriod,
-				OrderBlockAge                        = King_OrderBlockAge,
-				OrderBlocksSameDirectionOffset       = King_OrderBlocksSameDirectionOffset,
-				OrderBlocksDifferenceDirectionOffset = King_OrderBlocksDifferenceDirectionOffset,
-				SignalTradeQuantityPerOrderBlock      = King_SignalTradeQuantityPerOrderBlock,
-				SignalTradeSplitBars                 = King_SignalTradeSplitBars
-			};
+			// Factory methods (defined in the generated section below) delegate to
+			// indicator.gbXxx() → CacheIndicator<T>, which properly wires each child
+			// into NT8's bar-data pipeline so its series are populated on every bar.
+			// AddChartIndicator then registers each child for chart rendering.
+			_king = gbKingOrderBlock(
+				King_SwingPointNeighborhood,
+				King_ImbalanceQualifying,
+				King_OrderBlockFindingBosChochPeriod,
+				King_OrderBlockAge,
+				King_OrderBlocksSameDirectionOffset,
+				King_OrderBlocksDifferenceDirectionOffset,
+				King_SignalTradeQuantityPerOrderBlock,
+				King_SignalTradeSplitBars);
 			AddChartIndicator(_king);
 
-			_pana = new gbPANAKanal
-			{
-				Period                     = Pana_Period,
-				Factor                     = Pana_Factor,
-				MiddlePeriod               = Pana_MiddlePeriod,
-				SignalBreakSplit            = Pana_SignalBreakSplit,
-				SignalPullbackFindingPeriod = Pana_SignalPullbackFindingPeriod
-			};
+			_pana = gbPANAKanal(
+				Pana_Period,
+				Pana_Factor,
+				Pana_MiddlePeriod,
+				Pana_SignalBreakSplit,
+				Pana_SignalPullbackFindingPeriod);
 			AddChartIndicator(_pana);
 
-			_thunder = new gbThunderZilla
-			{
-				TrendMAType              = Thunder_TrendMAType,
-				TrendPeriod              = Thunder_TrendPeriod,
-				TrendSmoothingEnabled    = Thunder_TrendSmoothingEnabled,
-				TrendSmoothingMethod     = Thunder_TrendSmoothingMethod,
-				TrendSmoothingPeriod     = Thunder_TrendSmoothingPeriod,
-				StopOffsetMultiplierStop = Thunder_StopOffsetMultiplierStop,
-				SignalQuantityPerFlat    = Thunder_SignalQuantityPerFlat,
-				SignalQuantityPerTrend   = Thunder_SignalQuantityPerTrend
-			};
+			_thunder = gbThunderZilla(
+				Thunder_TrendMAType,
+				Thunder_TrendPeriod,
+				Thunder_TrendSmoothingEnabled,
+				Thunder_TrendSmoothingMethod,
+				Thunder_TrendSmoothingPeriod,
+				Thunder_StopOffsetMultiplierStop,
+				Thunder_SignalQuantityPerFlat,
+				Thunder_SignalQuantityPerTrend);
 			AddChartIndicator(_thunder);
 			break;
 
@@ -410,21 +405,46 @@ public class gbKingPanaZilla : Strategy
 
 } // class gbKingPanaZilla
 
-} // namespace NinjaTrader.NinjaScript.Strategies
+} // namespace NinjaTrader.NinjaScript.Strategies.GreyBeard
 
 #region NinjaScript generated code. Neither change nor remove.
 
-// Strategy file: no indicator factory method injections needed here.
-// Each child indicator file (gbKingOrderBlock.cs, gbPANAKanal.cs,
-// gbThunderZilla.cs) carries its own generated section covering all
-// three partial classes (Indicator, MarketAnalyzerColumn, Strategy).
-// This file uses CacheIndicator<T> directly — NT8's scanner does not
-// inject factory declarations for generic CacheIndicator calls.
+// Strategy factories for the three child indicators are consolidated here.
+// The indicator files (gbKingOrderBlock.cs, gbPANAKanal.cs, gbThunderZilla.cs)
+// carry only Indicator + MarketAnalyzerColumn factories in their generated
+// sections — Strategy factories live exclusively in this file so there are
+// no duplicate partial-class method definitions across the compiled set.
 
 namespace NinjaTrader.NinjaScript.Strategies
 {
 	public partial class Strategy : NinjaTrader.Gui.NinjaScript.StrategyRenderBase
 	{
+		public Indicators.GreyBeard.KingPanaZilla.gbKingOrderBlock gbKingOrderBlock(int swingPointNeighborhood, int imbalanceQualifying, int orderBlockFindingBosChochPeriod, int orderBlockAge, int orderBlocksSameDirectionOffset, int orderBlocksDifferenceDirectionOffset, int signalTradeQuantityPerOrderBlock, int signalTradeSplitBars)
+		{
+			return indicator.gbKingOrderBlock(Input, swingPointNeighborhood, imbalanceQualifying, orderBlockFindingBosChochPeriod, orderBlockAge, orderBlocksSameDirectionOffset, orderBlocksDifferenceDirectionOffset, signalTradeQuantityPerOrderBlock, signalTradeSplitBars);
+		}
+		public Indicators.GreyBeard.KingPanaZilla.gbKingOrderBlock gbKingOrderBlock(ISeries<double> input, int swingPointNeighborhood, int imbalanceQualifying, int orderBlockFindingBosChochPeriod, int orderBlockAge, int orderBlocksSameDirectionOffset, int orderBlocksDifferenceDirectionOffset, int signalTradeQuantityPerOrderBlock, int signalTradeSplitBars)
+		{
+			return indicator.gbKingOrderBlock(input, swingPointNeighborhood, imbalanceQualifying, orderBlockFindingBosChochPeriod, orderBlockAge, orderBlocksSameDirectionOffset, orderBlocksDifferenceDirectionOffset, signalTradeQuantityPerOrderBlock, signalTradeSplitBars);
+		}
+
+		public Indicators.GreyBeard.KingPanaZilla.gbPANAKanal gbPANAKanal(int period, double factor, int middlePeriod, int signalBreakSplit, int signalPullbackFindingPeriod)
+		{
+			return indicator.gbPANAKanal(Input, period, factor, middlePeriod, signalBreakSplit, signalPullbackFindingPeriod);
+		}
+		public Indicators.GreyBeard.KingPanaZilla.gbPANAKanal gbPANAKanal(ISeries<double> input, int period, double factor, int middlePeriod, int signalBreakSplit, int signalPullbackFindingPeriod)
+		{
+			return indicator.gbPANAKanal(input, period, factor, middlePeriod, signalBreakSplit, signalPullbackFindingPeriod);
+		}
+
+		public NinjaTrader.NinjaScript.Indicators.GreyBeard.KingPanaZilla.gbThunderZilla gbThunderZilla(global::gbThunderZillaMAType trendMAType, int trendPeriod, bool trendSmoothingEnabled, global::gbThunderZillaMAType trendSmoothingMethod, int trendSmoothingPeriod, double stopOffsetMultiplierStop, int signalQuantityPerFlat, int signalQuantityPerTrend)
+		{
+			return indicator.gbThunderZilla(Input, trendMAType, trendPeriod, trendSmoothingEnabled, trendSmoothingMethod, trendSmoothingPeriod, stopOffsetMultiplierStop, signalQuantityPerFlat, signalQuantityPerTrend);
+		}
+		public NinjaTrader.NinjaScript.Indicators.GreyBeard.KingPanaZilla.gbThunderZilla gbThunderZilla(ISeries<double> input, global::gbThunderZillaMAType trendMAType, int trendPeriod, bool trendSmoothingEnabled, global::gbThunderZillaMAType trendSmoothingMethod, int trendSmoothingPeriod, double stopOffsetMultiplierStop, int signalQuantityPerFlat, int signalQuantityPerTrend)
+		{
+			return indicator.gbThunderZilla(input, trendMAType, trendPeriod, trendSmoothingEnabled, trendSmoothingMethod, trendSmoothingPeriod, stopOffsetMultiplierStop, signalQuantityPerFlat, signalQuantityPerTrend);
+		}
 	}
 }
 
