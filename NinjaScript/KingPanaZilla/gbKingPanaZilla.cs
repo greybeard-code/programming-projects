@@ -412,15 +412,26 @@ public class gbKingPanaZilla : Strategy
 
 #region NinjaScript generated code. Neither change nor remove.
 
-// NT8's compiler injects Strategy factory methods here when it detects the
-// gbKingOrderBlock / gbPANAKanal / gbThunderZilla calls in Configure above.
-// The indicator files carry no Strategy partial-class factories, so there is
-// exactly one definition of each factory method across the compiled set.
+// gbKingOrderBlock and gbPANAKanal factory methods are injected here by NT8's
+// compiler when it detects the bare calls in Configure above.
+//
+// gbThunderZilla cannot be auto-injected: its parameter type (gbThunderZillaMAType)
+// lives at global scope (global::) and NT8's scanner cannot resolve it.  The two
+// gbThunderZilla overloads are therefore written manually below.  NT8 will continue
+// to fail injection silently, leaving this manual copy as the only definition.
 
 namespace NinjaTrader.NinjaScript.Strategies
 {
 	public partial class Strategy : NinjaTrader.Gui.NinjaScript.StrategyRenderBase
 	{
+		public NinjaTrader.NinjaScript.Indicators.GreyBeard.KingPanaZilla.gbThunderZilla gbThunderZilla(global::gbThunderZillaMAType trendMAType, int trendPeriod, bool trendSmoothingEnabled, global::gbThunderZillaMAType trendSmoothingMethod, int trendSmoothingPeriod, double stopOffsetMultiplierStop, int signalQuantityPerFlat, int signalQuantityPerTrend)
+		{
+			return indicator.gbThunderZilla(Input, trendMAType, trendPeriod, trendSmoothingEnabled, trendSmoothingMethod, trendSmoothingPeriod, stopOffsetMultiplierStop, signalQuantityPerFlat, signalQuantityPerTrend);
+		}
+		public NinjaTrader.NinjaScript.Indicators.GreyBeard.KingPanaZilla.gbThunderZilla gbThunderZilla(ISeries<double> input, global::gbThunderZillaMAType trendMAType, int trendPeriod, bool trendSmoothingEnabled, global::gbThunderZillaMAType trendSmoothingMethod, int trendSmoothingPeriod, double stopOffsetMultiplierStop, int signalQuantityPerFlat, int signalQuantityPerTrend)
+		{
+			return indicator.gbThunderZilla(input, trendMAType, trendPeriod, trendSmoothingEnabled, trendSmoothingMethod, trendSmoothingPeriod, stopOffsetMultiplierStop, signalQuantityPerFlat, signalQuantityPerTrend);
+		}
 	}
 }
 
