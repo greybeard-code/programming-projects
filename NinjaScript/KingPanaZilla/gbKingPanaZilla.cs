@@ -41,6 +41,7 @@ using NinjaTrader.NinjaScript.Indicators.GreyBeard.KingPanaZilla;
 namespace NinjaTrader.NinjaScript.Strategies.GreyBeard
 {
 [CategoryOrder("General",                    1000010)]
+[CategoryOrder("Order Management",           1000013)]
 [CategoryOrder("Signal Selection",           1000015)]
 [CategoryOrder("KingOrderBlock Parameters",  1000020)]
 [CategoryOrder("PANAKanal Parameters",       1000030)]
@@ -53,6 +54,10 @@ public class gbKingPanaZilla : Strategy
 	private gbKingOrderBlock _king;
 	private gbPANAKanal      _pana;
 	private gbThunderZilla   _thunder;
+
+	// ---- ATM strategy tracking ------------------------------
+	private string _atmStrategyId   = string.Empty;
+	private string _atmEntryOrderId = string.Empty;
 
 	// ---- CSV logging ----------------------------------------
 	private StreamWriter _logWriter;
@@ -83,6 +88,9 @@ public class gbKingPanaZilla : Strategy
 			StopTargetHandling                         = StopTargetHandling.PerEntryExecution;
 			BarsRequiredToTrade                        = 20;
 			IsInstantiatedOnEachOptimizationIteration  = true;
+
+			// ---- Order management defaults ------------------
+			AtmStrategyName = string.Empty;
 
 			// ---- Signal selection defaults ------------------
 			TradePanaZillia = true;
@@ -180,9 +188,11 @@ public class gbKingPanaZilla : Strategy
 			break;
 
 		case State.Terminated:
-			_king    = null;
-			_pana    = null;
-			_thunder = null;
+			_king            = null;
+			_pana            = null;
+			_thunder         = null;
+			_atmStrategyId   = string.Empty;
+			_atmEntryOrderId = string.Empty;
 			if (_logWriter != null)
 			{
 				_logWriter.Flush();
@@ -221,21 +231,54 @@ public class gbKingPanaZilla : Strategy
 		Brush sellBrush = pzSell ? PanaZilliaBrush : kzSell ? KingZillaBrush : KingPanaBrush;
 
 		// ---- Order entries -----------------------------------
+		// ATM path: only available in realtime; ATM template manages stops/targets.
+		// Managed path: built-in EnterLong/EnterShort with strategy position tracking.
+		bool useAtm = !string.IsNullOrEmpty(AtmStrategyName) && State == State.Realtime;
+
 		if (anyBuy && TradeLong)
 		{
-			if (Position.MarketPosition == MarketPosition.Short)
-				ExitShort("ExitShort", "EnterLong");
-			EnterLong("EnterLong");
 			Draw.ArrowUp(this, "KPZ_buy_" + CurrentBar, false,
 				0, Low[0] - offset, buyBrush);
+			if (useAtm)
+			{
+				// Close existing ATM position before entering the opposite direction.
+				if (_atmStrategyId.Length > 0
+					&& GetAtmStrategyMarketPosition(_atmStrategyId) != MarketPosition.Flat)
+					AtmStrategyClose(_atmStrategyId);
+				_atmStrategyId   = GetAtmStrategyUniqueId();
+				_atmEntryOrderId = GetAtmStrategyUniqueId();
+				AtmStrategyCreate(OrderAction.Buy, OrderType.Market, 0, 0,
+					TimeInForce.Gtc, _atmEntryOrderId, AtmStrategyName, _atmStrategyId,
+					out bool _);
+			}
+			else
+			{
+				if (Position.MarketPosition == MarketPosition.Short)
+					ExitShort("ExitShort", "EnterLong");
+				EnterLong("EnterLong");
+			}
 		}
 		else if (anySell && TradeShort)
 		{
-			if (Position.MarketPosition == MarketPosition.Long)
-				ExitLong("ExitLong", "EnterShort");
-			EnterShort("EnterShort");
 			Draw.ArrowDown(this, "KPZ_sell_" + CurrentBar, false,
 				0, High[0] + offset, sellBrush);
+			if (useAtm)
+			{
+				if (_atmStrategyId.Length > 0
+					&& GetAtmStrategyMarketPosition(_atmStrategyId) != MarketPosition.Flat)
+					AtmStrategyClose(_atmStrategyId);
+				_atmStrategyId   = GetAtmStrategyUniqueId();
+				_atmEntryOrderId = GetAtmStrategyUniqueId();
+				AtmStrategyCreate(OrderAction.Sell, OrderType.Market, 0, 0,
+					TimeInForce.Gtc, _atmEntryOrderId, AtmStrategyName, _atmStrategyId,
+					out bool _);
+			}
+			else
+			{
+				if (Position.MarketPosition == MarketPosition.Long)
+					ExitLong("ExitLong", "EnterShort");
+				EnterShort("EnterShort");
+			}
 		}
 
 		// ---- CSV log (any signal fires) ----------------------
@@ -256,6 +299,13 @@ public class gbKingPanaZilla : Strategy
 
 	// =========================================================
 	#region Properties
+
+	// ---- Order management -----------------------------------
+	[Display(Name = "ATM Strategy Name", Order = 0, GroupName = "Order Management",
+		Description = "Name of the ATM Strategy template to apply on each entry signal. "
+		            + "Leave blank to use built-in managed entries (EnterLong / EnterShort). "
+		            + "ATM mode only fires in realtime; backtesting always uses managed entries.")]
+	public string AtmStrategyName { get; set; }
 
 	// ---- Signal selection -----------------------------------
 	[Display(Name = "Trade PanaZillia", Order = 0, GroupName = "Signal Selection",
