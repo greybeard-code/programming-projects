@@ -20,8 +20,8 @@ using NinjaTrader.NinjaScript.Indicators.GreyBeard.KingPanaZilla;
 //  gbKingPanaZilla  — GreyBeard composite STRATEGY
 //
 //  Loads gbKingOrderBlock, gbPANAKanal, and gbThunderZilla via
-//  CacheIndicator<T> + AddChartIndicator so their signals drive
-//  trade entries AND their full visual drawings appear on chart.
+//  AddChartIndicator so their signals drive trade entries AND
+//  their full visual drawings appear on chart.
 //
 //  Three cross-system signal combinations:
 //
@@ -50,15 +50,9 @@ namespace NinjaTrader.NinjaScript.Strategies
 public class gbKingPanaZilla : Strategy
 {
 	// ---- child indicator references -------------------------
-	// CacheIndicator<T> is used (not named factory methods) so NT8's scanner
-	// does not inject duplicate factory declarations into this file's
-	// generated-code section when all four files are compiled together.
-	private gbKingOrderBlock   _king;
-	private gbPANAKanal        _pana;
-	private gbThunderZilla     _thunder;
-	private gbKingOrderBlock[] _cacheKing;
-	private gbPANAKanal[]      _cachePana;
-	private gbThunderZilla[]   _cacheThunder;
+	private gbKingOrderBlock _king;
+	private gbPANAKanal      _pana;
+	private gbThunderZilla   _thunder;
 
 	// ---- CSV logging ----------------------------------------
 	private StreamWriter _logWriter;
@@ -135,49 +129,43 @@ public class gbKingPanaZilla : Strategy
 			break;
 
 		case State.Configure:
-			// CacheIndicator<T> wires each child into the data pipeline
-			// (OnBarUpdate). AddChartIndicator adds each to the chart panel
-			// so its OnRender fires and all visual drawings appear on screen.
-			_king = CacheIndicator<gbKingOrderBlock>(
-				new gbKingOrderBlock
-				{
-					SwingPointNeighborhood               = King_SwingPointNeighborhood,
-					ImbalanceQualifying                  = King_ImbalanceQualifying,
-					OrderBlockFindingBosChochPeriod      = King_OrderBlockFindingBosChochPeriod,
-					OrderBlockAge                        = King_OrderBlockAge,
-					OrderBlocksSameDirectionOffset       = King_OrderBlocksSameDirectionOffset,
-					OrderBlocksDifferenceDirectionOffset = King_OrderBlocksDifferenceDirectionOffset,
-					SignalTradeQuantityPerOrderBlock      = King_SignalTradeQuantityPerOrderBlock,
-					SignalTradeSplitBars                 = King_SignalTradeSplitBars
-				},
-				Input, ref _cacheKing);
+			// AddChartIndicator handles the full indicator lifecycle (Configure →
+			// DataLoaded) and registers each child for rendering; signal values
+			// are then readable from the indicator's output series in OnBarUpdate.
+			_king = new gbKingOrderBlock
+			{
+				SwingPointNeighborhood               = King_SwingPointNeighborhood,
+				ImbalanceQualifying                  = King_ImbalanceQualifying,
+				OrderBlockFindingBosChochPeriod      = King_OrderBlockFindingBosChochPeriod,
+				OrderBlockAge                        = King_OrderBlockAge,
+				OrderBlocksSameDirectionOffset       = King_OrderBlocksSameDirectionOffset,
+				OrderBlocksDifferenceDirectionOffset = King_OrderBlocksDifferenceDirectionOffset,
+				SignalTradeQuantityPerOrderBlock      = King_SignalTradeQuantityPerOrderBlock,
+				SignalTradeSplitBars                 = King_SignalTradeSplitBars
+			};
 			AddChartIndicator(_king);
 
-			_pana = CacheIndicator<gbPANAKanal>(
-				new gbPANAKanal
-				{
-					Period                     = Pana_Period,
-					Factor                     = Pana_Factor,
-					MiddlePeriod               = Pana_MiddlePeriod,
-					SignalBreakSplit            = Pana_SignalBreakSplit,
-					SignalPullbackFindingPeriod = Pana_SignalPullbackFindingPeriod
-				},
-				Input, ref _cachePana);
+			_pana = new gbPANAKanal
+			{
+				Period                     = Pana_Period,
+				Factor                     = Pana_Factor,
+				MiddlePeriod               = Pana_MiddlePeriod,
+				SignalBreakSplit            = Pana_SignalBreakSplit,
+				SignalPullbackFindingPeriod = Pana_SignalPullbackFindingPeriod
+			};
 			AddChartIndicator(_pana);
 
-			_thunder = CacheIndicator<gbThunderZilla>(
-				new gbThunderZilla
-				{
-					TrendMAType              = Thunder_TrendMAType,
-					TrendPeriod              = Thunder_TrendPeriod,
-					TrendSmoothingEnabled    = Thunder_TrendSmoothingEnabled,
-					TrendSmoothingMethod     = Thunder_TrendSmoothingMethod,
-					TrendSmoothingPeriod     = Thunder_TrendSmoothingPeriod,
-					StopOffsetMultiplierStop = Thunder_StopOffsetMultiplierStop,
-					SignalQuantityPerFlat    = Thunder_SignalQuantityPerFlat,
-					SignalQuantityPerTrend   = Thunder_SignalQuantityPerTrend
-				},
-				Input, ref _cacheThunder);
+			_thunder = new gbThunderZilla
+			{
+				TrendMAType              = Thunder_TrendMAType,
+				TrendPeriod              = Thunder_TrendPeriod,
+				TrendSmoothingEnabled    = Thunder_TrendSmoothingEnabled,
+				TrendSmoothingMethod     = Thunder_TrendSmoothingMethod,
+				TrendSmoothingPeriod     = Thunder_TrendSmoothingPeriod,
+				StopOffsetMultiplierStop = Thunder_StopOffsetMultiplierStop,
+				SignalQuantityPerFlat    = Thunder_SignalQuantityPerFlat,
+				SignalQuantityPerTrend   = Thunder_SignalQuantityPerTrend
+			};
 			AddChartIndicator(_thunder);
 			break;
 
@@ -194,12 +182,9 @@ public class gbKingPanaZilla : Strategy
 			break;
 
 		case State.Terminated:
-			_king         = null;
-			_pana         = null;
-			_thunder      = null;
-			_cacheKing    = null;
-			_cachePana    = null;
-			_cacheThunder = null;
+			_king    = null;
+			_pana    = null;
+			_thunder = null;
 			if (_logWriter != null)
 			{
 				_logWriter.Flush();
