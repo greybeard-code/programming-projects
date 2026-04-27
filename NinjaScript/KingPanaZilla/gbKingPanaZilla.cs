@@ -129,14 +129,14 @@ public class gbKingPanaZilla : Strategy
 			break;
 
 		case State.Configure:
-			// Call through `indicator.gbXxx(Input, ...)` so NT8's source scanner
-			// does not detect a bare factory-method call and inject duplicate
-			// declarations into the generated section.  The Indicator partial-class
-			// factory (defined in each child's generated section) delegates to
-			// CacheIndicator<T>, which properly wires BarsArray, Input, and
-			// OnBarUpdate before any bar arrives.  AddChartIndicator then registers
-			// each child for chart rendering so its visual drawings appear.
-			_king = indicator.gbKingOrderBlock(Input,
+			// NT8 injects Strategy factory methods into the generated section below
+			// when it compiles this file and detects these calls.  Those factories
+			// delegate to the Indicator-class factory → CacheIndicator<T>, which
+			// properly wires each child's BarsArray, Input, and OnBarUpdate pipeline.
+			// AddChartIndicator then registers each child for chart rendering.
+			// The indicator files carry NO Strategy factories, so there is exactly
+			// one definition of each factory method across the compiled set.
+			_king = gbKingOrderBlock(
 				King_SwingPointNeighborhood,
 				King_ImbalanceQualifying,
 				King_OrderBlockFindingBosChochPeriod,
@@ -147,7 +147,7 @@ public class gbKingPanaZilla : Strategy
 				King_SignalTradeSplitBars);
 			AddChartIndicator(_king);
 
-			_pana = indicator.gbPANAKanal(Input,
+			_pana = gbPANAKanal(
 				Pana_Period,
 				Pana_Factor,
 				Pana_MiddlePeriod,
@@ -155,7 +155,7 @@ public class gbKingPanaZilla : Strategy
 				Pana_SignalPullbackFindingPeriod);
 			AddChartIndicator(_pana);
 
-			_thunder = indicator.gbThunderZilla(Input,
+			_thunder = gbThunderZilla(
 				Thunder_TrendMAType,
 				Thunder_TrendPeriod,
 				Thunder_TrendSmoothingEnabled,
@@ -412,9 +412,10 @@ public class gbKingPanaZilla : Strategy
 
 #region NinjaScript generated code. Neither change nor remove.
 
-// Configure uses indicator.gbXxx(Input, ...) rather than bare factory-method
-// calls, so NT8's source scanner never detects a factory trigger and never
-// injects declarations here.  This section stays intentionally empty.
+// NT8's compiler injects Strategy factory methods here when it detects the
+// gbKingOrderBlock / gbPANAKanal / gbThunderZilla calls in Configure above.
+// The indicator files carry no Strategy partial-class factories, so there is
+// exactly one definition of each factory method across the compiled set.
 
 namespace NinjaTrader.NinjaScript.Strategies
 {
