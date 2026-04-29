@@ -6,98 +6,98 @@ using System.IO;
 using System.Text;
 using System.Windows.Media;
 using System.Xml.Serialization;
-using NinjaTrader.Cbi;
 using NinjaTrader.Core;
 using NinjaTrader.Gui;
 using NinjaTrader.Gui.Chart;
 using NinjaTrader.Gui.NinjaScript;
-using NinjaTrader.NinjaScript;
 using NinjaTrader.NinjaScript.DrawingTools;
-using NinjaTrader.NinjaScript.Indicators.GreyBeard.KingPanaZilla;
 #endregion
 
 // ============================================================
-//  gbKingPanaZilla  — GreyBeard composite STRATEGY
+//  gbKingPanaZilla  — GreyBeard composite signal indicator
 //
-//  Loads gbKingOrderBlock, gbPANAKanal, and gbThunderZilla via the
-//  indicator factory methods + AddChartIndicator so their signals
-//  drive trade entries AND their visual drawings appear on chart.
+//  Loads gbKingOrderBlock, gbPANAKanal, and gbThunderZilla and
+//  emits three cross-system trade signal plots:
 //
-//  Three cross-system signal combinations:
+//  PanaZillia_Trade  — PanaKanal >= 2  AND Thunder >= 3  →  +1
+//                    — PanaKanal <= -2 AND Thunder <= -3 →  -1
+//  KingZilla_Trade   — Thunder  >= 3   AND KingOrder >= 1  →  +1
+//                    — Thunder  <= -3  AND KingOrder <= -1 →  -1
+//  KingPana_Trade    — PanaKanal >= 2  AND KingOrder >= 1  →  +1
+//                    — PanaKanal <= -2 AND KingOrder <= -1 →  -1
 //
-//  PanaZillia  — PanaKanal >= 2  AND ThunderZilla >= 3
-//  KingZilla   — ThunderZilla >= 3  AND KingOrderBlock >= 1
-//  KingPana    — PanaKanal >= 2  AND KingOrderBlock >= 1
+//  Plot values: +1 = buy signal, -1 = sell signal, 0 = no signal.
 //
-//  Any enabled BUY combination  → EnterLong  (exit prior Short)
-//  Any enabled SELL combination → EnterShort (exit prior Long)
+//  gbPANAKanal Signal_Trade:
+//    1 = Trend Start Up,   -1 = Trend Start Down
+//    2 = Break Up,         -2 = Break Down
+//    3 = Pullback Bullish, -3 = Pullback Bearish
 //
-//  Signal scale reference:
-//    gbPANAKanal Signal_Trade   : 1=Trend Start, 2=Break, 3=Pullback  (mirror negative)
-//    gbThunderZilla Signal_Trade: 1=Trend Start, 2=Slowdown, 3=Pullback, 4=MoveStop (mirror)
-//    gbKingOrderBlock Signal_Trade: 1=Return, 2=Breakout  (mirror negative)
+//  gbThunderZilla Signal_Trade:
+//    1 = Uptrend Start,    -1 = Downtrend Start
+//    2 = Downtrend Slowdn, -2 = Uptrend Slowdown
+//    3 = Uptrend Pullback, -3 = Downtrend Pullback
+//    4 = Move Stop Up,     -4 = Move Stop Down
+//
+//  gbKingOrderBlock Signal_Trade:
+//    1 = Return Bullish,   -1 = Return Bearish
+//    2 = Breakout Bullish, -2 = Breakout Bearish
 // ============================================================
 
-namespace NinjaTrader.NinjaScript.Strategies.GreyBeard
+namespace NinjaTrader.NinjaScript.Indicators.GreyBeard.KingPanaZilla
 {
 [CategoryOrder("General",                    1000010)]
-[CategoryOrder("Order Management",           1000013)]
-[CategoryOrder("Signal Selection",           1000015)]
 [CategoryOrder("KingOrderBlock Parameters",  1000020)]
 [CategoryOrder("PANAKanal Parameters",       1000030)]
 [CategoryOrder("ThunderZilla Parameters",    1000040)]
 [CategoryOrder("Visuals",                    1000050)]
 [CategoryOrder("Logging",                    1000060)]
-public class gbKingPanaZilla : Strategy
+public class gbKingPanaZilla : Indicator
 {
 	// ---- child indicator references -------------------------
-	private gbKingOrderBlock _king;
-	private gbPANAKanal      _pana;
-	private gbThunderZilla   _thunder;
-
-	// ---- ATM strategy tracking ------------------------------
-	private string _atmStrategyId   = string.Empty;
-	private string _atmEntryOrderId = string.Empty;
+	private GreyBeard.KingPanaZilla.gbKingOrderBlock _king;
+	private GreyBeard.KingPanaZilla.gbPANAKanal      _pana;
+	private GreyBeard.KingPanaZilla.gbThunderZilla   _thunder;
 
 	// ---- CSV logging ----------------------------------------
 	private StreamWriter _logWriter;
 
-	// =========================================================
+	// ---- signal output series (Values[0..2]) ----------------
+	// +1 = buy signal, -1 = sell signal, 0 = no signal
+	[Browsable(false)]
+	[XmlIgnore]
+	public NinjaTrader.NinjaScript.Series<double> PanaZillia_Trade => Values[0];
+
+	[Browsable(false)]
+	[XmlIgnore]
+	public NinjaTrader.NinjaScript.Series<double> KingZilla_Trade  => Values[1];
+
+	[Browsable(false)]
+	[XmlIgnore]
+	public NinjaTrader.NinjaScript.Series<double> KingPana_Trade   => Values[2];
+
+    public override string DisplayName
+    {
+        get { return " "; }
+    }
+    // =========================================================
+        
 	protected override void OnStateChange()
 	{
 		switch (State)
 		{
 		case State.SetDefaults:
-			Description = "Composite strategy — combines gbKingOrderBlock, gbPANAKanal, and gbThunderZilla "
-			            + "signals into three cross-system entry signals. Child indicator drawings are "
-			            + "rendered on the chart via AddChartIndicator.";
-			Name                                       = "gbKingPanaZilla";
-			Calculate                                  = Calculate.OnBarClose;
-			EntriesPerDirection                        = 1;
-			EntryHandling                              = EntryHandling.AllEntries;
-			IsExitOnSessionCloseStrategy               = true;
-			ExitOnSessionCloseSeconds                  = 30;
-			IsFillLimitOnTouch                         = false;
-			MaximumBarsLookBack                        = MaximumBarsLookBack.TwoHundredFiftySix;
-			OrderFillResolution                        = OrderFillResolution.Standard;
-			Slippage                                   = 0;
-			StartBehavior                              = StartBehavior.WaitUntilFlat;
-			TimeInForce                                = TimeInForce.Gtc;
-			TraceOrders                                = false;
-			RealtimeErrorHandling                      = RealtimeErrorHandling.StopCancelClose;
-			StopTargetHandling                         = StopTargetHandling.PerEntryExecution;
-			BarsRequiredToTrade                        = 20;
-			IsInstantiatedOnEachOptimizationIteration  = true;
-
-			// ---- Order management defaults ------------------
-			AtmStrategyName = string.Empty;
-
-			// ---- Signal selection defaults ------------------
-			TradePanaZillia = true;
-			TradeKingZilla  = true;
-			TradeKingPana   = true;
-			TradeLong       = true;
-			TradeShort      = true;
+			Description              = "Composite signal indicator — combines gbKingOrderBlock, gbPANAKanal, and gbThunderZilla into three cross-system trade signals (+1 buy / -1 sell).";
+			Name                     = "gbKingPanaZilla";
+			Calculate                = Calculate.OnBarClose;
+			IsOverlay                = true;
+			DisplayInDataBox         = true;
+			DrawOnPricePanel         = true;
+			PaintPriceMarkers        = false;
+			ScaleJustification       = ScaleJustification.Right;
+			IsSuspendedWhileInactive = false;
+			BarsRequiredToPlot       = 0;
+			ShowTransparentPlotsInDataBox = true;
 
 			// ---- KingOrderBlock defaults --------------------
 			King_SwingPointNeighborhood              = 5;
@@ -126,24 +126,29 @@ public class gbKingPanaZilla : Strategy
 			Thunder_SignalQuantityPerFlat             = 2;
 			Thunder_SignalQuantityPerTrend            = 999;
 
+			// ---- Logging defaults --------------------------
+			LogEnabled = false;
+
 			// ---- Visual defaults ----------------------------
 			PanaZilliaBrush = Brushes.Cyan;
 			KingZillaBrush  = Brushes.DodgerBlue;
 			KingPanaBrush   = Brushes.LimeGreen;
 			ArrowOffset     = 3;
-
-			// ---- Logging defaults ---------------------------
-			LogEnabled = false;
 			break;
 
 		case State.Configure:
-			// NT8 injects Strategy factory methods into the generated section below
-			// when it compiles this file and detects these calls.  Those factories
-			// delegate to the Indicator-class factory → CacheIndicator<T>, which
-			// properly wires each child's BarsArray, Input, and OnBarUpdate pipeline.
-			// AddChartIndicator then registers each child for chart rendering.
-			// The indicator files carry NO Strategy factories, so there is exactly
-			// one definition of each factory method across the compiled set.
+			// Transparent plots — +1/−1/0 readable from DataBox and other scripts.
+			// Visual arrows are drawn in OnBarUpdate via Draw.ArrowUp/Down.
+			AddPlot(new Stroke(Brushes.Transparent, 1), PlotStyle.Dot, "PanaZillia Trade");
+			AddPlot(new Stroke(Brushes.Transparent, 1), PlotStyle.Dot, "KingZilla Trade");
+			AddPlot(new Stroke(Brushes.Transparent, 1), PlotStyle.Dot, "KingPana Trade");
+			break;
+
+		case State.DataLoaded:
+			// Factory methods (CacheIndicator) add child indicators to NinjaScripts so
+			// their OnBarUpdate runs automatically. AddChartIndicator is Strategy-only;
+			// add the three child indicators directly to the chart if visual rendering
+			// of their zones/stops is also needed.
 			_king = gbKingOrderBlock(
 				King_SwingPointNeighborhood,
 				King_ImbalanceQualifying,
@@ -153,7 +158,6 @@ public class gbKingPanaZilla : Strategy
 				King_OrderBlocksDifferenceDirectionOffset,
 				King_SignalTradeQuantityPerOrderBlock,
 				King_SignalTradeSplitBars);
-			AddChartIndicator(_king);
 
 			_pana = gbPANAKanal(
 				Pana_Period,
@@ -161,7 +165,6 @@ public class gbKingPanaZilla : Strategy
 				Pana_MiddlePeriod,
 				Pana_SignalBreakSplit,
 				Pana_SignalPullbackFindingPeriod);
-			AddChartIndicator(_pana);
 
 			_thunder = gbThunderZilla(
 				Thunder_TrendMAType,
@@ -172,7 +175,6 @@ public class gbKingPanaZilla : Strategy
 				Thunder_StopOffsetMultiplierStop,
 				Thunder_SignalQuantityPerFlat,
 				Thunder_SignalQuantityPerTrend);
-			AddChartIndicator(_thunder);
 			break;
 
 		case State.DataLoaded:
@@ -188,11 +190,9 @@ public class gbKingPanaZilla : Strategy
 			break;
 
 		case State.Terminated:
-			_king            = null;
-			_pana            = null;
-			_thunder         = null;
-			_atmStrategyId   = string.Empty;
-			_atmEntryOrderId = string.Empty;
+			_king    = null;
+			_pana    = null;
+			_thunder = null;
 			if (_logWriter != null)
 			{
 				_logWriter.Flush();
@@ -206,127 +206,79 @@ public class gbKingPanaZilla : Strategy
 	// =========================================================
 	protected override void OnBarUpdate()
 	{
-		if (BarsInProgress != 0) return;
-		if (CurrentBar < BarsRequiredToTrade) return;
-		if (_pana == null || _thunder == null || _king == null) return;
+		if (_pana == null || _thunder == null || _king == null)
+			return;
+
+		// Reset all signal plots each bar
+		Values[0][0] = Values[1][0] = Values[2][0] = 0;
 
 		double pkSig  = _pana.Signal_Trade[0];
 		double tzSig  = _thunder.Signal_Trade[0];
 		double koSig  = _king.Signal_Trade[0];
 		double offset = ArrowOffset * TickSize;
 
-		// ---- Evaluate the three signal combinations ----------
-		bool pzBuy  = TradePanaZillia && pkSig >= 2 && tzSig >= 3;
-		bool pzSell = TradePanaZillia && pkSig <= -2 && tzSig <= -3;
-		bool kzBuy  = TradeKingZilla  && tzSig >= 3 && koSig >= 1;
-		bool kzSell = TradeKingZilla  && tzSig <= -3 && koSig <= -1;
-		bool kpBuy  = TradeKingPana   && pkSig >= 2 && koSig >= 1;
-		bool kpSell = TradeKingPana   && pkSig <= -2 && koSig <= -1;
-
-		bool anyBuy  = pzBuy  || kzBuy  || kpBuy;
-		bool anySell = pzSell || kzSell || kpSell;
-
-		// Priority for arrow colour: PanaZillia > KingZilla > KingPana
-		Brush buyBrush  = pzBuy  ? PanaZilliaBrush : kzBuy  ? KingZillaBrush : KingPanaBrush;
-		Brush sellBrush = pzSell ? PanaZilliaBrush : kzSell ? KingZillaBrush : KingPanaBrush;
-
-		// ---- Order entries -----------------------------------
-		// ATM path: only available in realtime; ATM template manages stops/targets.
-		// Managed path: built-in EnterLong/EnterShort with strategy position tracking.
-		bool useAtm = !string.IsNullOrEmpty(AtmStrategyName) && State == State.Realtime;
-
-		if (anyBuy && TradeLong)
+		// ---- PanaZillia Trade ----
+		if (pkSig >= 2 && tzSig >= 3)
 		{
-			Draw.ArrowUp(this, "KPZ_buy_" + CurrentBar, false,
-				0, Low[0] - offset, buyBrush);
-			if (useAtm)
-			{
-				// Close existing ATM position before entering the opposite direction.
-				if (_atmStrategyId.Length > 0
-					&& GetAtmStrategyMarketPosition(_atmStrategyId) != MarketPosition.Flat)
-					AtmStrategyClose(_atmStrategyId);
-				_atmStrategyId   = GetAtmStrategyUniqueId();
-				_atmEntryOrderId = GetAtmStrategyUniqueId();
-				AtmStrategyCreate(OrderAction.Buy, OrderType.Market, 0, 0,
-					TimeInForce.Gtc, _atmEntryOrderId, AtmStrategyName, _atmStrategyId,
-					out bool _);
-			}
-			else
-			{
-				if (Position.MarketPosition == MarketPosition.Short)
-					ExitShort("ExitShort", "EnterLong");
-				EnterLong("EnterLong");
-			}
+			Values[0][0] = 1;
+			Draw.ArrowUp(this, "KPZ_PZ_" + CurrentBar, false,
+				0, Low[0] - offset, PanaZilliaBrush);
 		}
-		else if (anySell && TradeShort)
+		else if (pkSig <= -2 && tzSig <= -3)
 		{
-			Draw.ArrowDown(this, "KPZ_sell_" + CurrentBar, false,
-				0, High[0] + offset, sellBrush);
-			if (useAtm)
-			{
-				if (_atmStrategyId.Length > 0
-					&& GetAtmStrategyMarketPosition(_atmStrategyId) != MarketPosition.Flat)
-					AtmStrategyClose(_atmStrategyId);
-				_atmStrategyId   = GetAtmStrategyUniqueId();
-				_atmEntryOrderId = GetAtmStrategyUniqueId();
-				AtmStrategyCreate(OrderAction.Sell, OrderType.Market, 0, 0,
-					TimeInForce.Gtc, _atmEntryOrderId, AtmStrategyName, _atmStrategyId,
-					out bool _);
-			}
-			else
-			{
-				if (Position.MarketPosition == MarketPosition.Long)
-					ExitLong("ExitLong", "EnterShort");
-				EnterShort("EnterShort");
-			}
+			Values[0][0] = -1;
+			Draw.ArrowDown(this, "KPZ_PZ_" + CurrentBar, false,
+				0, High[0] + offset, PanaZilliaBrush);
 		}
 
-		// ---- CSV log (any signal fires) ----------------------
-		int pzVal = pzBuy ? 1 : (pzSell ? -1 : 0);
-		int kzVal = kzBuy ? 1 : (kzSell ? -1 : 0);
-		int kpVal = kpBuy ? 1 : (kpSell ? -1 : 0);
-
-		if (_logWriter != null && (pzVal != 0 || kzVal != 0 || kpVal != 0))
+		// ---- KingZilla Trade ----
+		if (tzSig >= 3 && koSig >= 1)
 		{
-			_logWriter.WriteLine(string.Format("{0},\"{1}\",{2},{3},{4},{5}",
-				Time[0].ToString("yyyy-MM-dd HH:mm:ss"),
-				Instrument.FullName,
-				Close[0].ToString(System.Globalization.CultureInfo.InvariantCulture),
-				pzVal, kzVal, kpVal));
-			_logWriter.Flush();
+			Values[1][0] = 1;
+			Draw.ArrowUp(this, "KPZ_KZ_" + CurrentBar, false,
+				0, Low[0] - offset, KingZillaBrush);
+		}
+		else if (tzSig <= -3 && koSig <= -1)
+		{
+			Values[1][0] = -1;
+			Draw.ArrowDown(this, "KPZ_KZ_" + CurrentBar, false,
+				0, High[0] + offset, KingZillaBrush);
+		}
+
+		// ---- KingPana Trade ----
+		if (pkSig >= 2 && koSig >= 1)
+		{
+			Values[2][0] = 1;
+			Draw.ArrowUp(this, "KPZ_KP_" + CurrentBar, false,
+				0, Low[0] - offset, KingPanaBrush);
+		}
+		else if (pkSig <= -2 && koSig <= -1)
+		{
+			Values[2][0] = -1;
+			Draw.ArrowDown(this, "KPZ_KP_" + CurrentBar, false,
+				0, High[0] + offset, KingPanaBrush);
+		}
+
+		// ---- CSV log (write when any signal fires) -----------
+		if (_logWriter != null)
+		{
+			int pzVal = (int)Values[0][0];
+			int kzVal = (int)Values[1][0];
+			int kpVal = (int)Values[2][0];
+			if (pzVal != 0 || kzVal != 0 || kpVal != 0)
+			{
+				_logWriter.WriteLine(string.Format("{0},\"{1}\",{2},{3},{4},{5}",
+					Time[0].ToString("yyyy-MM-dd HH:mm:ss"),
+					Instrument.FullName,
+					Close[0].ToString(System.Globalization.CultureInfo.InvariantCulture),
+					pzVal, kzVal, kpVal));
+				_logWriter.Flush();
+			}
 		}
 	}
 
 	// =========================================================
 	#region Properties
-
-	// ---- Order management -----------------------------------
-	[Display(Name = "ATM Strategy Name", Order = 0, GroupName = "Order Management",
-		Description = "Name of the ATM Strategy template to apply on each entry signal. "
-		            + "Leave blank to use built-in managed entries (EnterLong / EnterShort). "
-		            + "ATM mode only fires in realtime; backtesting always uses managed entries.")]
-	public string AtmStrategyName { get; set; }
-
-	// ---- Signal selection -----------------------------------
-	[Display(Name = "Trade PanaZillia", Order = 0, GroupName = "Signal Selection",
-		Description = "Enable entries on the PanaZillia signal (PANAKanal ≥ 2 AND ThunderZilla ≥ 3).")]
-	public bool TradePanaZillia { get; set; }
-
-	[Display(Name = "Trade KingZilla", Order = 1, GroupName = "Signal Selection",
-		Description = "Enable entries on the KingZilla signal (ThunderZilla ≥ 3 AND KingOrderBlock ≥ 1).")]
-	public bool TradeKingZilla { get; set; }
-
-	[Display(Name = "Trade KingPana", Order = 2, GroupName = "Signal Selection",
-		Description = "Enable entries on the KingPana signal (PANAKanal ≥ 2 AND KingOrderBlock ≥ 1).")]
-	public bool TradeKingPana { get; set; }
-
-	[Display(Name = "Trade Long", Order = 3, GroupName = "Signal Selection",
-		Description = "Allow long entries when a buy signal fires.")]
-	public bool TradeLong { get; set; }
-
-	[Display(Name = "Trade Short", Order = 4, GroupName = "Signal Selection",
-		Description = "Allow short entries when a sell signal fires.")]
-	public bool TradeShort { get; set; }
 
 	// ---- KingOrderBlock parameters --------------------------
 	[Display(Name = "Swing Point: Neighborhood", Order = 0, GroupName = "KingOrderBlock Parameters")]
@@ -447,40 +399,71 @@ public class gbKingPanaZilla : Strategy
 	[Range(0, int.MaxValue)]
 	public int ArrowOffset { get; set; }
 
-	// ---- Logging properties ---------------------------------
+	// ---- Logging parameters ---------------------------------
 	[Display(Name = "Enabled", Order = 0, GroupName = "Logging",
-		Description = "Write a CSV signal log to the NinjaTrader user data folder. "
-		            + "File is named gbKPZlog_YYYYMMDD_HHmmss.csv and created when the strategy loads. "
-		            + "One row is written per bar on which at least one trade signal fires.")]
+		Description = "Write a CSV signal log to the NinjaTrader user data folder "
+		            + "(Documents\\NinjaTrader 8\\). File: gbKPZlog_YYYYMMDD_HHmmss.csv. "
+		            + "One row per bar where at least one trade signal fires.")]
 	public bool LogEnabled { get; set; }
 
 	#endregion
 
 } // class gbKingPanaZilla
 
-} // namespace NinjaTrader.NinjaScript.Strategies.GreyBeard
+} // namespace NinjaTrader.NinjaScript.Indicators.GreyBeard.KingPanaZilla
 
 #region NinjaScript generated code. Neither change nor remove.
 
-// gbKingOrderBlock and gbPANAKanal factory methods are injected here by NT8's
-// compiler when it detects the bare calls in Configure above.
-//
-// gbThunderZilla cannot be auto-injected: its parameter type (gbThunderZillaMAType)
-// lives at global scope (global::) and NT8's scanner cannot resolve it.  The two
-// gbThunderZilla overloads are therefore written manually below.  NT8 will continue
-// to fail injection silently, leaving this manual copy as the only definition.
+namespace NinjaTrader.NinjaScript.Indicators
+{
+	public partial class Indicator : NinjaTrader.Gui.NinjaScript.IndicatorRenderBase
+	{
+		private GreyBeard.KingPanaZilla.gbKingPanaZilla[] cachegbKingPanaZilla;
+
+		public GreyBeard.KingPanaZilla.gbKingPanaZilla gbKingPanaZilla()
+		{
+			return gbKingPanaZilla(Input);
+		}
+
+		public GreyBeard.KingPanaZilla.gbKingPanaZilla gbKingPanaZilla(ISeries<double> input)
+		{
+			if (cachegbKingPanaZilla != null)
+				for (int idx = 0; idx < cachegbKingPanaZilla.Length; idx++)
+					if (cachegbKingPanaZilla[idx] != null && cachegbKingPanaZilla[idx].EqualsInput(input))
+						return cachegbKingPanaZilla[idx];
+			return CacheIndicator<GreyBeard.KingPanaZilla.gbKingPanaZilla>(new GreyBeard.KingPanaZilla.gbKingPanaZilla(){}, input, ref cachegbKingPanaZilla);
+		}
+	}
+}
+
+namespace NinjaTrader.NinjaScript.MarketAnalyzerColumns
+{
+	public partial class MarketAnalyzerColumn : MarketAnalyzerColumnBase
+	{
+		public Indicators.GreyBeard.KingPanaZilla.gbKingPanaZilla gbKingPanaZilla()
+		{
+			return indicator.gbKingPanaZilla(Input);
+		}
+
+		public Indicators.GreyBeard.KingPanaZilla.gbKingPanaZilla gbKingPanaZilla(ISeries<double> input)
+		{
+			return indicator.gbKingPanaZilla(input);
+		}
+	}
+}
 
 namespace NinjaTrader.NinjaScript.Strategies
 {
 	public partial class Strategy : NinjaTrader.Gui.NinjaScript.StrategyRenderBase
 	{
-		public NinjaTrader.NinjaScript.Indicators.GreyBeard.KingPanaZilla.gbThunderZilla gbThunderZilla(global::gbThunderZillaMAType trendMAType, int trendPeriod, bool trendSmoothingEnabled, global::gbThunderZillaMAType trendSmoothingMethod, int trendSmoothingPeriod, double stopOffsetMultiplierStop, int signalQuantityPerFlat, int signalQuantityPerTrend)
+		public Indicators.GreyBeard.KingPanaZilla.gbKingPanaZilla gbKingPanaZilla()
 		{
-			return indicator.gbThunderZilla(Input, trendMAType, trendPeriod, trendSmoothingEnabled, trendSmoothingMethod, trendSmoothingPeriod, stopOffsetMultiplierStop, signalQuantityPerFlat, signalQuantityPerTrend);
+			return indicator.gbKingPanaZilla(Input);
 		}
-		public NinjaTrader.NinjaScript.Indicators.GreyBeard.KingPanaZilla.gbThunderZilla gbThunderZilla(ISeries<double> input, global::gbThunderZillaMAType trendMAType, int trendPeriod, bool trendSmoothingEnabled, global::gbThunderZillaMAType trendSmoothingMethod, int trendSmoothingPeriod, double stopOffsetMultiplierStop, int signalQuantityPerFlat, int signalQuantityPerTrend)
+
+		public Indicators.GreyBeard.KingPanaZilla.gbKingPanaZilla gbKingPanaZilla(ISeries<double> input)
 		{
-			return indicator.gbThunderZilla(input, trendMAType, trendPeriod, trendSmoothingEnabled, trendSmoothingMethod, trendSmoothingPeriod, stopOffsetMultiplierStop, signalQuantityPerFlat, signalQuantityPerTrend);
+			return indicator.gbKingPanaZilla(input);
 		}
 	}
 }
