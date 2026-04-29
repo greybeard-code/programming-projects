@@ -175,9 +175,7 @@ public class gbKingPanaZilla : Indicator
 				Thunder_StopOffsetMultiplierStop,
 				Thunder_SignalQuantityPerFlat,
 				Thunder_SignalQuantityPerTrend);
-			break;
 
-		case State.DataLoaded:
 			if (LogEnabled)
 			{
 				string logPath = Path.Combine(
