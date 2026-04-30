@@ -92,7 +92,7 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
                 Description = "Strategy utilizing gbKingPanaZilla signals.";
                 Name = "gbKingPanaZillaKillah";
                 StrategyName = Name;
-                StrategyVersion = "1.2";
+                StrategyVersion = "1.3";
                 Author = "Playr101";
                 Credits = "GreyBeard";
 
@@ -712,10 +712,6 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
         }
 
         [NinjaScriptProperty]
-        [Display(Name = "Log Trades", Order = 1, GroupName = "Strategy Information", Description = "Write a CSV trade log to the NinjaTrader user data folder.")]
-        public bool LogEnabled { get; set; }
-
-        [NinjaScriptProperty]
         [Display (Name = "Use PanaZillia Signals", Order = 1, GroupName = "Signals")]
         [RefreshProperties (RefreshProperties.All)]
         public bool UsePanaZilliaSignals
@@ -812,6 +808,10 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
 
         [Display(Name = "Flatten at End TF 2", Order = 8, GroupName = "Session Parameters")]
         public bool FlattenTF2 { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Log Trades", Order = 9, GroupName = "Session Parameters", Description = "Write a CSV trade log to the NinjaTrader user data folder.")]
+        public bool LogEnabled { get; set; }
         #endregion
 
         #region AtmStrategySelector converter
