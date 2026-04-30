@@ -79,6 +79,7 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
             public DateTime OpenTime;
             public string   Instrument;
             public double   OpenPrice;
+            public int      Qty;
         }
 
         // Indicator
@@ -157,7 +158,7 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
                         NinjaTrader.Core.Globals.UserDataDir,
                         "gbKPZKillah_" + DateTime.Now.ToString("yyyyMMdd_HHmmss") + ".csv");
                     _logWriter = new StreamWriter(logPath, append: false, encoding: Encoding.UTF8);
-                    _logWriter.WriteLine("OpenTime,Instrument,OpenPrice,CloseTime,Trigger,Direction,RealizedPnL");
+                    _logWriter.WriteLine("OpenTime,Instrument,OpenPrice,Qty,CloseTime,Trigger,Direction,RealizedPnL");
                     _logWriter.Flush();
                 }
 
@@ -247,8 +248,9 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
                     Trigger    = trigger,
                     Direction  = "Long",
                     OpenTime   = Time[0],
-                    Instrument = Instrument.MasterInstrument.Name,
-                    OpenPrice  = 0.0
+                    Instrument = FormatInstrumentName(),
+                    OpenPrice  = 0.0,
+                    Qty        = 0
                 };
                 AtmStrategyCreate(OrderAction.Buy, OrderType.Market, 0, 0, TimeInForce.Day, orderId, AtmStrategy, atmStrategyId, (atmCallbackErrorCode, atmCallBackId) =>
                 {
@@ -272,8 +274,9 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
                     Trigger    = trigger,
                     Direction  = "Short",
                     OpenTime   = Time[0],
-                    Instrument = Instrument.MasterInstrument.Name,
-                    OpenPrice  = 0.0
+                    Instrument = FormatInstrumentName(),
+                    OpenPrice  = 0.0,
+                    Qty        = 0
                 };
                 AtmStrategyCreate(OrderAction.SellShort, OrderType.Market, 0, 0, TimeInForce.Day, orderId, AtmStrategy, atmStrategyId, (atmCallbackErrorCode, atmCallBackId) =>
                 {
@@ -295,7 +298,12 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
                     Print("The entry order filled amount is: " + status[1]);
                     Print("The entry order order state is: " + status[2]);
 
-                    if (status[2] == "Filled" || status[2] == "Cancelled" || status[2] == "Rejected")
+                    if (status[2] == "Filled")
+                    {
+                        CaptureFill(status);
+                        orderId = string.Empty;
+                    }
+                    else if (status[2] == "Cancelled" || status[2] == "Rejected")
                         orderId = string.Empty;
                 }
             }
@@ -307,6 +315,31 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
                 Print("The current ATM Strategy average price is: " + GetAtmStrategyPositionAveragePrice(atmStrategyId));
                 Print("The current ATM Strategy Unrealized PnL is: " + GetAtmStrategyUnrealizedProfitLoss(atmStrategyId));
             }
+        }
+
+        private string FormatInstrumentName()
+        {
+            string name = Instrument.MasterInstrument.Name;
+            if (Instrument.MasterInstrument.InstrumentType == InstrumentType.Future
+                && Instrument.Expiry != Core.Globals.MaxDate)
+                name += " " + Instrument.Expiry.ToString("MM-yy");
+            return name;
+        }
+
+        private void CaptureFill(string[] status)
+        {
+            if (!_tradeMap.TryGetValue(atmStrategyId, out TradeRecord rec))
+                return;
+
+            if (rec.OpenPrice == 0.0
+                && double.TryParse(status[0], System.Globalization.NumberStyles.Any,
+                    System.Globalization.CultureInfo.InvariantCulture, out double price)
+                && price > 0)
+                rec.OpenPrice = Instrument.MasterInstrument.RoundToTickSize(price);
+
+            if (rec.Qty == 0
+                && int.TryParse(status[1], out int qty))
+                rec.Qty = qty;
         }
 
         private void UpdateDailyPnlOnTickSeries()
@@ -336,18 +369,28 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
                 {
                     if (status[2] == "Filled")
                     {
-                        if (_tradeMap.TryGetValue(atmStrategyId, out TradeRecord rec)
-                            && double.TryParse(status[0], System.Globalization.NumberStyles.Any,
-                                System.Globalization.CultureInfo.InvariantCulture, out double fillPrice))
-                            rec.OpenPrice = fillPrice;
-
+                        CaptureFill(status);
                         orderId = string.Empty;
                     }
                     else if (status[2] == "Cancelled" || status[2] == "Rejected")
                         orderId = string.Empty;
                 }
             }
-            else if (atmStrategyId.Length > 0 && GetAtmStrategyMarketPosition(atmStrategyId) == Cbi.MarketPosition.Flat)
+            else if (atmStrategyId.Length > 0 && GetAtmStrategyMarketPosition(atmStrategyId) != Cbi.MarketPosition.Flat)
+            {
+                // Fallback: fill price not yet captured — pull from the live ATM position.
+                if (_tradeMap.TryGetValue(atmStrategyId, out TradeRecord rec) && rec.OpenPrice == 0.0)
+                {
+                    double avgPrice = GetAtmStrategyPositionAveragePrice(atmStrategyId);
+                    if (avgPrice > 0)
+                    {
+                        rec.OpenPrice = Instrument.MasterInstrument.RoundToTickSize(avgPrice);
+                        rec.Qty       = (int)GetAtmStrategyPositionQuantity(atmStrategyId);
+                    }
+                }
+            }
+
+            if (atmStrategyId.Length > 0 && GetAtmStrategyMarketPosition(atmStrategyId) == Cbi.MarketPosition.Flat)
             {
                 double atmRealized = GetAtmStrategyRealizedProfitLoss(atmStrategyId);
 
@@ -360,7 +403,7 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
 
                 if (_logWriter != null && _tradeMap.TryGetValue(atmStrategyId, out TradeRecord tr))
                 {
-                    _logWriter.WriteLine($"{tr.OpenTime:yyyy-MM-dd HH:mm:ss},{tr.Instrument},{tr.OpenPrice:F2},{tickTime:yyyy-MM-dd HH:mm:ss},{tr.Trigger},{tr.Direction},{lastAtmRealizedPnL:F2}");
+                    _logWriter.WriteLine($"{tr.OpenTime:yyyy-MM-dd HH:mm:ss},{tr.Instrument},{tr.OpenPrice:F2},{tr.Qty},{tickTime:yyyy-MM-dd HH:mm:ss},{tr.Trigger},{tr.Direction},{lastAtmRealizedPnL:F2}");
                     _logWriter.Flush();
                 }
 
