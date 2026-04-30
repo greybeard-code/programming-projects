@@ -94,7 +94,7 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
                 Description = "Strategy utilizing gbKingPanaZilla signals.";
                 Name = "gbKingPanaZillaKillah";
                 StrategyName = Name;
-                StrategyVersion = "1.3";
+                StrategyVersion = "1.4";
                 Author = "Playr101";
                 Credits = "GreyBeard";
 
@@ -258,6 +258,13 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
                 {
                     if (atmCallbackErrorCode == ErrorCode.NoError && atmCallBackId == atmStrategyId)
                         isAtmStrategyCreated = true;
+                    else
+                    {
+                        Print($"[{Name}] ATM creation failed: ErrorCode={atmCallbackErrorCode}");
+                        _tradeMap.Remove(atmStrategyId);
+                        atmStrategyId = string.Empty;
+                        orderId       = string.Empty;
+                    }
                 });
             }
             else if (orderId.Length == 0 && atmStrategyId.Length == 0 && goShort)
@@ -285,6 +292,13 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
                 {
                     if (atmCallbackErrorCode == ErrorCode.NoError && atmCallBackId == atmStrategyId)
                         isAtmStrategyCreated = true;
+                    else
+                    {
+                        Print($"[{Name}] ATM creation failed: ErrorCode={atmCallbackErrorCode}");
+                        _tradeMap.Remove(atmStrategyId);
+                        atmStrategyId = string.Empty;
+                        orderId       = string.Empty;
+                    }
                 });
             }
 
@@ -368,7 +382,7 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
             {
                 string[] status = GetAtmStrategyEntryOrderStatus(orderId);
 
-                if (status != null && status.Length > 0)
+                if (status != null && status.Length >= 3)
                 {
                     if (status[2] == "Filled")
                     {
@@ -378,42 +392,48 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
                     else if (status[2] == "Cancelled" || status[2] == "Rejected")
                         orderId = string.Empty;
                 }
+                // Entry still pending — do not touch the ATM position yet.
             }
-            else if (atmStrategyId.Length > 0 && GetAtmStrategyMarketPosition(atmStrategyId) != Cbi.MarketPosition.Flat)
+            else if (atmStrategyId.Length > 0 && isAtmStrategyCreated)
             {
-                // Fallback: fill price not yet captured — pull from the live ATM position.
-                if (_tradeMap.TryGetValue(atmStrategyId, out TradeRecord rec) && rec.OpenPrice == 0.0)
+                // Entry is confirmed filled; now manage the open position.
+                Cbi.MarketPosition atmPos = GetAtmStrategyMarketPosition(atmStrategyId);
+
+                if (atmPos != Cbi.MarketPosition.Flat)
                 {
-                    double avgPrice = GetAtmStrategyPositionAveragePrice(atmStrategyId);
-                    if (avgPrice > 0)
+                    // Fallback: capture fill price from live position if not yet set.
+                    if (_tradeMap.TryGetValue(atmStrategyId, out TradeRecord rec) && rec.OpenPrice == 0.0)
                     {
-                        rec.OpenPrice = Instrument.MasterInstrument.RoundToTickSize(avgPrice);
-                        rec.Qty       = (int)GetAtmStrategyPositionQuantity(atmStrategyId);
+                        double avgPrice = GetAtmStrategyPositionAveragePrice(atmStrategyId);
+                        if (avgPrice > 0)
+                        {
+                            rec.OpenPrice = Instrument.MasterInstrument.RoundToTickSize(avgPrice);
+                            rec.Qty       = (int)GetAtmStrategyPositionQuantity(atmStrategyId);
+                        }
                     }
                 }
-            }
-
-            if (atmStrategyId.Length > 0 && GetAtmStrategyMarketPosition(atmStrategyId) == Cbi.MarketPosition.Flat)
-            {
-                double atmRealized = GetAtmStrategyRealizedProfitLoss(atmStrategyId);
-
-                if (!double.IsNaN(atmRealized))
-                    lastAtmRealizedPnL = Instrument.MasterInstrument.RoundToTickSize(atmRealized);
                 else
-                    lastAtmRealizedPnL = 0.0;
-
-                totalRealizedPnL += lastAtmRealizedPnL;
-
-                if (_logWriter != null && _tradeMap.TryGetValue(atmStrategyId, out TradeRecord tr))
                 {
-                    _logWriter.WriteLine($"{tr.OpenTime:yyyy-MM-dd HH:mm:ss},{tr.Instrument},{tr.OpenPrice:F2},{tr.Qty},{tickTime:yyyy-MM-dd HH:mm:ss},{tr.Trigger},{tr.Direction},{tr.AtmStrategyName},{lastAtmRealizedPnL:F2}");
-                    _logWriter.Flush();
-                }
+                    double atmRealized = GetAtmStrategyRealizedProfitLoss(atmStrategyId);
 
-                _tradeMap.Remove(atmStrategyId);
-                atmStrategyId = string.Empty;
-                isAtmStrategyCreated = false;
-                dailyUnrealizedPnL = 0.0;
+                    if (!double.IsNaN(atmRealized))
+                        lastAtmRealizedPnL = Instrument.MasterInstrument.RoundToTickSize(atmRealized);
+                    else
+                        lastAtmRealizedPnL = 0.0;
+
+                    totalRealizedPnL += lastAtmRealizedPnL;
+
+                    if (_logWriter != null && _tradeMap.TryGetValue(atmStrategyId, out TradeRecord tr))
+                    {
+                        _logWriter.WriteLine($"{tr.OpenTime:yyyy-MM-dd HH:mm:ss},{tr.Instrument},{tr.OpenPrice:F2},{tr.Qty},{tickTime:yyyy-MM-dd HH:mm:ss},{tr.Trigger},{tr.Direction},{tr.AtmStrategyName},{lastAtmRealizedPnL:F2}");
+                        _logWriter.Flush();
+                    }
+
+                    _tradeMap.Remove(atmStrategyId);
+                    atmStrategyId = string.Empty;
+                    isAtmStrategyCreated = false;
+                    dailyUnrealizedPnL = 0.0;
+                }
             }
 
             if (atmStrategyId.Length > 0)
