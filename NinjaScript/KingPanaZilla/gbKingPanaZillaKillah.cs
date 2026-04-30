@@ -94,7 +94,7 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
                 Description = "Strategy utilizing gbKingPanaZilla signals.";
                 Name = "gbKingPanaZillaKillah";
                 StrategyName = Name;
-                StrategyVersion = "1.4";
+                StrategyVersion = "1.5";
                 Author = "Playr101";
                 Credits = "GreyBeard";
 
@@ -392,16 +392,24 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
                     else if (status[2] == "Cancelled" || status[2] == "Rejected")
                         orderId = string.Empty;
                 }
-                // Entry still pending — do not touch the ATM position yet.
+                else if (isAtmStrategyCreated)
+                {
+                    // Live brokers de-register the entry order from tracking once it fills,
+                    // so GetAtmStrategyEntryOrderStatus returns null/empty instead of "Filled".
+                    // Treat a missing status as an implicit fill and let the ATM position
+                    // check below handle the rest.
+                    orderId = string.Empty;
+                }
             }
-            else if (atmStrategyId.Length > 0 && isAtmStrategyCreated)
+
+            if (orderId.Length == 0 && atmStrategyId.Length > 0 && isAtmStrategyCreated)
             {
-                // Entry is confirmed filled; now manage the open position.
+                // Entry confirmed (or implicitly filled); manage the open position.
                 Cbi.MarketPosition atmPos = GetAtmStrategyMarketPosition(atmStrategyId);
 
                 if (atmPos != Cbi.MarketPosition.Flat)
                 {
-                    // Fallback: capture fill price from live position if not yet set.
+                    // Capture fill price from live position if not yet set.
                     if (_tradeMap.TryGetValue(atmStrategyId, out TradeRecord rec) && rec.OpenPrice == 0.0)
                     {
                         double avgPrice = GetAtmStrategyPositionAveragePrice(atmStrategyId);
