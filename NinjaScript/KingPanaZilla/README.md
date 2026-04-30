@@ -232,8 +232,10 @@ The writer is flushed after every row and closed cleanly when the strategy is re
 
 ```
 KingPanaZilla/
-├── gbKingPanaZilla.cs          — Combined single-file build: gbKingOrderBlock + gbPANAKanal +
-│                                 gbThunderZilla + gbKingPanaZilla (composite) in one file
+├── gbKingPanaZilla.cs          — Composite signal indicator (loads the three child indicators)
+├── gbKingOrderBlock.cs         — King Order Block indicator
+├── gbPANAKanal.cs              — PANA Kanal indicator
+├── gbThunderZilla.cs           — ThunderZilla indicator
 ├── gbKingPanaZillaKillah.cs    — ATM strategy driven by gbKingPanaZilla signals (Playr101)
 ├── gbBarStatus.cs              — Bar completion progress display (standalone)
 └── originals/                  — Unmodified vendor source files
@@ -243,20 +245,22 @@ KingPanaZilla/
     └── ninZaBarStatus.cs
 ```
 
-All four indicator classes and their generated factory methods live in `gbKingPanaZilla.cs`. NT8's compiler finds a single complete `#region NinjaScript generated code` section and never appends a duplicate block.
+Each indicator is its own file. `gbKingPanaZilla` references the three child indicators and must be compiled after them. `gbKingPanaZillaKillah` references the indicator namespace and must be compiled last.
 
 ## Installation
 
 Copy the indicator and strategy files into their respective NinjaTrader 8 custom folders:
 
 ```
-Documents\NinjaTrader 8\bin\Custom\Indicators\   ← gbKingPanaZilla.cs, gbBarStatus.cs
+Documents\NinjaTrader 8\bin\Custom\Indicators\   ← gbKingOrderBlock.cs, gbPANAKanal.cs,
+                                                      gbThunderZilla.cs, gbKingPanaZilla.cs,
+                                                      gbBarStatus.cs
 Documents\NinjaTrader 8\bin\Custom\Strategies\   ← gbKingPanaZillaKillah.cs
 ```
 
 Then compile via **NinjaTrader → Tools → Edit NinjaScript → Compile**.
 
-`gbBarStatus` is fully standalone. `gbKingPanaZilla.cs` contains all four indicator classes in a single file. `gbKingPanaZillaKillah.cs` references the indicator namespace and must be compiled after the indicators.
+Compile order matters: the three child indicators (`gbKingOrderBlock`, `gbPANAKanal`, `gbThunderZilla`) must compile before `gbKingPanaZilla`, and `gbKingPanaZillaKillah` must compile after all indicators.
 
 ---
 
