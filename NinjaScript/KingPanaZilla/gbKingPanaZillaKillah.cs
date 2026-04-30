@@ -70,8 +70,16 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
 
         // Trade logging
         private StreamWriter _logWriter;
-        private Dictionary<string, string> _atmTriggerMap  = new Dictionary<string, string>();
-        private Dictionary<string, string> _atmDirectionMap = new Dictionary<string, string>();
+        private Dictionary<string, TradeRecord> _tradeMap = new Dictionary<string, TradeRecord>();
+
+        private class TradeRecord
+        {
+            public string   Trigger;
+            public string   Direction;
+            public DateTime OpenTime;
+            public string   Instrument;
+            public double   OpenPrice;
+        }
 
         // Indicator
         private gbKingPanaZilla _gbIndicator;
@@ -149,7 +157,7 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
                         NinjaTrader.Core.Globals.UserDataDir,
                         "gbKPZKillah_" + DateTime.Now.ToString("yyyyMMdd_HHmmss") + ".csv");
                     _logWriter = new StreamWriter(logPath, append: false, encoding: Encoding.UTF8);
-                    _logWriter.WriteLine("CloseTime,Trigger,Direction,RealizedPnL");
+                    _logWriter.WriteLine("OpenTime,Instrument,OpenPrice,CloseTime,Trigger,Direction,RealizedPnL");
                     _logWriter.Flush();
                 }
 
@@ -234,8 +242,14 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
                 isAtmStrategyCreated = false;
                 atmStrategyId = GetAtmStrategyUniqueId();
                 orderId      = GetAtmStrategyUniqueId();
-                _atmTriggerMap[atmStrategyId]   = trigger;
-                _atmDirectionMap[atmStrategyId] = "Long";
+                _tradeMap[atmStrategyId] = new TradeRecord
+                {
+                    Trigger    = trigger,
+                    Direction  = "Long",
+                    OpenTime   = Time[0],
+                    Instrument = Instrument.MasterInstrument.Name,
+                    OpenPrice  = 0.0
+                };
                 AtmStrategyCreate(OrderAction.Buy, OrderType.Market, 0, 0, TimeInForce.Day, orderId, AtmStrategy, atmStrategyId, (atmCallbackErrorCode, atmCallBackId) =>
                 {
                     if (atmCallbackErrorCode == ErrorCode.NoError && atmCallBackId == atmStrategyId)
@@ -253,8 +267,14 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
                 isAtmStrategyCreated = false;
                 atmStrategyId = GetAtmStrategyUniqueId();
                 orderId      = GetAtmStrategyUniqueId();
-                _atmTriggerMap[atmStrategyId]   = trigger;
-                _atmDirectionMap[atmStrategyId] = "Short";
+                _tradeMap[atmStrategyId] = new TradeRecord
+                {
+                    Trigger    = trigger,
+                    Direction  = "Short",
+                    OpenTime   = Time[0],
+                    Instrument = Instrument.MasterInstrument.Name,
+                    OpenPrice  = 0.0
+                };
                 AtmStrategyCreate(OrderAction.SellShort, OrderType.Market, 0, 0, TimeInForce.Day, orderId, AtmStrategy, atmStrategyId, (atmCallbackErrorCode, atmCallBackId) =>
                 {
                     if (atmCallbackErrorCode == ErrorCode.NoError && atmCallBackId == atmStrategyId)
@@ -314,7 +334,16 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
 
                 if (status != null && status.Length > 0)
                 {
-                    if (status[2] == "Filled" || status[2] == "Cancelled" || status[2] == "Rejected")
+                    if (status[2] == "Filled")
+                    {
+                        if (_tradeMap.TryGetValue(atmStrategyId, out TradeRecord rec)
+                            && double.TryParse(status[0], System.Globalization.NumberStyles.Any,
+                                System.Globalization.CultureInfo.InvariantCulture, out double fillPrice))
+                            rec.OpenPrice = fillPrice;
+
+                        orderId = string.Empty;
+                    }
+                    else if (status[2] == "Cancelled" || status[2] == "Rejected")
                         orderId = string.Empty;
                 }
             }
@@ -329,16 +358,13 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
 
                 totalRealizedPnL += lastAtmRealizedPnL;
 
-                if (_logWriter != null)
+                if (_logWriter != null && _tradeMap.TryGetValue(atmStrategyId, out TradeRecord tr))
                 {
-                    _atmTriggerMap.TryGetValue(atmStrategyId, out string logTrigger);
-                    _atmDirectionMap.TryGetValue(atmStrategyId, out string logDirection);
-                    _logWriter.WriteLine($"{tickTime:yyyy-MM-dd HH:mm:ss},{logTrigger},{logDirection},{lastAtmRealizedPnL:F2}");
+                    _logWriter.WriteLine($"{tr.OpenTime:yyyy-MM-dd HH:mm:ss},{tr.Instrument},{tr.OpenPrice:F2},{tickTime:yyyy-MM-dd HH:mm:ss},{tr.Trigger},{tr.Direction},{lastAtmRealizedPnL:F2}");
                     _logWriter.Flush();
                 }
 
-                _atmTriggerMap.Remove(atmStrategyId);
-                _atmDirectionMap.Remove(atmStrategyId);
+                _tradeMap.Remove(atmStrategyId);
                 atmStrategyId = string.Empty;
                 isAtmStrategyCreated = false;
                 dailyUnrealizedPnL = 0.0;
