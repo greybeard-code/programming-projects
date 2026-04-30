@@ -170,14 +170,73 @@ A **bar-completion progress indicator** that shows how far through the current b
 
 ---
 
+## Strategy
+
+### gbKingPanaZillaKillah — ATM Strategy by Playr101
+
+An **ATM-mode strategy** that drives NinjaTrader 8's native ATM Strategy engine from the three `gbKingPanaZilla` signals. Selecting any combination of the three signal outputs (PZ, KZ, KP) is controlled via per-signal toggles. Risk is managed by a daily profit target and daily loss limit evaluated tick-by-tick against both realized and (optionally) open equity.
+
+**How it works:**
+
+1. **Signal evaluation** — on each primary bar, `PanaZillia_Trade`, `KingZilla_Trade`, and `KingPana_Trade` are read from `gbKingPanaZilla`. Any enabled signal at +1 triggers a long entry; at −1 a short entry.
+2. **ATM order submission** — entries are placed via `AtmStrategyCreate` with a user-selected ATM template. Only one ATM position is open at a time; new signals are ignored while a position is active.
+3. **Session filters** — two independent time windows (TF1, TF2) restrict trading hours. Each window can optionally flatten all positions at its close.
+4. **Risk management** — realized and unrealized PnL are tracked every tick. When the daily profit target or daily loss limit is breached, all positions are flattened and new entries are blocked for the session.
+5. **Naked-position watchdog** — every 3 seconds in realtime the strategy confirms that any open position has an active ATM with working protective orders. If a naked position is detected (e.g. ATM dropped), it is immediately flattened.
+
+**Key parameters:**
+
+| Group | Parameter | Default |
+|---|---|---|
+| Signals | `UsePanaZilliaSignals`, `UseKingZillaSignals`, `UseKingPanaSignals` | all `true` |
+| ATM | `AtmStrategy` | *(select from installed ATM templates)* |
+| Risk | `UseDailyProfitTarget` / `DailyProfitTarget` | `false` / $500 |
+| Risk | `UseDailyLossLimit` / `DailyLossLimit` | `true` / $200 |
+| Risk | `UseUnrealizedPnl` | `true` |
+| Session | `EnableTF1` / `StartTime1`–`EndTime1` / `FlattenTF1` | `true` / 09:30–12:00 / `true` |
+| Session | `EnableTF2` / `StartTime2`–`EndTime2` / `FlattenTF2` | `true` / 13:00–15:30 / `true` |
+| Session | `LogEnabled` | `false` |
+
+**CSV Trade Log:**
+
+Enable **Log Trades** in Session Parameters to write a trade log to the NinjaTrader user data folder. The file is named with the activation timestamp:
+
+```
+gbKPZKillah_YYYYMMDD_HHmmss.csv
+```
+
+One row is appended when each ATM position closes:
+
+```
+OpenTime,Instrument,OpenPrice,Qty,CloseTime,Trigger,Direction,AtmStrategy,RealizedPnL
+2026-04-29 10:31:00,MNQ 06-26,21245.75,1,2026-04-29 10:44:22,PZ+KZ,Long,MyATM_2pt,125.00
+```
+
+| Column | Content |
+|---|---|
+| `OpenTime` | Bar time at signal — `yyyy-MM-dd HH:mm:ss` |
+| `Instrument` | Contract name including expiry (e.g. `MNQ 06-26`) |
+| `OpenPrice` | ATM entry fill price |
+| `Qty` | Filled quantity |
+| `CloseTime` | Tick time when position went flat |
+| `Trigger` | Which signal(s) fired: `PZ`, `KZ`, `KP`, or combinations such as `PZ+KZ` |
+| `Direction` | `Long` or `Short` |
+| `AtmStrategy` | Name of the ATM template used |
+| `RealizedPnL` | Realized P&L for the trade in account currency |
+
+The writer is flushed after every row and closed cleanly when the strategy is removed. Logging is **off by default**.
+
+---
+
 ## File Structure
 
 ```
 KingPanaZilla/
-├── gbKingPanaZilla.cs      — Combined single-file build: gbKingOrderBlock + gbPANAKanal +
-│                             gbThunderZilla + gbKingPanaZilla (composite) in one file
-├── gbBarStatus.cs          — Bar completion progress display (standalone)
-└── originals/              — Unmodified vendor source files
+├── gbKingPanaZilla.cs          — Combined single-file build: gbKingOrderBlock + gbPANAKanal +
+│                                 gbThunderZilla + gbKingPanaZilla (composite) in one file
+├── gbKingPanaZillaKillah.cs    — ATM strategy driven by gbKingPanaZilla signals (Playr101)
+├── gbBarStatus.cs              — Bar completion progress display (standalone)
+└── originals/                  — Unmodified vendor source files
     ├── RenkoKings_KingOrderBlock.cs
     ├── RenkoKings_ThunderZilla.cs
     ├── ninZaPANAKanal.cs
@@ -188,16 +247,17 @@ All four indicator classes and their generated factory methods live in `gbKingPa
 
 ## Installation
 
-Copy both `gb*.cs` files into your NinjaTrader 8 custom indicators folder:
+Copy the indicator and strategy files into their respective NinjaTrader 8 custom folders:
 
 ```
-Documents\NinjaTrader 8\bin\Custom\Indicators\
+Documents\NinjaTrader 8\bin\Custom\Indicators\   ← gbKingPanaZilla.cs, gbBarStatus.cs
+Documents\NinjaTrader 8\bin\Custom\Strategies\   ← gbKingPanaZillaKillah.cs
 ```
 
 Then compile via **NinjaTrader → Tools → Edit NinjaScript → Compile**.
 
-Both files compile independently — `gbBarStatus` is fully standalone and `gbKingPanaZilla.cs` contains everything it needs in a single file.
+`gbBarStatus` is fully standalone. `gbKingPanaZilla.cs` contains all four indicator classes in a single file. `gbKingPanaZillaKillah.cs` references the indicator namespace and must be compiled after the indicators.
 
 ---
 
-*GreyBeard — KingPanaZilla indicator suite*
+*GreyBeard — KingPanaZilla indicator suite | gbKingPanaZillaKillah strategy by Playr101*
