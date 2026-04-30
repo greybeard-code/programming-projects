@@ -14,6 +14,7 @@ using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
+using System.IO;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
@@ -67,6 +68,11 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
         private DateTime lastNakedCheck = Core.Globals.MinDate;
         private const int NakedCheckIntervalSeconds = 3;
 
+        // Trade logging
+        private StreamWriter _logWriter;
+        private Dictionary<string, string> _atmTriggerMap  = new Dictionary<string, string>();
+        private Dictionary<string, string> _atmDirectionMap = new Dictionary<string, string>();
+
         // Indicator
         private gbKingPanaZilla _gbIndicator;
         #endregion
@@ -103,6 +109,8 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
                 UseKingZillaSignals = true;
                 UseKingPanaSignals = true;
 
+                LogEnabled = false;
+
                 // Risk Defaults
                 UseUnrealizedPnl = true;
                 UseDailyProfitTarget = false;
@@ -135,7 +143,26 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
                 AddChartIndicator(_gbIndicator);
                 _gbIndicator.Name = "";
 
+                if (LogEnabled)
+                {
+                    string logPath = Path.Combine(
+                        NinjaTrader.Core.Globals.UserDataDir,
+                        "gbKPZKillah_" + DateTime.Now.ToString("yyyyMMdd_HHmmss") + ".csv");
+                    _logWriter = new StreamWriter(logPath, append: false, encoding: Encoding.UTF8);
+                    _logWriter.WriteLine("CloseTime,Trigger,Direction,RealizedPnL");
+                    _logWriter.Flush();
+                }
+
                 DrawPnlDisplay();
+            }
+            else if (State == State.Terminated)
+            {
+                if (_logWriter != null)
+                {
+                    _logWriter.Flush();
+                    _logWriter.Dispose();
+                    _logWriter = null;
+                }
             }
             else if (State == State.Realtime)
             {
@@ -206,7 +233,9 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
 
                 isAtmStrategyCreated = false;
                 atmStrategyId = GetAtmStrategyUniqueId();
-                orderId = trigger + "_" + GetAtmStrategyUniqueId();
+                orderId      = GetAtmStrategyUniqueId();
+                _atmTriggerMap[atmStrategyId]   = trigger;
+                _atmDirectionMap[atmStrategyId] = "Long";
                 AtmStrategyCreate(OrderAction.Buy, OrderType.Market, 0, 0, TimeInForce.Day, orderId, AtmStrategy, atmStrategyId, (atmCallbackErrorCode, atmCallBackId) =>
                 {
                     if (atmCallbackErrorCode == ErrorCode.NoError && atmCallBackId == atmStrategyId)
@@ -223,7 +252,9 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
 
                 isAtmStrategyCreated = false;
                 atmStrategyId = GetAtmStrategyUniqueId();
-                orderId = trigger + "_" + GetAtmStrategyUniqueId();
+                orderId      = GetAtmStrategyUniqueId();
+                _atmTriggerMap[atmStrategyId]   = trigger;
+                _atmDirectionMap[atmStrategyId] = "Short";
                 AtmStrategyCreate(OrderAction.SellShort, OrderType.Market, 0, 0, TimeInForce.Day, orderId, AtmStrategy, atmStrategyId, (atmCallbackErrorCode, atmCallBackId) =>
                 {
                     if (atmCallbackErrorCode == ErrorCode.NoError && atmCallBackId == atmStrategyId)
@@ -291,12 +322,23 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
             {
                 double atmRealized = GetAtmStrategyRealizedProfitLoss(atmStrategyId);
 
-                if (!double.IsNaN (atmRealized))
-                    lastAtmRealizedPnL = Instrument.MasterInstrument.RoundToTickSize (atmRealized);
+                if (!double.IsNaN(atmRealized))
+                    lastAtmRealizedPnL = Instrument.MasterInstrument.RoundToTickSize(atmRealized);
                 else
                     lastAtmRealizedPnL = 0.0;
 
                 totalRealizedPnL += lastAtmRealizedPnL;
+
+                if (_logWriter != null)
+                {
+                    _atmTriggerMap.TryGetValue(atmStrategyId, out string logTrigger);
+                    _atmDirectionMap.TryGetValue(atmStrategyId, out string logDirection);
+                    _logWriter.WriteLine($"{tickTime:yyyy-MM-dd HH:mm:ss},{logTrigger},{logDirection},{lastAtmRealizedPnL:F2}");
+                    _logWriter.Flush();
+                }
+
+                _atmTriggerMap.Remove(atmStrategyId);
+                _atmDirectionMap.Remove(atmStrategyId);
                 atmStrategyId = string.Empty;
                 isAtmStrategyCreated = false;
                 dailyUnrealizedPnL = 0.0;
@@ -642,6 +684,10 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
         {
             get; set;
         }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Log Trades", Order = 1, GroupName = "Strategy Information", Description = "Write a CSV trade log to the NinjaTrader user data folder.")]
+        public bool LogEnabled { get; set; }
 
         [NinjaScriptProperty]
         [Display (Name = "Use PanaZillia Signals", Order = 1, GroupName = "Signals")]
