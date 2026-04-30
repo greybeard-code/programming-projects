@@ -71,6 +71,7 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
         // Trade logging
         private StreamWriter _logWriter;
         private Dictionary<string, TradeRecord> _tradeMap = new Dictionary<string, TradeRecord>();
+        private bool _atmPositionConfirmed = false;
 
         private class TradeRecord
         {
@@ -94,7 +95,7 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
                 Description = "Strategy utilizing gbKingPanaZilla signals.";
                 Name = "gbKingPanaZillaKillah";
                 StrategyName = Name;
-                StrategyVersion = "1.5";
+                StrategyVersion = "1.6";
                 Author = "Playr101";
                 Credits = "GreyBeard";
 
@@ -184,6 +185,7 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
                 totalRunningPnL = totalRealizedPnL;
                 dailyLimitHit = false;
                 dailyPnlStatusMessage = string.Empty;
+                _atmPositionConfirmed = false;
                 Print($"{Name} entered realtime. ATM mode active.");
             }
         }
@@ -392,24 +394,21 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
                     else if (status[2] == "Cancelled" || status[2] == "Rejected")
                         orderId = string.Empty;
                 }
-                else if (isAtmStrategyCreated)
-                {
-                    // Live brokers de-register the entry order from tracking once it fills,
-                    // so GetAtmStrategyEntryOrderStatus returns null/empty instead of "Filled".
-                    // Treat a missing status as an implicit fill and let the ATM position
-                    // check below handle the rest.
-                    orderId = string.Empty;
-                }
+                // If status is null the order may not be registered yet — leave orderId set
+                // and let the position check below detect the fill via GetAtmStrategyMarketPosition.
             }
 
-            if (orderId.Length == 0 && atmStrategyId.Length > 0 && isAtmStrategyCreated)
+            if (atmStrategyId.Length > 0)
             {
-                // Entry confirmed (or implicitly filled); manage the open position.
                 Cbi.MarketPosition atmPos = GetAtmStrategyMarketPosition(atmStrategyId);
 
                 if (atmPos != Cbi.MarketPosition.Flat)
                 {
-                    // Capture fill price from live position if not yet set.
+                    // Position is live — entry filled regardless of orderId / callback state.
+                    _atmPositionConfirmed = true;
+                    isAtmStrategyCreated  = true;
+                    orderId = string.Empty;
+
                     if (_tradeMap.TryGetValue(atmStrategyId, out TradeRecord rec) && rec.OpenPrice == 0.0)
                     {
                         double avgPrice = GetAtmStrategyPositionAveragePrice(atmStrategyId);
@@ -419,9 +418,12 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
                             rec.Qty       = (int)GetAtmStrategyPositionQuantity(atmStrategyId);
                         }
                     }
+
+                    dailyUnrealizedPnL = Instrument.MasterInstrument.RoundToTickSize(GetAtmStrategyUnrealizedProfitLoss(atmStrategyId));
                 }
-                else
+                else if (_atmPositionConfirmed)
                 {
+                    // Was open, now flat — trade closed normally.
                     double atmRealized = GetAtmStrategyRealizedProfitLoss(atmStrategyId);
 
                     if (!double.IsNaN(atmRealized))
@@ -438,14 +440,19 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
                     }
 
                     _tradeMap.Remove(atmStrategyId);
-                    atmStrategyId = string.Empty;
-                    isAtmStrategyCreated = false;
+                    atmStrategyId         = string.Empty;
+                    orderId               = string.Empty;
+                    isAtmStrategyCreated  = false;
+                    _atmPositionConfirmed = false;
+                    dailyUnrealizedPnL    = 0.0;
+                }
+                else
+                {
+                    // Position not yet confirmed open and shows flat — ATM still registering.
+                    // Do not call any ATM methods; suppress unrealized PnL errors.
                     dailyUnrealizedPnL = 0.0;
                 }
             }
-
-            if (atmStrategyId.Length > 0)
-                dailyUnrealizedPnL = Instrument.MasterInstrument.RoundToTickSize(GetAtmStrategyUnrealizedProfitLoss(atmStrategyId));
             else
                 dailyUnrealizedPnL = 0.0;
 
