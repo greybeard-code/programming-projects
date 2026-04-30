@@ -95,7 +95,7 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
                 Description = "Strategy utilizing gbKingPanaZilla signals.";
                 Name = "gbKingPanaZillaKillah";
                 StrategyName = Name;
-                StrategyVersion = "1.6";
+                StrategyVersion = "1.3.1";
                 Author = "Playr101";
                 Credits = "GreyBeard";
 
