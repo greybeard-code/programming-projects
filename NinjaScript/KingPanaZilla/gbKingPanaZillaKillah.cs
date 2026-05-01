@@ -104,6 +104,8 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
         private MarketPosition activeTradeDirection = MarketPosition.Flat;
         private string lastTradeClosedSummary = string.Empty;
 
+        private string _version = "1.4.1";
+
         // Indicator
         private gbKingPanaZilla _gbIndicator;
         #endregion
@@ -115,6 +117,7 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
                 Description = "Strategy utilizing gbKingPanaZilla signals.";
                 Name = "gbKingPanaZillaKillah";
                 StrategyName = Name;
+                _version = "1.4.1";
 
                 Author = "Playr101";
                 Credits = "GreyBeard";
@@ -939,7 +942,7 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
 
         [ReadOnly (true)]
         [Display (Name = "Strategy Version", GroupName = "Strategy Information", Order = 1)]
-        public string StrategyVersion => "1.4.1";
+        public string StrategyVersion => _version;
 
         [NinjaScriptProperty]
         [ReadOnly (true)]
