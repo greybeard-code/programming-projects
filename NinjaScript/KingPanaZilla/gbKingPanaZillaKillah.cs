@@ -537,7 +537,7 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
 
             List<string> lines = new List<string>
             {
-                "--- " + Name + " ---",
+                "--- " + Name + " v" + StrategyVersion + " ---",
                 sessionText,
                 pnlLine1,
                 pnlLine2
