@@ -115,7 +115,7 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
                 Description = "Strategy utilizing gbKingPanaZilla signals.";
                 Name = "gbKingPanaZillaKillah";
                 StrategyName = Name;
-                StrategyVersion = "1.4.1";
+
                 Author = "Playr101";
                 Credits = "GreyBeard";
 
@@ -937,13 +937,9 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
             get; set;
         }
 
-        [NinjaScriptProperty]
         [ReadOnly (true)]
         [Display (Name = "Strategy Version", GroupName = "Strategy Information", Order = 1)]
-        public string StrategyVersion
-        {
-            get; set;
-        }
+        public string StrategyVersion => "1.4.1";
 
         [NinjaScriptProperty]
         [ReadOnly (true)]
