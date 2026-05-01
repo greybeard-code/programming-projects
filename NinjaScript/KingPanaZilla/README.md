@@ -188,6 +188,7 @@ An **ATM-mode strategy** that drives NinjaTrader 8's native ATM Strategy engine 
 
 | Group | Parameter | Default |
 |---|---|---|
+| Signals | `EnableSignalTracking` | `false` |
 | Signals | `UsePanaZilliaSignals`, `UseKingZillaSignals`, `UseKingPanaSignals` | all `true` |
 | ATM | `AtmStrategy` | *(select from installed ATM templates)* |
 | Risk | `UseDailyProfitTarget` / `DailyProfitTarget` | `false` / $500 |
@@ -196,6 +197,32 @@ An **ATM-mode strategy** that drives NinjaTrader 8's native ATM Strategy engine 
 | Session | `EnableTF1` / `StartTime1`–`EndTime1` / `FlattenTF1` | `true` / 09:30–12:00 / `true` |
 | Session | `EnableTF2` / `StartTime2`–`EndTime2` / `FlattenTF2` | `true` / 13:00–15:30 / `true` |
 | Session | `LogEnabled` | `false` |
+
+**Signal Tracking Display (`EnableSignalTracking`):**
+
+When enabled, the on-chart PnL panel (bottom-right) expands to show a running trade breakdown by signal source. After each trade closes, the last result appears as a summary line followed by per-signal counters:
+
+```
+--- gbKingPanaZillaKillah ---
+Trading: IN SESSION
+Total: $375.00  |  Closed: $375.00  |  Open: $0.00
+Target: ~  |  Max Loss: -$200
+Last: $125.00 | Short | PZ+KZ
+Enabled: PZ, KZ, KP
+PZ T:4 Lg:1 Sh:3 W:3 L:1
+KZ T:2 Lg:0 Sh:2 W:2 L:0
+KP T:1 Lg:0 Sh:1 W:1 L:0
+```
+
+| Column | Content |
+|---|---|
+| `T` | Total trades triggered by this signal |
+| `Lg` | Long trades |
+| `Sh` | Short trades |
+| `W` | Winners (PnL > 0) |
+| `L` | Losers (PnL < 0) |
+
+Trades triggered by multiple signals (e.g. `PZ+KZ`) increment the counter for each contributing signal. Signal tracking is **off by default**.
 
 **CSV Trade Log:**
 
