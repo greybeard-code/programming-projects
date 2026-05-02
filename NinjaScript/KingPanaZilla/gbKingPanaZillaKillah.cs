@@ -21,6 +21,9 @@ using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Xml.Serialization;
+using System.Windows.Controls;
+using NewsPrintLocation = NinjaTrader.NinjaScript.Indicators.Playr101.NewsSignals.NewsPrintLocation;
 #endregion
 
 //This namespace holds Strategies in this folder and is required. Do not change it.
@@ -29,9 +32,17 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
     #region GUI Categories
     [CategoryOrder ("Strategy Information", 0)]
     [CategoryOrder ("ATM Parameters", 1)]
-    [CategoryOrder ("Signals", 2)]
-    [CategoryOrder ("Risk Management", 3)]
-    [CategoryOrder ("Session Parameters", 4)]
+    [CategoryOrder ("Button Panel", 2)]
+    [CategoryOrder ("Signals", 3)]
+    [CategoryOrder ("Risk Management", 4)]
+    [CategoryOrder ("News Filter", 5)]
+    [CategoryOrder ("Session Parameters", 6)]
+    [CategoryOrder ("Indicator Settings", 7)]
+    [CategoryOrder ("Indicator: KingOrderBlock", 8)]
+    [CategoryOrder ("Indicator: PANAKanal", 9)]
+    [CategoryOrder ("Indicator: ThunderZilla", 10)]
+    [CategoryOrder ("Indicator: Visuals", 11)]
+    [CategoryOrder ("Logging", 12)]
     #endregion
 
     public class gbKingPanaZillaKillah : Strategy, ICustomTypeDescriptor
@@ -40,7 +51,7 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
         {
             get
             {
-                return Name;
+                return State == State.SetDefaults ? Name : string.Empty;
             }
         }
 
@@ -104,10 +115,28 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
         private MarketPosition activeTradeDirection = MarketPosition.Flat;
         private string lastTradeClosedSummary = string.Empty;
 
-        private string _version = "1.4.1";
+        private string _version = "1.5.1";
 
         // Indicator
         private gbKingPanaZilla _gbIndicator;
+
+        // EMA Filter
+        private EMA _emaFilter;
+
+        // News Filter
+        private NinjaTrader.NinjaScript.Indicators.Playr101.NewsSignals newsIndicator;
+        private bool _lastNewsBlockActive = false;
+        private bool _newsRuntimeDisabledPrinted = false;
+
+        // Button Panel
+        private Border _controlPanel;
+        private Button _armLongBtn, _armShortBtn, _autoArmBtn, _closeBtn;
+        private Label _statusLabel;
+        private bool _uiInitialized = false;
+        private bool _armLong = true;
+        private bool _armShort = true;
+        private bool _autoArm = true;
+        private volatile bool _strategyEnabled = true;
         #endregion
 
         protected override void OnStateChange ()
@@ -117,7 +146,7 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
                 Description = "Strategy utilizing gbKingPanaZilla signals.";
                 Name = "gbKingPanaZillaKillah";
                 StrategyName = Name;
-                _version = "1.4.1";
+                _version = "1.5.1";
 
                 Author = "Playr101";
                 Credits = "GreyBeard";
@@ -137,14 +166,24 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
                 IsUnmanaged = false;
                 IsAdoptAccountPositionAware = true;
 
+                //--------- User Configurable Parameters ---------//
+                // ATM Strategy
                 AtmStrategy = string.Empty;
 
+                // Signal Usage
                 EnableSignalTracking = false;
                 UsePanaZilliaSignals = true;
                 UseKingZillaSignals = true;
                 UseKingPanaSignals = true;
 
+                // EMA Filter
+                UseEmaFilter = false;
+                EmaFilterPeriod = 50;
+                EmaBrush = Brushes.HotPink;
+
+                // Logging
                 LogEnabled = false;
+                EnableDebug = false;
 
                 // Risk Defaults
                 UseUnrealizedPnl = true;
@@ -153,15 +192,91 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
                 UseDailyLossLimit = true;
                 DailyLossLimit = 200;
 
+                // News Filter Defaults
+                EnableNewsFilter = false;
+                NewsFlattenAtWarningTime = false;
+
+                NewsShowDisplay = true;
+                NewsDisplayLocation = NewsPrintLocation.TopRight;
+                NewsDisplayXOffsetPixels = 20;
+                NewsDisplayYOffsetPixels = 60;
+                NewsUse24HourTime = false;
+                NewsShowBackground = true;
+                NewsShowTimeBackBrush = false;
+                NewsTimeBackBrush = Brushes.DimGray;
+
+                NewsUSOnlyEvents = true;
+                NewsTodaysNewsOnly = true;
+                NewsShowLowPriority = false;
+                NewsMaxNewsItems = 10;
+                NewsRefreshInterval = 15;
+
+                NewsPreBlockMinutes = 5;
+                NewsPostBlockMinutes = 5;
+                NewsBlockHighImpact = true;
+                NewsBlockMediumImpact = true;
+                NewsBlockLowImpact = false;
+
+                NewsSendAlerts = true;
+                NewsAlertInterval = 15;
+                NewsAlertWavFileName = "Alert1.wav";
+
+                NewsDefaultTextColor = Brushes.White;
+                NewsWarningTextColor = Brushes.Yellow;
+                NewsBackgroundColor = new System.Windows.Media.SolidColorBrush (System.Windows.Media.Color.FromArgb (170, 0, 0, 0));
+                NewsHeaderColor = Brushes.White;
+                NewsHighImpactColor = Brushes.Red;
+                NewsMediumImpactColor = Brushes.DarkGreen;
+                NewsLowImpactColor = Brushes.Blue;
+                NewsDefaultFont = new SimpleFont ("Arial", 10);
+                NewsWarningFont = new SimpleFont ("Arial", 10) { Bold = true, Italic = true };
+                NewsDebug = false;
+
+                // Session Times
                 EnableTF1 = true;
                 StartTime1 = DateTime.Parse ("09:30", System.Globalization.CultureInfo.InvariantCulture);
                 EndTime1 = DateTime.Parse ("12:00", System.Globalization.CultureInfo.InvariantCulture);
                 FlattenTF1 = true;
-
                 EnableTF2 = true;
                 StartTime2 = DateTime.Parse ("13:00", System.Globalization.CultureInfo.InvariantCulture);
                 EndTime2 = DateTime.Parse ("15:30", System.Globalization.CultureInfo.InvariantCulture);
                 FlattenTF2 = true;
+
+                // Indicator Settings master toggle
+                ShowIndicatorSettings = false;
+
+                // KingOrderBlock indicator defaults (mirror gbKingPanaZilla)
+                King_SwingPointNeighborhood = 5;
+                King_ImbalanceQualifying = 3;
+                King_OrderBlockFindingBosChochPeriod = 50;
+                King_OrderBlockAge = 500;
+                King_OrderBlocksSameDirectionOffset = 10;
+                King_OrderBlocksDifferenceDirectionOffset = 10;
+                King_SignalTradeQuantityPerOrderBlock = 3;
+                King_SignalTradeSplitBars = 6;
+
+                // PANAKanal indicator defaults
+                Pana_Period = 20;
+                Pana_Factor = 4.0;
+                Pana_MiddlePeriod = 14;
+                Pana_SignalBreakSplit = 20;
+                Pana_SignalPullbackFindingPeriod = 10;
+
+                // ThunderZilla indicator defaults
+                Thunder_TrendMAType = gbThunderZillaMAType.SMA;
+                Thunder_TrendPeriod = 100;
+                Thunder_TrendSmoothingEnabled = false;
+                Thunder_TrendSmoothingMethod = gbThunderZillaMAType.EMA;
+                Thunder_TrendSmoothingPeriod = 10;
+                Thunder_StopOffsetMultiplierStop = 60.0;
+                Thunder_SignalQuantityPerFlat = 2;
+                Thunder_SignalQuantityPerTrend = 999;
+
+                // Indicator visual defaults
+                PanaZilliaBrush = Brushes.Cyan;
+                KingZillaBrush = Brushes.DodgerBlue;
+                KingPanaBrush = Brushes.LimeGreen;
+                ArrowOffset = 3;
             }
             else if (State == State.Configure)
             {
@@ -170,34 +285,123 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
             }
             else if (State == State.DataLoaded)
             {
-                if (Instrument != null && Instrument.MasterInstrument != null)
-                    Draw.TextFixed (this, "Name", Name + "\n" + "Instrument -- " + Instrument.MasterInstrument.Name,
-                        TextPosition.TopLeft, Brushes.DeepSkyBlue, title, Brushes.Transparent, Brushes.Transparent, 0);
-
+                // Use the factory call exactly as before, then push strategy values onto
+                // the indicator. Property assignments land before the framework advances
+                // the indicator to State.DataLoaded, so the child indicators (_king,
+                // _pana, _thunder) are constructed with our values.
                 _gbIndicator = gbKingPanaZilla ();
+
+                _gbIndicator.King_SwingPointNeighborhood = King_SwingPointNeighborhood;
+                _gbIndicator.King_ImbalanceQualifying = King_ImbalanceQualifying;
+                _gbIndicator.King_OrderBlockFindingBosChochPeriod = King_OrderBlockFindingBosChochPeriod;
+                _gbIndicator.King_OrderBlockAge = King_OrderBlockAge;
+                _gbIndicator.King_OrderBlocksSameDirectionOffset = King_OrderBlocksSameDirectionOffset;
+                _gbIndicator.King_OrderBlocksDifferenceDirectionOffset = King_OrderBlocksDifferenceDirectionOffset;
+                _gbIndicator.King_SignalTradeQuantityPerOrderBlock = King_SignalTradeQuantityPerOrderBlock;
+                _gbIndicator.King_SignalTradeSplitBars = King_SignalTradeSplitBars;
+
+                _gbIndicator.Pana_Period = Pana_Period;
+                _gbIndicator.Pana_Factor = Pana_Factor;
+                _gbIndicator.Pana_MiddlePeriod = Pana_MiddlePeriod;
+                _gbIndicator.Pana_SignalBreakSplit = Pana_SignalBreakSplit;
+                _gbIndicator.Pana_SignalPullbackFindingPeriod = Pana_SignalPullbackFindingPeriod;
+
+                _gbIndicator.Thunder_TrendMAType = Thunder_TrendMAType;
+                _gbIndicator.Thunder_TrendPeriod = Thunder_TrendPeriod;
+                _gbIndicator.Thunder_TrendSmoothingEnabled = Thunder_TrendSmoothingEnabled;
+                _gbIndicator.Thunder_TrendSmoothingMethod = Thunder_TrendSmoothingMethod;
+                _gbIndicator.Thunder_TrendSmoothingPeriod = Thunder_TrendSmoothingPeriod;
+                _gbIndicator.Thunder_StopOffsetMultiplierStop = Thunder_StopOffsetMultiplierStop;
+                _gbIndicator.Thunder_SignalQuantityPerFlat = Thunder_SignalQuantityPerFlat;
+                _gbIndicator.Thunder_SignalQuantityPerTrend = Thunder_SignalQuantityPerTrend;
+
+                _gbIndicator.PanaZilliaBrush = PanaZilliaBrush;
+                _gbIndicator.KingZillaBrush = KingZillaBrush;
+                _gbIndicator.KingPanaBrush = KingPanaBrush;
+                _gbIndicator.ArrowOffset = ArrowOffset;
+
                 AddChartIndicator (_gbIndicator);
                 _gbIndicator.Name = "";
 
+                // Optional EMA trade filter
+                if (UseEmaFilter)
+                {
+                    _emaFilter = EMA (EmaFilterPeriod);
+                    AddChartIndicator (_emaFilter);
+                    _emaFilter.Name = "";
+                    _emaFilter.Plots[0].Brush = Brushes.HotPink;
+                    _emaFilter.Plots[0].Width = 2;
+                }
+
+                // Optional News Filter - live chart only
+                if (EnableNewsFilter)
+                {
+                    if (IsNewsFilterRuntimeDisabledContext ())
+                    {
+                        newsIndicator = null;
+
+                        if (!_newsRuntimeDisabledPrinted)
+                        {
+                            if (EnableDebug) Print ($"[{Name}] News Filter disabled for this runtime context. It is live-chart only and will not run in Strategy Analyzer/backtest or Playback/Market Replay.");
+                            _newsRuntimeDisabledPrinted = true;
+                        }
+                    }
+                    else
+                    {
+                        newsIndicator = NewsSignals (
+                            NewsShowDisplay,                    // ShowNewsDisplay
+                            NewsDisplayLocation,                // DisplayLocation
+                            NewsDisplayXOffsetPixels,           // DisplayXOffsetPixels
+                            NewsDisplayYOffsetPixels,           // DisplayYOffsetPixels
+                            NewsUse24HourTime,                  // Use24timeFormat
+                            NewsShowBackground,                 // ShowBackground
+                            NewsShowTimeBackBrush,              // ShowNewsTimeBackBrush
+                            NewsTimeBackBrush,                  // NewsTimeBackBrush
+                            NewsUSOnlyEvents,                   // USOnlyEvents
+                            NewsTodaysNewsOnly,                 // TodaysNewsOnly
+                            NewsShowLowPriority,                // ShowLowPriority
+                            NewsMaxNewsItems,                   // MaxNewsItems
+                            NewsRefreshInterval,                // NewsRefeshInterval
+                            NewsPreBlockMinutes,                // PreNewsBlockMinutes
+                            NewsPostBlockMinutes,               // PostNewsBlockMinutes
+                            NewsBlockHighImpact,                // BlockHighImpact
+                            NewsBlockMediumImpact,              // BlockMediumImpact
+                            NewsBlockLowImpact,                 // BlockLowImpact
+                            NewsSendAlerts,                     // SendAlerts
+                            NewsAlertInterval,                  // AlertInterval
+                            NewsAlertWavFileName,               // AlertWavFileName
+                            NewsDefaultTextColor,               // DefaultTextColor
+                            NewsWarningTextColor,               // WarningTextColor
+                            NewsBackgroundColor,                // BackgroundColor
+                            NewsHeaderColor,                    // HeaderColor
+                            NewsHighImpactColor,                // HighPriorityColor
+                            NewsMediumImpactColor,              // MediumPriorityColor
+                            NewsLowImpactColor,                 // LowPriorityColor
+                            NewsDefaultFont,                    // DefaultFont
+                            NewsWarningFont,                    // WarningFont
+                            NewsDebug                           // Debug
+                        );
+
+                        AddChartIndicator (newsIndicator);
+                        newsIndicator.Name = "";
+                    }
+                }
+
                 if (LogEnabled)
                 {
+                    // Sanitize the account name so it's safe to embed in a file path.
+                    string accountName = (Account != null && !string.IsNullOrEmpty (Account.Name)) ? Account.Name : "NoAccount";
+                    string safeAccount = string.Concat (accountName.Split (System.IO.Path.GetInvalidFileNameChars ())).Replace (" ", "_");
+
                     string logPath = Path.Combine(
                         NinjaTrader.Core.Globals.UserDataDir,
-                        "gbKPZKillah_" + DateTime.Now.ToString("yyyyMMdd_HHmmss") + ".csv");
+                        "gbKPZKillah_" + safeAccount + "_" + DateTime.Now.ToString("yyyyMMdd_HHmmss") + ".csv");
                     _logWriter = new StreamWriter (logPath, append: false, encoding: Encoding.UTF8);
-                    _logWriter.WriteLine ("OpenTime,Instrument,OpenPrice,Qty,CloseTime,Trigger,Direction,AtmStrategy,RealizedPnL");
+                    _logWriter.WriteLine ("OpenTime,Account,Instrument,OpenPrice,Qty,CloseTime,Trigger,Direction,AtmStrategy,RealizedPnL");
                     _logWriter.Flush ();
                 }
 
                 DrawPnlDisplay ();
-            }
-            else if (State == State.Terminated)
-            {
-                if (_logWriter != null)
-                {
-                    _logWriter.Flush ();
-                    _logWriter.Dispose ();
-                    _logWriter = null;
-                }
             }
             else if (State == State.Realtime)
             {
@@ -211,7 +415,30 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
                 dailyPnlStatusMessage = string.Empty;
                 lastTradeClosedSummary = string.Empty;
                 _atmPositionConfirmed = false;
-                Print ($"{Name} entered realtime. ATM mode active.");
+
+                _strategyEnabled = true;
+                _armLong = true;
+                _armShort = true;
+                _autoArm = true;
+
+                if (EnableDebug) Print ($"{Name} entered realtime. ATM mode active.");
+
+                if (ChartControl != null && !_uiInitialized)
+                    CreateRBroControlPanel ();
+
+                UpdateRBroButtons ();
+                UpdateRBroStatusUI ();
+            }
+            else if (State == State.Terminated)
+            {
+                if (_logWriter != null)
+                {
+                    _logWriter.Flush ();
+                    _logWriter.Dispose ();
+                    _logWriter = null;
+                }
+
+                RemoveRBroControlPanel ();
             }
         }
 
@@ -239,6 +466,9 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
             int currentTime = ToTime(Time[0]);
             CheckFlattenTimeframes (currentTime);
 
+            // News filter management/flatten check
+            ManageNewsFilter ();
+
             if (dailyLimitHit)
                 return;
 
@@ -248,6 +478,14 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
                 return; // Do not enter new trades while in a position
 
             if (!isWithinTradingTime || State != State.Realtime)
+                return;
+
+            // Honor the on-chart enable/disable button — block new entries when off.
+            if (!_strategyEnabled)
+                return;
+
+            // Block new entries during the active news warning/post-news window.
+            if (IsNewsTradingBlocked ())
                 return;
 
             // Entry Logic
@@ -265,8 +503,24 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
             bool goLong = panaLong || kingZillaLong || kingPanaLong;
             bool goShort = panaShort || kingZillaShort || kingPanaShort;
 
+            // Optional EMA trade filter: longs require Close > EMA, shorts require Close < EMA.
+            if (UseEmaFilter && _emaFilter != null && CurrentBar >= EmaFilterPeriod)
+            {
+                bool aboveEma = Close[0] > _emaFilter[0];
+                if (goLong && !aboveEma)
+                {
+                    goLong = false;
+                    panaLong = kingZillaLong = kingPanaLong = false;
+                }
+                if (goShort && aboveEma)
+                {
+                    goShort = false;
+                    panaShort = kingZillaShort = kingPanaShort = false;
+                }
+            }
+
             // Submit ATM entry only when both ids are reset
-            if (orderId.Length == 0 && atmStrategyId.Length == 0 && goLong)
+            if (orderId.Length == 0 && atmStrategyId.Length == 0 && goLong && _armLong)
             {
                 string trigger = string.Join("+", new[] {
                     panaLong ? "PZ" : null,
@@ -294,7 +548,7 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
                         isAtmStrategyCreated = true;
                 });
             }
-            else if (orderId.Length == 0 && atmStrategyId.Length == 0 && goShort)
+            else if (orderId.Length == 0 && atmStrategyId.Length == 0 && goShort && _armShort)
             {
                 string trigger = string.Join("+", new[] {
                     panaShort ? "PZ" : null,
@@ -332,9 +586,9 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
 
                 if (status != null && status.Length > 0)
                 {
-                    Print ("The entry order average fill price is: " + status[0]);
-                    Print ("The entry order filled amount is: " + status[1]);
-                    Print ("The entry order order state is: " + status[2]);
+                    if (EnableDebug) Print ("The entry order average fill price is: " + status[0]);
+                    if (EnableDebug) Print ("The entry order filled amount is: " + status[1]);
+                    if (EnableDebug) Print ("The entry order order state is: " + status[2]);
 
                     if (status[2] == "Filled")
                     {
@@ -351,11 +605,152 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
 
             if (atmStrategyId.Length > 0)
             {
-                Print ("The current ATM Strategy market position is: " + GetAtmStrategyMarketPosition (atmStrategyId));
-                Print ("The current ATM Strategy position quantity is: " + GetAtmStrategyPositionQuantity (atmStrategyId));
-                Print ("The current ATM Strategy average price is: " + GetAtmStrategyPositionAveragePrice (atmStrategyId));
-                Print ("The current ATM Strategy Unrealized PnL is: " + GetAtmStrategyUnrealizedProfitLoss (atmStrategyId));
+                if (EnableDebug) Print ("The current ATM Strategy market position is: " + GetAtmStrategyMarketPosition (atmStrategyId));
+                if (EnableDebug) Print ("The current ATM Strategy position quantity is: " + GetAtmStrategyPositionQuantity (atmStrategyId));
+                if (EnableDebug) Print ("The current ATM Strategy average price is: " + GetAtmStrategyPositionAveragePrice (atmStrategyId));
+                if (EnableDebug) Print ("The current ATM Strategy Unrealized PnL is: " + GetAtmStrategyUnrealizedProfitLoss (atmStrategyId));
             }
+        }
+
+        private bool IsNewsFilterRuntimeDisabledContext ()
+        {
+            // Strategy Analyzer/backtest usually has no chart context.
+            if (ChartControl == null)
+                return true;
+
+            // Disable in Playback/Market Replay.
+            if (IsPlaybackConnectionActive ())
+                return true;
+
+            return false;
+        }
+
+        private bool IsNewsFilterRuntimeActive ()
+        {
+            if (!EnableNewsFilter)
+                return false;
+
+            if (newsIndicator == null)
+                return false;
+
+            if (State != State.Realtime)
+                return false;
+
+            if (IsPlaybackConnectionActive ())
+                return false;
+
+            return true;
+        }
+
+        private bool IsPlaybackConnectionActive ()
+        {
+            try
+            {
+                Type connectionType = typeof (NinjaTrader.Cbi.Connection);
+
+                System.Reflection.PropertyInfo playbackProp = connectionType.GetProperty (
+            "PlaybackConnection",
+            System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static);
+
+                if (playbackProp != null)
+                {
+                    object playbackConnection = playbackProp.GetValue (null, null);
+
+                    if (playbackConnection != null)
+                        return true;
+                }
+
+                if (Account != null && Account.Connection != null && Account.Connection.Options != null)
+                {
+                    string provider = Account.Connection.Options.Provider.ToString ();
+
+                    if (!string.IsNullOrEmpty (provider)
+                        && provider.IndexOf ("Playback", StringComparison.OrdinalIgnoreCase) >= 0)
+                        return true;
+                }
+            }
+            catch { }
+
+            return false;
+        }
+
+        private bool IsNewsTradingBlocked ()
+        {
+            try
+            {
+                if (!IsNewsFilterRuntimeActive ())
+                    return false;
+
+                if (newsIndicator.NewsBlock == null)
+                    return false;
+
+                return newsIndicator.NewsBlock[0] >= 0.5;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private double GetNewsMinutesToNext ()
+        {
+            try
+            {
+                if (!IsNewsFilterRuntimeActive ())
+                    return -1.0;
+
+                if (newsIndicator.MinutesToNextNews == null)
+                    return -1.0;
+
+                return newsIndicator.MinutesToNextNews[0];
+            }
+            catch
+            {
+                return -1.0;
+            }
+        }
+
+        private void ManageNewsFilter ()
+        {
+            if (!IsNewsFilterRuntimeActive ())
+            {
+                _lastNewsBlockActive = false;
+                return;
+            }
+
+            bool newsBlocked = IsNewsTradingBlocked ();
+            double minutesToNext = GetNewsMinutesToNext ();
+
+            bool enteringPreNewsWarningWindow =
+        newsBlocked
+        && !_lastNewsBlockActive
+        && minutesToNext >= 0;
+
+            if (enteringPreNewsWarningWindow && NewsFlattenAtWarningTime)
+                FlattenEverything ("News warning window started - flatten/cancel enabled");
+
+            _lastNewsBlockActive = newsBlocked;
+        }
+
+        private string BuildNewsFilterDisplayLine ()
+        {
+            if (!EnableNewsFilter)
+                return "News Filter: OFF";
+
+            if (!IsNewsFilterRuntimeActive ())
+                return "News Filter: DISABLED";
+
+            bool blocked = IsNewsTradingBlocked ();
+            double mins = GetNewsMinutesToNext ();
+
+            if (blocked)
+                return mins >= 0
+                    ? "News Filter: BLOCKED | Next: " + mins.ToString ("F1") + " min"
+                    : "News Filter: BLOCKED | Post-News";
+
+            return mins >= 0
+                ? "News Filter: CLEAR | Next: " + mins.ToString ("F1") + " min"
+                : "News Filter: CLEAR";
         }
 
         private string FormatInstrumentName ()
@@ -389,6 +784,8 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
                 return;
 
             DateTime tickTime = Times[1][0];
+
+            ManageNewsFilter ();
 
             if (lastPnlSessionDate == Core.Globals.MinDate || Bars.IsFirstBarOfSession || tickTime.Date != lastPnlSessionDate.Date)
             {
@@ -431,7 +828,7 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
                 {
                     // Position is live — entry filled regardless of orderId / callback state.
                     _atmPositionConfirmed = true;
-                    isAtmStrategyCreated  = true;
+                    isAtmStrategyCreated = true;
                     orderId = string.Empty;
 
                     if (_tradeMap.TryGetValue (atmStrategyId, out TradeRecord rec) && rec.OpenPrice == 0.0)
@@ -440,7 +837,7 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
                         if (avgPrice > 0)
                         {
                             rec.OpenPrice = Instrument.MasterInstrument.RoundToTickSize (avgPrice);
-                            rec.Qty       = (int)GetAtmStrategyPositionQuantity (atmStrategyId);
+                            rec.Qty = (int)GetAtmStrategyPositionQuantity (atmStrategyId);
                         }
                     }
 
@@ -463,17 +860,18 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
 
                     if (_logWriter != null && _tradeMap.TryGetValue (atmStrategyId, out TradeRecord tr))
                     {
-                        _logWriter.WriteLine ($"{tr.OpenTime:yyyy-MM-dd HH:mm:ss},{tr.Instrument},{tr.OpenPrice:F2},{tr.Qty},{tickTime:yyyy-MM-dd HH:mm:ss},{tr.Trigger},{tr.Direction},{tr.AtmStrategyName},{lastAtmRealizedPnL:F2}");
+                        string acct = (Account != null && !string.IsNullOrEmpty (Account.Name)) ? Account.Name : "NoAccount";
+                        _logWriter.WriteLine ($"{tr.OpenTime:yyyy-MM-dd HH:mm:ss},{acct},{tr.Instrument},{tr.OpenPrice:F2},{tr.Qty},{tickTime:yyyy-MM-dd HH:mm:ss},{tr.Trigger},{tr.Direction},{tr.AtmStrategyName},{lastAtmRealizedPnL:F2}");
                         _logWriter.Flush ();
                     }
 
                     _tradeMap.Remove (atmStrategyId);
                     ClearActiveTradeSignalSources ();
-                    atmStrategyId         = string.Empty;
-                    orderId               = string.Empty;
-                    isAtmStrategyCreated  = false;
+                    atmStrategyId = string.Empty;
+                    orderId = string.Empty;
+                    isAtmStrategyCreated = false;
                     _atmPositionConfirmed = false;
-                    dailyUnrealizedPnL    = 0.0;
+                    dailyUnrealizedPnL = 0.0;
                 }
                 else
                 {
@@ -508,6 +906,7 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
 
             CheckForNakedPositions (tickTime);
             DrawPnlDisplay ();
+            UpdateRBroStatusUI ();
         }
 
         private void DrawPnlDisplay ()
@@ -526,6 +925,10 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
                 ? (inSession ? "Trading: IN SESSION" : "Trading: OUT OF SESSION")
                 : "Trading: IN SESSION (Time Filter Disabled)";
 
+            string enabledText = _strategyEnabled
+                ? "Strategy: ENABLED | LONGS:" + (_armLong ? "ON" : "OFF") + " SHORTS:" + (_armShort ? "ON" : "OFF")
+                : "Strategy: DISABLED";
+
             string targetStr = UseDailyProfitTarget ? "$" + DailyProfitTarget.ToString("F0") : "~";
             string lossStr = UseDailyLossLimit ? "-$" + DailyLossLimit.ToString("F0") : "~";
             double currentDisplayUnrealized = UseUnrealizedPnl ? dailyUnrealizedPnL : 0.0;
@@ -541,10 +944,15 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
             List<string> lines = new List<string>
             {
                 "--- " + Name + " v" + StrategyVersion + " ---",
-                sessionText,
-                pnlLine1,
-                pnlLine2
+                enabledText,
+                sessionText
             };
+
+            if (EnableNewsFilter)
+                lines.Add (BuildNewsFilterDisplayLine ());
+
+            lines.Add (pnlLine1);
+            lines.Add (pnlLine2);
 
             if (EnableSignalTracking)
             {
@@ -645,7 +1053,7 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
             string statsText = BuildSignalTrackingDisplayText();
 
             // Removed the invalid .Replace("", Environment.NewLine) call
-            Print ($"Trade Closed | Last ATM P/L: {tradePnl:C} | Direction: {activeTradeDirection} | Signals: {tradeSignalText}{statsText}");
+            if (EnableDebug) Print ($"Trade Closed | Last ATM P/L: {tradePnl:C} | Direction: {activeTradeDirection} | Signals: {tradeSignalText}{statsText}");
         }
 
         private string BuildActiveSignalListForPrint ()
@@ -708,7 +1116,7 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
                 lines.Add ($"KP T:{kingPanaStats.TotalTrades} Lg:{kingPanaStats.LongTrades} Sh:{kingPanaStats.ShortTrades} W:{kingPanaStats.Winners} L:{kingPanaStats.Losers}");
             }
 
-            lines.Insert (0, enabledSignals.Count > 0 ? "Enabled: " + string.Join (", ", enabledSignals) : "Enabled: None");
+            lines.Insert (0, enabledSignals.Count > 0 ? "Enabled Signals: " + string.Join (", ", enabledSignals) : "Enabled Signals: None");
             return lines;
         }
 
@@ -771,7 +1179,7 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
             if (State != State.Realtime)
                 return;
 
-            Print ($"[{Name}] FlattenEverything: {reason}");
+            if (EnableDebug) Print ($"[{Name}] FlattenEverything: {reason}");
 
             // 1) Close ATM if we have one tracked
             if (!string.IsNullOrEmpty (atmStrategyId))
@@ -839,7 +1247,7 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
 
             if (!hasActiveAtm || !hasProtectiveOrders)
             {
-                Print ($"[{Name}] NAKED POSITION DETECTED at {tickTime:HH:mm:ss} | "
+                if (EnableDebug) Print ($"[{Name}] NAKED POSITION DETECTED at {tickTime:HH:mm:ss} | "
                     + $"Position={Position.MarketPosition} {Position.Quantity} | "
                     + $"HasActiveAtm={hasActiveAtm} HasProtectiveOrders={hasProtectiveOrders}. Flattening.");
 
@@ -882,6 +1290,237 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
             return false;
         }
 
+        #region RBro Button Panel
+
+        private void CreateRBroControlPanel ()
+        {
+            if (ChartControl == null || _uiInitialized)
+                return;
+
+            ChartControl.Dispatcher.InvokeAsync (() =>
+            {
+                try
+                {
+                    if (_uiInitialized)
+                        return;
+
+                    _controlPanel = new Border
+                    {
+                        Background = new SolidColorBrush (Color.FromArgb (220, 20, 20, 35)),
+                        BorderBrush = Brushes.DodgerBlue,
+                        BorderThickness = new Thickness (2),
+                        CornerRadius = new CornerRadius (5),
+                        Padding = new Thickness (10),
+                        Margin = new Thickness (10, 10, 0, 0),
+                        HorizontalAlignment = HorizontalAlignment.Left,
+                        VerticalAlignment = VerticalAlignment.Top
+                    };
+
+                    StackPanel main = new StackPanel { Orientation = Orientation.Vertical };
+
+                    main.Children.Add (new TextBlock
+                    {
+                        Text = "⚡ KPZ Killah ⚡",
+                        Foreground = Brushes.Cyan,
+                        FontWeight = FontWeights.Bold,
+                        FontSize = 14,
+                        TextAlignment = TextAlignment.Center,
+                        HorizontalAlignment = HorizontalAlignment.Center,
+                        Margin = new Thickness (0, 0, 0, 0)
+                    });
+
+                    main.Children.Add (new TextBlock
+                    {
+                        Text = "Instrument -- " + ((Instrument != null && Instrument.MasterInstrument != null) ? Instrument.MasterInstrument.Name : "Unknown"),
+                        Foreground = Brushes.DeepSkyBlue,
+                        FontWeight = FontWeights.Bold,
+                        FontSize = 12,
+                        TextAlignment = TextAlignment.Center,
+                        HorizontalAlignment = HorizontalAlignment.Center,
+                        Margin = new Thickness (0, 0, 0, 4)
+                    });
+
+                    _statusLabel = new Label
+                    {
+                        Content = "Initializing...",
+                        Foreground = Brushes.Yellow,
+                        FontSize = 11,
+                        Padding = new Thickness (0),
+                        Margin = new Thickness (0, 0, 0, 4)
+                    };
+                    main.Children.Add (_statusLabel);
+
+                    StackPanel btnRow = new StackPanel
+                    {
+                        Orientation = Orientation.Horizontal,
+                        HorizontalAlignment = HorizontalAlignment.Center,
+                        Margin = new Thickness (0, 0, 0, 0)
+                    };
+
+                    _armLongBtn = new Button
+                    {
+                        Content = "ARM LONG",
+                        Width = 80,
+                        Height = 30,
+                        Margin = new Thickness (2),
+                        Background = Brushes.DarkGreen,
+                        Foreground = Brushes.White,
+                        FontWeight = FontWeights.Bold
+                    };
+                    _armLongBtn.Click += ArmLongBtn_Click;
+                    btnRow.Children.Add (_armLongBtn);
+
+                    _armShortBtn = new Button
+                    {
+                        Content = "ARM SHORT",
+                        Width = 80,
+                        Height = 30,
+                        Margin = new Thickness (2),
+                        Background = Brushes.DarkRed,
+                        Foreground = Brushes.White,
+                        FontWeight = FontWeights.Bold
+                    };
+                    _armShortBtn.Click += ArmShortBtn_Click;
+                    btnRow.Children.Add (_armShortBtn);
+
+                    main.Children.Add (btnRow);
+
+                    _autoArmBtn = new Button
+                    {
+                        Content = "AUTO ARM: OFF",
+                        Width = 166,
+                        Height = 30,
+                        Margin = new Thickness (2, 4, 2, 0),
+                        Background = Brushes.DimGray,
+                        Foreground = Brushes.White,
+                        FontWeight = FontWeights.Bold
+                    };
+                    _autoArmBtn.Click += AutoArmBtn_Click;
+                    main.Children.Add (_autoArmBtn);
+
+                    _closeBtn = new Button
+                    {
+                        Content = "CLOSE ALL",
+                        Width = 166,
+                        Height = 30,
+                        Margin = new Thickness (2, 4, 2, 0),
+                        Background = Brushes.Maroon,
+                        Foreground = Brushes.White,
+                        FontWeight = FontWeights.Bold
+                    };
+                    _closeBtn.Click += CloseBtn_Click;
+                    main.Children.Add (_closeBtn);
+
+                    _controlPanel.Child = main;
+                    UserControlCollection.Add (_controlPanel);
+                    _uiInitialized = true;
+
+                    UpdateRBroButtons ();
+                    UpdateRBroStatusUI ();
+                }
+                catch (Exception ex)
+                {
+                    if (EnableDebug) Print ($"[{Name}] Button panel error: {ex.Message}");
+                }
+            });
+        }
+
+        private void RemoveRBroControlPanel ()
+        {
+            if (ChartControl == null || _controlPanel == null)
+                return;
+
+            ChartControl.Dispatcher.InvokeAsync (() =>
+            {
+                try
+                {
+                    if (_controlPanel != null && UserControlCollection.Contains (_controlPanel))
+                        UserControlCollection.Remove (_controlPanel);
+
+                    _controlPanel = null;
+                    _uiInitialized = false;
+                }
+                catch { }
+            });
+        }
+
+        private void ArmLongBtn_Click (object sender, RoutedEventArgs e)
+        {
+            _armLong = !_armLong;
+            UpdateRBroButtons ();
+            UpdateRBroStatusUI ();
+        }
+
+        private void ArmShortBtn_Click (object sender, RoutedEventArgs e)
+        {
+            _armShort = !_armShort;
+            UpdateRBroButtons ();
+            UpdateRBroStatusUI ();
+        }
+
+        private void AutoArmBtn_Click (object sender, RoutedEventArgs e)
+        {
+            _autoArm = !_autoArm;
+
+            if (_autoArm)
+                _armLong = _armShort = true;
+            else
+                _armLong = _armShort = false;
+
+            UpdateRBroButtons ();
+            UpdateRBroStatusUI ();
+        }
+
+        private void CloseBtn_Click (object sender, RoutedEventArgs e)
+        {
+            FlattenAll ();
+            UpdateRBroStatusUI ();
+        }
+
+        private void UpdateRBroButtons ()
+        {
+            if (_armLongBtn == null || _armShortBtn == null || _autoArmBtn == null)
+                return;
+
+            _armLongBtn.Background = _armLong ? Brushes.LimeGreen : Brushes.DarkGreen;
+            _armLongBtn.Content = _armLong ? "ARMED LONG" : "ARM LONG";
+
+            _armShortBtn.Background = _armShort ? Brushes.Red : Brushes.DarkRed;
+            _armShortBtn.Content = _armShort ? "ARMED SHORT" : "ARM SHORT";
+
+            _autoArmBtn.Background = _autoArm ? Brushes.DodgerBlue : Brushes.DimGray;
+            _autoArmBtn.Content = _autoArm ? "AUTO ARM: ON" : "AUTO ARM: OFF";
+        }
+
+        private void UpdateRBroStatusUI ()
+        {
+            if (_statusLabel == null || ChartControl == null)
+                return;
+
+            ChartControl.Dispatcher.InvokeAsync (() =>
+            {
+                try
+                {
+                    string pos = Position.MarketPosition.ToString ();
+                    string selectedAtm = !string.IsNullOrWhiteSpace (AtmStrategy) ? AtmStrategy : "No ATM Selected";
+
+                    string pending = orderId.Length > 0
+                ? " [ORDER: " + selectedAtm + "]"
+                : (!string.IsNullOrEmpty (atmStrategyId) ? " [ATM: " + selectedAtm + "]" : "");
+
+                    _statusLabel.Content = pos + pending;
+
+                    _statusLabel.Foreground =
+                        dailyLimitHit ? Brushes.Red :
+                        Position.MarketPosition != MarketPosition.Flat ? Brushes.Cyan :
+                        (_armLong || _armShort) ? Brushes.LimeGreen : Brushes.Orange;
+                }
+                catch { }
+            });
+        }
+
+        #endregion
+
         #region Custom Property Manipulation
         private void ModifyPNLProperties (PropertyDescriptorCollection col)
         {
@@ -906,6 +1545,109 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
             }
         }
 
+        private void ModifyEmaFilterProperties (PropertyDescriptorCollection col)
+        {
+            if (!UseEmaFilter)
+            {
+                col.Remove (col["EmaFilterPeriod"]);
+                col.Remove (col["EmaBrush"]);
+            }
+        }
+
+        private void ModifyNewsFilterProperties (PropertyDescriptorCollection col)
+        {
+            if (EnableNewsFilter)
+                return;
+
+            string[] toRemove = new[]
+            {
+                "NewsFlattenAtWarningTime",
+                "NewsShowDisplay",
+                "NewsDisplayLocation",
+                "NewsDisplayXOffsetPixels",
+                "NewsDisplayYOffsetPixels",
+                "NewsUse24HourTime",
+                "NewsShowBackground",
+                "NewsShowTimeBackBrush",
+                "NewsTimeBackBrush",
+                "NewsUSOnlyEvents",
+                "NewsTodaysNewsOnly",
+                "NewsShowLowPriority",
+                "NewsMaxNewsItems",
+                "NewsRefreshInterval",
+                "NewsPreBlockMinutes",
+                "NewsPostBlockMinutes",
+                "NewsBlockHighImpact",
+                "NewsBlockMediumImpact",
+                "NewsBlockLowImpact",
+                "NewsSendAlerts",
+                "NewsAlertInterval",
+                "NewsAlertWavFileName",
+                "NewsDefaultTextColor",
+                "NewsWarningTextColor",
+                "NewsBackgroundColor",
+                "NewsHeaderColor",
+                "NewsHighImpactColor",
+                "NewsMediumImpactColor",
+                "NewsLowImpactColor",
+                "NewsDefaultFont",
+                "NewsWarningFont",
+                "NewsDebug"
+            };
+
+            foreach (string p in toRemove)
+            {
+                if (col[p] != null)
+                    col.Remove (col[p]);
+            }
+        }
+
+        private void ModifyIndicatorSettingsProperties (PropertyDescriptorCollection col)
+        {
+            if (ShowIndicatorSettings)
+                return;
+
+            // Hide every indicator-specific property when the master toggle is off.
+            string[] toRemove = new[]
+            {
+                // KingOrderBlock
+                "King_SwingPointNeighborhood",
+                "King_ImbalanceQualifying",
+                "King_OrderBlockFindingBosChochPeriod",
+                "King_OrderBlockAge",
+                "King_OrderBlocksSameDirectionOffset",
+                "King_OrderBlocksDifferenceDirectionOffset",
+                "King_SignalTradeQuantityPerOrderBlock",
+                "King_SignalTradeSplitBars",
+                // PANAKanal
+                "Pana_Period",
+                "Pana_Factor",
+                "Pana_MiddlePeriod",
+                "Pana_SignalBreakSplit",
+                "Pana_SignalPullbackFindingPeriod",
+                // ThunderZilla
+                "Thunder_TrendMAType",
+                "Thunder_TrendPeriod",
+                "Thunder_TrendSmoothingEnabled",
+                "Thunder_TrendSmoothingMethod",
+                "Thunder_TrendSmoothingPeriod",
+                "Thunder_StopOffsetMultiplierStop",
+                "Thunder_SignalQuantityPerFlat",
+                "Thunder_SignalQuantityPerTrend",
+                // Visuals
+                "PanaZilliaBrush",
+                "KingZillaBrush",
+                "KingPanaBrush",
+                "ArrowOffset",
+            };
+
+            foreach (string p in toRemove)
+            {
+                if (col[p] != null)
+                    col.Remove (col[p]);
+            }
+        }
+
         public AttributeCollection GetAttributes () => TypeDescriptor.GetAttributes (GetType ());
         public string GetClassName () => TypeDescriptor.GetClassName (GetType ());
         public string GetComponentName () => TypeDescriptor.GetComponentName (GetType ());
@@ -924,6 +1666,9 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
             PropertyDescriptorCollection col = new PropertyDescriptorCollection(arr);
             ModifyPNLProperties (col);
             ModifySessionProperties (col);
+            ModifyEmaFilterProperties (col);
+            ModifyNewsFilterProperties (col);
+            ModifyIndicatorSettingsProperties (col);
             return col;
         }
 
@@ -998,6 +1743,41 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
         public bool UseKingPanaSignals
         {
             get; set;
+        }
+
+        [NinjaScriptProperty]
+        [Display (Name = "Use EMA Filter", Order = 4, GroupName = "Signals", Description = "When enabled, longs require Close > EMA and shorts require Close < EMA.")]
+        [RefreshProperties (RefreshProperties.All)]
+        public bool UseEmaFilter
+        {
+            get; set;
+        }
+
+        [NinjaScriptProperty]
+        [Range (1, int.MaxValue)]
+        [Display (Name = "EMA Filter Period", Order = 5, GroupName = "Signals")]
+        public int EmaFilterPeriod
+        {
+            get; set;
+        }
+
+        [XmlIgnore]
+        [Display (Name = "EMA Color", Order = 6, GroupName = "Signals")]
+        public Brush EmaBrush
+        {
+            get; set;
+        }
+        [Browsable (false)]
+        public string EmaBrushSerialize
+        {
+            get
+            {
+                return Serialize.BrushToString (EmaBrush);
+            }
+            set
+            {
+                EmaBrush = Serialize.StringToBrush (value);
+            }
         }
 
         [NinjaScriptProperty]
@@ -1096,11 +1876,667 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
         public bool FlattenTF2
         {
             get; set;
+        }     
+
+        // ==================== News Filter ====================
+        [NinjaScriptProperty]
+        [Display (Name = "Enable News Filter", Order = 0, GroupName = "News Filter", Description = "Enable NewsSignals live news filter. Disabled automatically during Strategy Analyzer/backtest and Playback/Market Replay.")]
+        [RefreshProperties (RefreshProperties.All)]
+        public bool EnableNewsFilter
+        {
+            get; set;
         }
 
         [NinjaScriptProperty]
-        [Display (Name = "Log Trades", Order = 9, GroupName = "Session Parameters", Description = "Write a CSV trade log to the NinjaTrader user data folder.")]
+        [Display (Name = "Flatten/Cancel At News Warning", Order = 1, GroupName = "News Filter", Description = "If enabled, closes tracked ATM position and cancels working orders when the pre-news warning window starts.")]
+        public bool NewsFlattenAtWarningTime
+        {
+            get; set;
+        }
+
+        [NinjaScriptProperty]
+        [Display (Name = "Show News Display", Order = 2, GroupName = "News Filter", Description = "Show or hide the NewsSignals chart display.")]
+        public bool NewsShowDisplay
+        {
+            get; set;
+        }
+
+        [NinjaScriptProperty]
+        [Display (Name = "Display Location", Order = 3, GroupName = "News Filter")]
+        public NewsPrintLocation NewsDisplayLocation
+        {
+            get; set;
+        }
+
+        [NinjaScriptProperty]
+        [Range (0, 5000)]
+        [Display (Name = "Display X Offset Pixels", Order = 4, GroupName = "News Filter")]
+        public int NewsDisplayXOffsetPixels
+        {
+            get; set;
+        }
+
+        [NinjaScriptProperty]
+        [Range (0, 5000)]
+        [Display (Name = "Display Y Offset Pixels", Order = 5, GroupName = "News Filter")]
+        public int NewsDisplayYOffsetPixels
+        {
+            get; set;
+        }
+
+        [NinjaScriptProperty]
+        [Display (Name = "Use 24-Hour Time", Order = 6, GroupName = "News Filter")]
+        public bool NewsUse24HourTime
+        {
+            get; set;
+        }
+
+        [NinjaScriptProperty]
+        [Display (Name = "Show Background", Order = 7, GroupName = "News Filter")]
+        public bool NewsShowBackground
+        {
+            get; set;
+        }
+
+        [NinjaScriptProperty]
+        [Display (Name = "Show Time BackBrush", Order = 8, GroupName = "News Filter")]
+        public bool NewsShowTimeBackBrush
+        {
+            get; set;
+        }
+
+        [XmlIgnore ()]
+        [NinjaScriptProperty]
+        [Display (Name = "Time BackBrush", Order = 9, GroupName = "News Filter")]
+        public Brush NewsTimeBackBrush
+        {
+            get; set;
+        }
+
+        [Browsable (false)]
+        public string NewsTimeBackBrushSerialize
+        {
+            get
+            {
+                return Serialize.BrushToString (NewsTimeBackBrush);
+            }
+            set
+            {
+                NewsTimeBackBrush = Serialize.StringToBrush (value);
+            }
+        }
+
+        [NinjaScriptProperty]
+        [Display (Name = "US Events Only", Order = 10, GroupName = "News Filter")]
+        public bool NewsUSOnlyEvents
+        {
+            get; set;
+        }
+
+        [NinjaScriptProperty]
+        [Display (Name = "Today's News Only", Order = 11, GroupName = "News Filter")]
+        public bool NewsTodaysNewsOnly
+        {
+            get; set;
+        }
+
+        [NinjaScriptProperty]
+        [Display (Name = "Show Low Priority", Order = 12, GroupName = "News Filter")]
+        public bool NewsShowLowPriority
+        {
+            get; set;
+        }
+
+        [NinjaScriptProperty]
+        [Range (1, int.MaxValue)]
+        [Display (Name = "Max News Items", Order = 13, GroupName = "News Filter")]
+        public int NewsMaxNewsItems
+        {
+            get; set;
+        }
+
+        [NinjaScriptProperty]
+        [Range (1, int.MaxValue)]
+        [Display (Name = "Refresh Interval Minutes", Order = 14, GroupName = "News Filter")]
+        public int NewsRefreshInterval
+        {
+            get; set;
+        }
+
+        [NinjaScriptProperty]
+        [Range (0, 240)]
+        [Display (Name = "Pre-News Block Minutes", Order = 15, GroupName = "News Filter")]
+        public int NewsPreBlockMinutes
+        {
+            get; set;
+        }
+
+        [NinjaScriptProperty]
+        [Range (0, 240)]
+        [Display (Name = "Post-News Block Minutes", Order = 16, GroupName = "News Filter")]
+        public int NewsPostBlockMinutes
+        {
+            get; set;
+        }
+
+        [NinjaScriptProperty]
+        [Display (Name = "Block High Impact", Order = 17, GroupName = "News Filter")]
+        public bool NewsBlockHighImpact
+        {
+            get; set;
+        }
+
+        [NinjaScriptProperty]
+        [Display (Name = "Block Medium Impact", Order = 18, GroupName = "News Filter")]
+        public bool NewsBlockMediumImpact
+        {
+            get; set;
+        }
+
+        [NinjaScriptProperty]
+        [Display (Name = "Block Low Impact", Order = 19, GroupName = "News Filter")]
+        public bool NewsBlockLowImpact
+        {
+            get; set;
+        }
+
+        [NinjaScriptProperty]
+        [Display (Name = "Send Alerts", Order = 20, GroupName = "News Filter")]
+        public bool NewsSendAlerts
+        {
+            get; set;
+        }
+
+        [NinjaScriptProperty]
+        [Range (0, 240)]
+        [Display (Name = "Alert Interval Minutes", Order = 21, GroupName = "News Filter")]
+        public int NewsAlertInterval
+        {
+            get; set;
+        }
+
+        [NinjaScriptProperty]
+        [Display (Name = "Alert WAV File", Order = 22, GroupName = "News Filter")]
+        public string NewsAlertWavFileName
+        {
+            get; set;
+        }
+
+        [XmlIgnore ()]
+        [NinjaScriptProperty]
+        [Display (Name = "Default Text Color", Order = 23, GroupName = "News Filter")]
+        public Brush NewsDefaultTextColor
+        {
+            get; set;
+        }
+
+        [Browsable (false)]
+        public string NewsDefaultTextColorSerialize
+        {
+            get
+            {
+                return Serialize.BrushToString (NewsDefaultTextColor);
+            }
+            set
+            {
+                NewsDefaultTextColor = Serialize.StringToBrush (value);
+            }
+        }
+
+        [XmlIgnore ()]
+        [NinjaScriptProperty]
+        [Display (Name = "Warning Text Color", Order = 24, GroupName = "News Filter")]
+        public Brush NewsWarningTextColor
+        {
+            get; set;
+        }
+
+        [Browsable (false)]
+        public string NewsWarningTextColorSerialize
+        {
+            get
+            {
+                return Serialize.BrushToString (NewsWarningTextColor);
+            }
+            set
+            {
+                NewsWarningTextColor = Serialize.StringToBrush (value);
+            }
+        }
+
+        [XmlIgnore ()]
+        [NinjaScriptProperty]
+        [Display (Name = "Background Color", Order = 25, GroupName = "News Filter")]
+        public Brush NewsBackgroundColor
+        {
+            get; set;
+        }
+
+        [Browsable (false)]
+        public string NewsBackgroundColorSerialize
+        {
+            get
+            {
+                return Serialize.BrushToString (NewsBackgroundColor);
+            }
+            set
+            {
+                NewsBackgroundColor = Serialize.StringToBrush (value);
+            }
+        }
+
+        [XmlIgnore ()]
+        [NinjaScriptProperty]
+        [Display (Name = "Header Text Color", Order = 26, GroupName = "News Filter")]
+        public Brush NewsHeaderColor
+        {
+            get; set;
+        }
+
+        [Browsable (false)]
+        public string NewsHeaderColorSerialize
+        {
+            get
+            {
+                return Serialize.BrushToString (NewsHeaderColor);
+            }
+            set
+            {
+                NewsHeaderColor = Serialize.StringToBrush (value);
+            }
+        }
+
+        [XmlIgnore ()]
+        [NinjaScriptProperty]
+        [Display (Name = "High Impact Text Color", Order = 27, GroupName = "News Filter")]
+        public Brush NewsHighImpactColor
+        {
+            get; set;
+        }
+
+        [Browsable (false)]
+        public string NewsHighImpactColorSerialize
+        {
+            get
+            {
+                return Serialize.BrushToString (NewsHighImpactColor);
+            }
+            set
+            {
+                NewsHighImpactColor = Serialize.StringToBrush (value);
+            }
+        }
+
+        [XmlIgnore ()]
+        [NinjaScriptProperty]
+        [Display (Name = "Medium Impact Text Color", Order = 28, GroupName = "News Filter")]
+        public Brush NewsMediumImpactColor
+        {
+            get; set;
+        }
+
+        [Browsable (false)]
+        public string NewsMediumImpactColorSerialize
+        {
+            get
+            {
+                return Serialize.BrushToString (NewsMediumImpactColor);
+            }
+            set
+            {
+                NewsMediumImpactColor = Serialize.StringToBrush (value);
+            }
+        }
+
+        [XmlIgnore ()]
+        [NinjaScriptProperty]
+        [Display (Name = "Low Impact Text Color", Order = 29, GroupName = "News Filter")]
+        public Brush NewsLowImpactColor
+        {
+            get; set;
+        }
+
+        [Browsable (false)]
+        public string NewsLowImpactColorSerialize
+        {
+            get
+            {
+                return Serialize.BrushToString (NewsLowImpactColor);
+            }
+            set
+            {
+                NewsLowImpactColor = Serialize.StringToBrush (value);
+            }
+        }
+
+        [XmlIgnore ()]
+        [NinjaScriptProperty]
+        [Display (Name = "Default Font", Order = 30, GroupName = "News Filter")]
+        public SimpleFont NewsDefaultFont
+        {
+            get; set;
+        }
+
+        [Browsable (false)]
+        public string NewsDefaultFontSerialize
+        {
+            get
+            {
+                return NewsDefaultFont.FamilySerialize;
+            }
+            set
+            {
+                NewsDefaultFont = new SimpleFont (value, NewsDefaultFontSizeSerialize);
+            }
+        }
+
+        [Browsable (false)]
+        public double NewsDefaultFontSizeSerialize
+        {
+            get
+            {
+                return NewsDefaultFont.Size;
+            }
+            set
+            {
+                NewsDefaultFont.Size = value;
+            }
+        }
+
+        [XmlIgnore ()]
+        [NinjaScriptProperty]
+        [Display (Name = "Warning Font", Order = 31, GroupName = "News Filter")]
+        public SimpleFont NewsWarningFont
+        {
+            get; set;
+        }
+
+        [Browsable (false)]
+        public string NewsWarningFontSerialize
+        {
+            get
+            {
+                return NewsWarningFont.FamilySerialize;
+            }
+            set
+            {
+                NewsWarningFont = new SimpleFont (value, NewsWarningFontSizeSerialize);
+            }
+        }
+
+        [Browsable (false)]
+        public double NewsWarningFontSizeSerialize
+        {
+            get
+            {
+                return NewsWarningFont.Size;
+            }
+            set
+            {
+                NewsWarningFont.Size = value;
+            }
+        }
+
+        [NinjaScriptProperty]
+        [Display (Name = "Debug", Order = 32, GroupName = "News Filter")]
+        public bool NewsDebug
+        {
+            get; set;
+        }
+
+        // ==================== Indicator Settings master toggle ====================
+        [NinjaScriptProperty]
+        [Display (Name = "Show Indicator Settings", Order = 0, GroupName = "Indicator Settings", Description = "When checked, exposes all gbKingPanaZilla indicator parameters below.")]
+        [RefreshProperties (RefreshProperties.All)]
+        public bool ShowIndicatorSettings
+        {
+            get; set;
+        }
+
+        // ==================== KingOrderBlock ====================
+        [NinjaScriptProperty]
+        [Range (1, int.MaxValue)]
+        [Display (Name = "Swing Point: Neighborhood", Order = 0, GroupName = "Indicator: KingOrderBlock")]
+        public int King_SwingPointNeighborhood
+        {
+            get; set;
+        }
+
+        [NinjaScriptProperty]
+        [Range (1, int.MaxValue)]
+        [Display (Name = "Imbalance: Qualifying (Bars)", Order = 10, GroupName = "Indicator: KingOrderBlock")]
+        public int King_ImbalanceQualifying
+        {
+            get; set;
+        }
+
+        [NinjaScriptProperty]
+        [Range (1, int.MaxValue)]
+        [Display (Name = "Order Block: Finding BOS/CHoCH Period", Order = 20, GroupName = "Indicator: KingOrderBlock")]
+        public int King_OrderBlockFindingBosChochPeriod
+        {
+            get; set;
+        }
+
+        [NinjaScriptProperty]
+        [Range (0, int.MaxValue)]
+        [Display (Name = "Order Block: Age (Bars)", Order = 30, GroupName = "Indicator: KingOrderBlock")]
+        public int King_OrderBlockAge
+        {
+            get; set;
+        }
+
+        [NinjaScriptProperty]
+        [Range (0, int.MaxValue)]
+        [Display (Name = "Order Blocks: Same Direction Offset (Ticks)", Order = 40, GroupName = "Indicator: KingOrderBlock")]
+        public int King_OrderBlocksSameDirectionOffset
+        {
+            get; set;
+        }
+
+        [NinjaScriptProperty]
+        [Range (0, int.MaxValue)]
+        [Display (Name = "Order Blocks: Diff Direction Offset (Ticks)", Order = 50, GroupName = "Indicator: KingOrderBlock")]
+        public int King_OrderBlocksDifferenceDirectionOffset
+        {
+            get; set;
+        }
+
+        [NinjaScriptProperty]
+        [Range (1, int.MaxValue)]
+        [Display (Name = "Signal Trade: Quantity Per OB", Order = 60, GroupName = "Indicator: KingOrderBlock")]
+        public int King_SignalTradeQuantityPerOrderBlock
+        {
+            get; set;
+        }
+
+        [NinjaScriptProperty]
+        [Range (1, int.MaxValue)]
+        [Display (Name = "Signal Trade: Split (Bars)", Order = 70, GroupName = "Indicator: KingOrderBlock")]
+        public int King_SignalTradeSplitBars
+        {
+            get; set;
+        }
+
+        // ==================== PANAKanal ====================
+        [NinjaScriptProperty]
+        [Range (1, int.MaxValue)]
+        [Display (Name = "Period", Order = 0, GroupName = "Indicator: PANAKanal")]
+        public int Pana_Period
+        {
+            get; set;
+        }
+
+        [NinjaScriptProperty]
+        [Range (0.01, double.MaxValue)]
+        [Display (Name = "Factor", Order = 10, GroupName = "Indicator: PANAKanal")]
+        public double Pana_Factor
+        {
+            get; set;
+        }
+
+        [NinjaScriptProperty]
+        [Range (1, int.MaxValue)]
+        [Display (Name = "Middle Period", Order = 20, GroupName = "Indicator: PANAKanal")]
+        public int Pana_MiddlePeriod
+        {
+            get; set;
+        }
+
+        [NinjaScriptProperty]
+        [Range (1, int.MaxValue)]
+        [Display (Name = "Signal Break Split (Bars)", Order = 30, GroupName = "Indicator: PANAKanal")]
+        public int Pana_SignalBreakSplit
+        {
+            get; set;
+        }
+
+        [NinjaScriptProperty]
+        [Range (1, int.MaxValue)]
+        [Display (Name = "Signal Pullback Finding Period", Order = 40, GroupName = "Indicator: PANAKanal")]
+        public int Pana_SignalPullbackFindingPeriod
+        {
+            get; set;
+        }
+
+        // ==================== ThunderZilla ====================
+        [NinjaScriptProperty]
+        [Display (Name = "Trend: MA Type", Order = 0, GroupName = "Indicator: ThunderZilla")]
+        public gbThunderZillaMAType Thunder_TrendMAType
+        {
+            get; set;
+        }
+
+        [NinjaScriptProperty]
+        [Range (1, int.MaxValue)]
+        [Display (Name = "Trend: Period", Order = 10, GroupName = "Indicator: ThunderZilla")]
+        public int Thunder_TrendPeriod
+        {
+            get; set;
+        }
+
+        [NinjaScriptProperty]
+        [Display (Name = "Trend: Smoothing Enabled", Order = 20, GroupName = "Indicator: ThunderZilla")]
+        public bool Thunder_TrendSmoothingEnabled
+        {
+            get; set;
+        }
+
+        [NinjaScriptProperty]
+        [Display (Name = "Trend: Smoothing Method", Order = 30, GroupName = "Indicator: ThunderZilla")]
+        public gbThunderZillaMAType Thunder_TrendSmoothingMethod
+        {
+            get; set;
+        }
+
+        [NinjaScriptProperty]
+        [Range (1, int.MaxValue)]
+        [Display (Name = "Trend: Smoothing Period", Order = 40, GroupName = "Indicator: ThunderZilla")]
+        public int Thunder_TrendSmoothingPeriod
+        {
+            get; set;
+        }
+
+        [NinjaScriptProperty]
+        [Range (0.0, double.MaxValue)]
+        [Display (Name = "Stop: Offset Multiplier (Ticks)", Order = 50, GroupName = "Indicator: ThunderZilla")]
+        public double Thunder_StopOffsetMultiplierStop
+        {
+            get; set;
+        }
+
+        [NinjaScriptProperty]
+        [Range (1, int.MaxValue)]
+        [Display (Name = "Signal: Quantity Per Flat", Order = 60, GroupName = "Indicator: ThunderZilla")]
+        public int Thunder_SignalQuantityPerFlat
+        {
+            get; set;
+        }
+
+        [NinjaScriptProperty]
+        [Range (1, int.MaxValue)]
+        [Display (Name = "Signal: Quantity Per Trend", Order = 70, GroupName = "Indicator: ThunderZilla")]
+        public int Thunder_SignalQuantityPerTrend
+        {
+            get; set;
+        }
+
+        // ==================== Indicator Visuals ====================
+        [XmlIgnore]
+        [Display (Name = "PanaZillia Color", Order = 0, GroupName = "Indicator: Visuals")]
+        public Brush PanaZilliaBrush
+        {
+            get; set;
+        }
+        [Browsable (false)]
+        public string PanaZilliaBrushSerialize
+        {
+            get
+            {
+                return Serialize.BrushToString (PanaZilliaBrush);
+            }
+            set
+            {
+                PanaZilliaBrush = Serialize.StringToBrush (value);
+            }
+        }
+
+        [XmlIgnore]
+        [Display (Name = "KingZilla Color", Order = 1, GroupName = "Indicator: Visuals")]
+        public Brush KingZillaBrush
+        {
+            get; set;
+        }
+        [Browsable (false)]
+        public string KingZillaBrushSerialize
+        {
+            get
+            {
+                return Serialize.BrushToString (KingZillaBrush);
+            }
+            set
+            {
+                KingZillaBrush = Serialize.StringToBrush (value);
+            }
+        }
+
+        [XmlIgnore]
+        [Display (Name = "KingPana Color", Order = 2, GroupName = "Indicator: Visuals")]
+        public Brush KingPanaBrush
+        {
+            get; set;
+        }
+        [Browsable (false)]
+        public string KingPanaBrushSerialize
+        {
+            get
+            {
+                return Serialize.BrushToString (KingPanaBrush);
+            }
+            set
+            {
+                KingPanaBrush = Serialize.StringToBrush (value);
+            }
+        }
+
+        [NinjaScriptProperty]
+        [Range (0, int.MaxValue)]
+        [Display (Name = "Arrow Offset (Ticks)", Order = 3, GroupName = "Indicator: Visuals")]
+        public int ArrowOffset
+        {
+            get; set;
+        }
+
+        [NinjaScriptProperty]
+        [Display (Name = "Log Trades", Order = 0, GroupName = "Logging", Description = "Write a CSV trade log to the NinjaTrader user data folder.")]
         public bool LogEnabled
+        {
+            get; set;
+        }
+
+        [NinjaScriptProperty]
+        [Display (Name = "Enable Debug", Order = 1, GroupName = "Logging", Description = "Print diagnostic messages to the NinjaTrader output window.")]
+        public bool EnableDebug
         {
             get; set;
         }
