@@ -109,7 +109,7 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
         private MarketPosition activeTradeDirection = MarketPosition.Flat;
         private string lastTradeClosedSummary = string.Empty;
 
-        private string _version = "1.5.2";
+        private string _version = "1.5.3";
 
         // Indicator
         private gbKingPanaZilla _gbIndicator;
@@ -140,7 +140,7 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
                 Description = "Strategy utilizing gbKingPanaZilla signals.";
                 Name = "gbKingPanaZillaKillah";
                 StrategyName = Name;
-                _version = "1.5.2";
+                _version = "1.5.3";
 
                 Author = "Playr101";
                 Credits = "GreyBeard";
@@ -2100,14 +2100,16 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
             }
         }
 
-        private Brush _newsBackgroundColor = Brushes.Black;
+        private static readonly Brush _newsBackgroundColorDefault = MakeFrozenBrush (170, 0, 0, 0);
+        private static Brush MakeFrozenBrush (byte a, byte r, byte g, byte b) { var br = new SolidColorBrush (Color.FromArgb (a, r, g, b)); br.Freeze (); return br; }
+        private Brush _newsBackgroundColor;
 
         [XmlIgnore ()]
         [NinjaScriptProperty]
         [Display (Name = "Background Color", Order = 25, GroupName = "News Filter")]
         public Brush NewsBackgroundColor
         {
-            get { return _newsBackgroundColor; }
+            get { return _newsBackgroundColor ?? _newsBackgroundColorDefault; }
             set { _newsBackgroundColor = value; }
         }
 
@@ -2116,11 +2118,11 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
         {
             get
             {
-                return Serialize.BrushToString (_newsBackgroundColor);
+                return Serialize.BrushToString (_newsBackgroundColor ?? _newsBackgroundColorDefault);
             }
             set
             {
-                _newsBackgroundColor = Serialize.StringToBrush (value);
+                _newsBackgroundColor = Serialize.StringToBrush (value) ?? _newsBackgroundColorDefault;
             }
         }
 
