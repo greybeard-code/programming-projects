@@ -47,13 +47,7 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
 
     public class gbKingPanaZillaKillah : Strategy, ICustomTypeDescriptor
     {
-        public override string DisplayName
-        {
-            get
-            {
-                return State == State.SetDefaults ? Name : string.Empty;
-            }
-        }
+        public override string DisplayName => Name;
 
         #region Variables
         // Drawing
@@ -115,7 +109,7 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
         private MarketPosition activeTradeDirection = MarketPosition.Flat;
         private string lastTradeClosedSummary = string.Empty;
 
-        private string _version = "1.5.1";
+        private string _version = "1.5.2";
 
         // Indicator
         private gbKingPanaZilla _gbIndicator;
@@ -146,7 +140,7 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
                 Description = "Strategy utilizing gbKingPanaZilla signals.";
                 Name = "gbKingPanaZillaKillah";
                 StrategyName = Name;
-                _version = "1.5.1";
+                _version = "1.5.2";
 
                 Author = "Playr101";
                 Credits = "GreyBeard";
@@ -223,7 +217,9 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
 
                 NewsDefaultTextColor = Brushes.White;
                 NewsWarningTextColor = Brushes.Yellow;
-                NewsBackgroundColor = new System.Windows.Media.SolidColorBrush (System.Windows.Media.Color.FromArgb (170, 0, 0, 0));
+                var newsBg = new System.Windows.Media.SolidColorBrush (System.Windows.Media.Color.FromArgb (170, 0, 0, 0));
+                newsBg.Freeze ();
+                NewsBackgroundColor = newsBg;
                 NewsHeaderColor = Brushes.White;
                 NewsHighImpactColor = Brushes.Red;
                 NewsMediumImpactColor = Brushes.DarkGreen;
@@ -2104,12 +2100,15 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
             }
         }
 
+        private Brush _newsBackgroundColor = Brushes.Black;
+
         [XmlIgnore ()]
         [NinjaScriptProperty]
         [Display (Name = "Background Color", Order = 25, GroupName = "News Filter")]
         public Brush NewsBackgroundColor
         {
-            get; set;
+            get { return _newsBackgroundColor; }
+            set { _newsBackgroundColor = value; }
         }
 
         [Browsable (false)]
@@ -2117,11 +2116,11 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
         {
             get
             {
-                return Serialize.BrushToString (NewsBackgroundColor);
+                return Serialize.BrushToString (_newsBackgroundColor);
             }
             set
             {
-                NewsBackgroundColor = Serialize.StringToBrush (value);
+                _newsBackgroundColor = Serialize.StringToBrush (value);
             }
         }
 
