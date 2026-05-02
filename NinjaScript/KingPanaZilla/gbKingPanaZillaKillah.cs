@@ -109,13 +109,14 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
         private MarketPosition activeTradeDirection = MarketPosition.Flat;
         private string lastTradeClosedSummary = string.Empty;
 
-        private string _version = "1.5.2";
+        private string _version = "1.5.3";
 
         // Indicator
         private gbKingPanaZilla _gbIndicator;
 
         // EMA Filter
-        private EMA _emaFilter;
+        private EMA _emaShortFilter;
+        private EMA _emaLongFilter;
 
         // News Filter
         private NinjaTrader.NinjaScript.Indicators.Playr101.NewsSignals newsIndicator;
@@ -140,7 +141,7 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
                 Description = "Strategy utilizing gbKingPanaZilla signals.";
                 Name = "gbKingPanaZillaKillah";
                 StrategyName = Name;
-                _version = "1.5.2";
+                _version = "1.5.3";
 
                 Author = "Playr101";
                 Credits = "GreyBeard";
@@ -172,8 +173,8 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
 
                 // EMA Filter
                 UseEmaFilter = false;
-                EmaFilterPeriod = 50;
-                EmaBrush = Brushes.HotPink;
+                EmaShortPeriod = 21;
+                EmaLongPeriod = 50;
 
                 // Logging
                 LogEnabled = false;
@@ -322,11 +323,17 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
                 // Optional EMA trade filter
                 if (UseEmaFilter)
                 {
-                    _emaFilter = EMA (EmaFilterPeriod);
-                    AddChartIndicator (_emaFilter);
-                    _emaFilter.Name = "";
-                    _emaFilter.Plots[0].Brush = Brushes.HotPink;
-                    _emaFilter.Plots[0].Width = 2;
+                    _emaShortFilter = EMA (EmaShortPeriod);
+                    AddChartIndicator (_emaShortFilter);
+                    _emaShortFilter.Name = "";
+                    _emaShortFilter.Plots[0].Brush = Brushes.DodgerBlue;
+                    _emaShortFilter.Plots[0].Width = 2;
+
+                    _emaLongFilter = EMA (EmaLongPeriod);
+                    AddChartIndicator (_emaLongFilter);
+                    _emaLongFilter.Name = "";
+                    _emaLongFilter.Plots[0].Brush = Brushes.HotPink;
+                    _emaLongFilter.Plots[0].Width = 2;
                 }
 
                 // Optional News Filter - live chart only
@@ -338,7 +345,8 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
 
                         if (!_newsRuntimeDisabledPrinted)
                         {
-                            if (EnableDebug) Print ($"[{Name}] News Filter disabled for this runtime context. It is live-chart only and will not run in Strategy Analyzer/backtest or Playback/Market Replay.");
+                            if (EnableDebug)
+                                Print ($"[{Name}] News Filter disabled for this runtime context. It is live-chart only and will not run in Strategy Analyzer/backtest or Playback/Market Replay.");
                             _newsRuntimeDisabledPrinted = true;
                         }
                     }
@@ -357,7 +365,7 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
                             NewsTodaysNewsOnly,                 // TodaysNewsOnly
                             NewsShowLowPriority,                // ShowLowPriority
                             NewsMaxNewsItems,                   // MaxNewsItems
-                            NewsRefreshInterval,                // NewsRefeshInterval
+                            NewsRefreshInterval,                // NewsRefreshInterval
                             NewsPreBlockMinutes,                // PreNewsBlockMinutes
                             NewsPostBlockMinutes,               // PostNewsBlockMinutes
                             NewsBlockHighImpact,                // BlockHighImpact
@@ -417,7 +425,8 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
                 _armShort = true;
                 _autoArm = true;
 
-                if (EnableDebug) Print ($"{Name} entered realtime. ATM mode active.");
+                if (EnableDebug)
+                    Print ($"{Name} entered realtime. ATM mode active.");
 
                 if (ChartControl != null && !_uiInitialized)
                     CreateRBroControlPanel ();
@@ -499,16 +508,18 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
             bool goLong = panaLong || kingZillaLong || kingPanaLong;
             bool goShort = panaShort || kingZillaShort || kingPanaShort;
 
-            // Optional EMA trade filter: longs require Close > EMA, shorts require Close < EMA.
-            if (UseEmaFilter && _emaFilter != null && CurrentBar >= EmaFilterPeriod)
+            // Optional EMA trade filter: longs require short EMA > long EMA, shorts require short EMA < long EMA.
+            if (UseEmaFilter && _emaShortFilter != null && _emaLongFilter != null && CurrentBar >= Math.Max (EmaShortPeriod, EmaLongPeriod))
             {
-                bool aboveEma = Close[0] > _emaFilter[0];
-                if (goLong && !aboveEma)
+                bool bullishEmaAlignment = _emaShortFilter[0] > _emaLongFilter[0];
+                bool bearishEmaAlignment = _emaShortFilter[0] < _emaLongFilter[0];
+
+                if (goLong && !bullishEmaAlignment)
                 {
                     goLong = false;
                     panaLong = kingZillaLong = kingPanaLong = false;
                 }
-                if (goShort && aboveEma)
+                if (goShort && !bearishEmaAlignment)
                 {
                     goShort = false;
                     panaShort = kingZillaShort = kingPanaShort = false;
@@ -582,9 +593,12 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
 
                 if (status != null && status.Length > 0)
                 {
-                    if (EnableDebug) Print ("The entry order average fill price is: " + status[0]);
-                    if (EnableDebug) Print ("The entry order filled amount is: " + status[1]);
-                    if (EnableDebug) Print ("The entry order order state is: " + status[2]);
+                    if (EnableDebug)
+                        Print ("The entry order average fill price is: " + status[0]);
+                    if (EnableDebug)
+                        Print ("The entry order filled amount is: " + status[1]);
+                    if (EnableDebug)
+                        Print ("The entry order order state is: " + status[2]);
 
                     if (status[2] == "Filled")
                     {
@@ -601,10 +615,14 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
 
             if (atmStrategyId.Length > 0)
             {
-                if (EnableDebug) Print ("The current ATM Strategy market position is: " + GetAtmStrategyMarketPosition (atmStrategyId));
-                if (EnableDebug) Print ("The current ATM Strategy position quantity is: " + GetAtmStrategyPositionQuantity (atmStrategyId));
-                if (EnableDebug) Print ("The current ATM Strategy average price is: " + GetAtmStrategyPositionAveragePrice (atmStrategyId));
-                if (EnableDebug) Print ("The current ATM Strategy Unrealized PnL is: " + GetAtmStrategyUnrealizedProfitLoss (atmStrategyId));
+                if (EnableDebug)
+                    Print ("The current ATM Strategy market position is: " + GetAtmStrategyMarketPosition (atmStrategyId));
+                if (EnableDebug)
+                    Print ("The current ATM Strategy position quantity is: " + GetAtmStrategyPositionQuantity (atmStrategyId));
+                if (EnableDebug)
+                    Print ("The current ATM Strategy average price is: " + GetAtmStrategyPositionAveragePrice (atmStrategyId));
+                if (EnableDebug)
+                    Print ("The current ATM Strategy Unrealized PnL is: " + GetAtmStrategyUnrealizedProfitLoss (atmStrategyId));
             }
         }
 
@@ -1049,7 +1067,8 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
             string statsText = BuildSignalTrackingDisplayText();
 
             // Removed the invalid .Replace("", Environment.NewLine) call
-            if (EnableDebug) Print ($"Trade Closed | Last ATM P/L: {tradePnl:C} | Direction: {activeTradeDirection} | Signals: {tradeSignalText}{statsText}");
+            if (EnableDebug)
+                Print ($"Trade Closed | Last ATM P/L: {tradePnl:C} | Direction: {activeTradeDirection} | Signals: {tradeSignalText}{statsText}");
         }
 
         private string BuildActiveSignalListForPrint ()
@@ -1175,7 +1194,8 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
             if (State != State.Realtime)
                 return;
 
-            if (EnableDebug) Print ($"[{Name}] FlattenEverything: {reason}");
+            if (EnableDebug)
+                Print ($"[{Name}] FlattenEverything: {reason}");
 
             // 1) Close ATM if we have one tracked
             if (!string.IsNullOrEmpty (atmStrategyId))
@@ -1243,7 +1263,8 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
 
             if (!hasActiveAtm || !hasProtectiveOrders)
             {
-                if (EnableDebug) Print ($"[{Name}] NAKED POSITION DETECTED at {tickTime:HH:mm:ss} | "
+                if (EnableDebug)
+                    Print ($"[{Name}] NAKED POSITION DETECTED at {tickTime:HH:mm:ss} | "
                     + $"Position={Position.MarketPosition} {Position.Quantity} | "
                     + $"HasActiveAtm={hasActiveAtm} HasProtectiveOrders={hasProtectiveOrders}. Flattening.");
 
@@ -1416,7 +1437,8 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
                 }
                 catch (Exception ex)
                 {
-                    if (EnableDebug) Print ($"[{Name}] Button panel error: {ex.Message}");
+                    if (EnableDebug)
+                        Print ($"[{Name}] Button panel error: {ex.Message}");
                 }
             });
         }
@@ -1545,8 +1567,8 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
         {
             if (!UseEmaFilter)
             {
-                col.Remove (col["EmaFilterPeriod"]);
-                col.Remove (col["EmaBrush"]);
+                col.Remove (col["EmaShortPeriod"]);
+                col.Remove (col["EmaLongPeriod"]);
             }
         }
 
@@ -1742,7 +1764,7 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
         }
 
         [NinjaScriptProperty]
-        [Display (Name = "Use EMA Filter", Order = 4, GroupName = "Signals", Description = "When enabled, longs require Close > EMA and shorts require Close < EMA.")]
+        [Display (Name = "Use EMA Filter", Order = 4, GroupName = "Signals", Description = "When enabled, longs require short EMA above long EMA and shorts require short EMA below long EMA.")]
         [RefreshProperties (RefreshProperties.All)]
         public bool UseEmaFilter
         {
@@ -1751,29 +1773,18 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
 
         [NinjaScriptProperty]
         [Range (1, int.MaxValue)]
-        [Display (Name = "EMA Filter Period", Order = 5, GroupName = "Signals")]
-        public int EmaFilterPeriod
+        [Display (Name = "Short EMA Period", Order = 5, GroupName = "Signals")]
+        public int EmaShortPeriod
         {
             get; set;
         }
 
-        [XmlIgnore]
-        [Display (Name = "EMA Color", Order = 6, GroupName = "Signals")]
-        public Brush EmaBrush
+        [NinjaScriptProperty]
+        [Range (1, int.MaxValue)]
+        [Display (Name = "Long EMA Period", Order = 6, GroupName = "Signals")]
+        public int EmaLongPeriod
         {
             get; set;
-        }
-        [Browsable (false)]
-        public string EmaBrushSerialize
-        {
-            get
-            {
-                return Serialize.BrushToString (EmaBrush);
-            }
-            set
-            {
-                EmaBrush = Serialize.StringToBrush (value);
-            }
         }
 
         [NinjaScriptProperty]
@@ -1872,7 +1883,7 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
         public bool FlattenTF2
         {
             get; set;
-        }     
+        }
 
         // ==================== News Filter ====================
         [NinjaScriptProperty]
@@ -2101,7 +2112,12 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
         }
 
         private static readonly Brush _newsBackgroundColorDefault = MakeFrozenBrush (170, 0, 0, 0);
-        private static Brush MakeFrozenBrush (byte a, byte r, byte g, byte b) { var br = new SolidColorBrush (Color.FromArgb (a, r, g, b)); br.Freeze (); return br; }
+        private static Brush MakeFrozenBrush (byte a, byte r, byte g, byte b)
+        {
+            var br = new SolidColorBrush (Color.FromArgb (a, r, g, b));
+            br.Freeze ();
+            return br;
+        }
         private Brush _newsBackgroundColor;
 
         [XmlIgnore ()]
@@ -2109,8 +2125,14 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
         [Display (Name = "Background Color", Order = 25, GroupName = "News Filter")]
         public Brush NewsBackgroundColor
         {
-            get { return _newsBackgroundColor ?? _newsBackgroundColorDefault; }
-            set { _newsBackgroundColor = value; }
+            get
+            {
+                return _newsBackgroundColor ?? _newsBackgroundColorDefault;
+            }
+            set
+            {
+                _newsBackgroundColor = value;
+            }
         }
 
         [Browsable (false)]
