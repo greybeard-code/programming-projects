@@ -170,19 +170,69 @@ A **bar-completion progress indicator** that shows how far through the current b
 
 ---
 
+### NewsSignals — Economic Calendar News Filter
+
+**Namespace:** `NinjaTrader.NinjaScript.Indicators.Playr101`
+
+A **standalone news-awareness indicator** by Playr101 that fetches the ForexFactory economic calendar, renders upcoming events on the chart, and exposes blocking state via `Series<double>` plots so other scripts can suppress trading around news releases.
+
+**How it works:**
+
+1. **Data fetch** — on a configurable refresh interval (default 15 min), the indicator fetches `http://nfs.faireconomy.media/ff_calendar_thisweek.xml` with a 5-second timeout and parses the week's events into a `NewsEvent[]` array.
+2. **Filtering** — events can be filtered to USD-only, today-only, and by impact level (High / Medium / Low). Low-priority events can be hidden from the display while still contributing to the block window.
+3. **Block window calculation** — for each qualifying event, a pre-news window and post-news window are computed relative to `DateTime.Now` (realtime) or `Time[0]` (historical). When any event's window overlaps the current time, `IsNewsBlockActive` is `true`.
+4. **Chart rendering** — a three-column table (Time / Impact / Description) is drawn via SharpDX DirectWrite at a configurable corner of the chart panel. Events inside the alert window are highlighted in bold italic with a configurable warning colour.
+5. **Alerts** — when a news event enters the alert window (`AlertInterval` minutes before), an NT8 alert is fired once per event (keyed by date + country + title to prevent repeats).
+
+**Public plots (readable by strategies):**
+
+| Plot | Content |
+|---|---|
+| `NewsBlock` | 1.0 if currently inside a pre/post block window, else 0.0 |
+| `MinutesToNextNews` | Minutes until next qualifying event; −1 if none |
+| `NextImpactScore` | Impact of the next event: 3=High, 2=Medium, 1=Low |
+| `MinutesFromRecentNews` | Minutes since last qualifying event; −1 if none |
+
+**Public accessors:** `IsNewsBlockActive` (bool), `NextNewsTitle` (string), `NextNewsTime` (DateTime)
+
+**Key parameters:**
+
+| Group | Parameter | Default |
+|---|---|---|
+| Display | `ShowNewsDisplay` | `true` |
+| Display | `DisplayLocation` | `TopRight` |
+| Display | `Use24timeFormat` | `false` |
+| Display | `ShowBackground` | `false` |
+| News Filter | `USOnlyEvents` | `true` |
+| News Filter | `TodaysNewsOnly` | `true` |
+| News Filter | `ShowLowPriority` | `false` |
+| News Filter | `MaxNewsItems` | 10 |
+| News Filter | `NewsRefeshInterval` | 15 min |
+| Strategy Blocking | `PreNewsBlockMinutes` / `PostNewsBlockMinutes` | 5 / 5 |
+| Strategy Blocking | `BlockHighImpact` / `BlockMediumImpact` / `BlockLowImpact` | `true` / `true` / `false` |
+| Alerts | `SendAlerts` / `AlertInterval` | `true` / 15 min |
+| Debug | `Debug` | `false` |
+
+> **Note:** `NewsSignals` is a live-chart-only indicator. It requires a chart context and an active internet connection. It does not run in Strategy Analyzer, backtest, or Market Replay — the strategy detects this and disables the news filter automatically in those contexts.
+
+---
+
 ## Strategy
 
 ### gbKingPanaZillaKillah — ATM Strategy by Playr101
 
-An **ATM-mode strategy** that drives NinjaTrader 8's native ATM Strategy engine from the three `gbKingPanaZilla` signals. Selecting any combination of the three signal outputs (PZ, KZ, KP) is controlled via per-signal toggles. Risk is managed by a daily profit target and daily loss limit evaluated tick-by-tick against both realized and (optionally) open equity.
+An **ATM-mode strategy** (v1.5.1) that drives NinjaTrader 8's native ATM Strategy engine from the three `gbKingPanaZilla` signals. Selecting any combination of the three signal outputs (PZ, KZ, KP) is controlled via per-signal toggles. Risk is managed by a daily profit target and daily loss limit evaluated tick-by-tick against both realized and (optionally) open equity.
 
 **How it works:**
 
 1. **Signal evaluation** — on each primary bar, `PanaZillia_Trade`, `KingZilla_Trade`, and `KingPana_Trade` are read from `gbKingPanaZilla`. Any enabled signal at +1 triggers a long entry; at −1 a short entry.
-2. **ATM order submission** — entries are placed via `AtmStrategyCreate` with a user-selected ATM template. Only one ATM position is open at a time; new signals are ignored while a position is active.
-3. **Session filters** — two independent time windows (TF1, TF2) restrict trading hours. Each window can optionally flatten all positions at its close.
-4. **Risk management** — realized and unrealized PnL are tracked every tick. When the daily profit target or daily loss limit is breached, all positions are flattened and new entries are blocked for the session.
-5. **Naked-position watchdog** — every 3 seconds in realtime the strategy confirms that any open position has an active ATM with working protective orders. If a naked position is detected (e.g. ATM dropped), it is immediately flattened.
+2. **EMA filter** — when enabled, long entries require price above the EMA and short entries require price below it. Signals in the wrong direction relative to the EMA are suppressed.
+3. **News filter** — when enabled, entries are blocked during a configurable pre/post window around qualifying news events, sourced from the `NewsSignals` indicator. Optionally, open positions are flattened when a warning window begins.
+4. **ATM order submission** — entries are placed via `AtmStrategyCreate` with a user-selected ATM template. Only one ATM position is open at a time; new signals are ignored while a position is active.
+5. **Session filters** — two independent time windows (TF1, TF2) restrict trading hours. Each window can optionally flatten all positions at its close.
+6. **Risk management** — realized and unrealized PnL are tracked every tick. When the daily profit target or daily loss limit is breached, all positions are flattened and new entries are blocked for the session.
+7. **Naked-position watchdog** — every 3 seconds in realtime the strategy confirms that any open position has an active ATM with working protective orders. If a naked position is detected (e.g. ATM dropped), it is immediately flattened.
+8. **Button panel** — an on-chart WPF control panel provides live arm-long / arm-short / auto-arm / close buttons and a status label for manual override without stopping the strategy.
 
 **Key parameters:**
 
@@ -191,19 +241,25 @@ An **ATM-mode strategy** that drives NinjaTrader 8's native ATM Strategy engine 
 | Signals | `EnableSignalTracking` | `false` |
 | Signals | `UsePanaZilliaSignals`, `UseKingZillaSignals`, `UseKingPanaSignals` | all `true` |
 | ATM | `AtmStrategy` | *(select from installed ATM templates)* |
+| EMA Filter | `UseEmaFilter` / `EmaFilterPeriod` | `false` / 50 |
+| News Filter | `EnableNewsFilter` | `false` |
+| News Filter | `NewsFlattenAtWarningTime` | `false` |
+| News Filter | `NewsPreBlockMinutes` / `NewsPostBlockMinutes` | 5 / 5 |
+| News Filter | `NewsBlockHighImpact` / `NewsBlockMediumImpact` / `NewsBlockLowImpact` | `true` / `true` / `false` |
 | Risk | `UseDailyProfitTarget` / `DailyProfitTarget` | `false` / $500 |
 | Risk | `UseDailyLossLimit` / `DailyLossLimit` | `true` / $200 |
 | Risk | `UseUnrealizedPnl` | `true` |
 | Session | `EnableTF1` / `StartTime1`–`EndTime1` / `FlattenTF1` | `true` / 09:30–12:00 / `true` |
 | Session | `EnableTF2` / `StartTime2`–`EndTime2` / `FlattenTF2` | `true` / 13:00–15:30 / `true` |
-| Session | `LogEnabled` | `false` |
+| Logging | `LogEnabled` | `false` |
+| Logging | `EnableDebug` | `false` |
 
 **Signal Tracking Display (`EnableSignalTracking`):**
 
 When enabled, the on-chart PnL panel (bottom-right) expands to show a running trade breakdown by signal source. After each trade closes, the last result appears as a summary line followed by per-signal counters:
 
 ```
---- gbKingPanaZillaKillah ---
+--- gbKingPanaZillaKillah v1.5.1 ---
 Trading: IN SESSION
 Total: $375.00  |  Closed: $375.00  |  Open: $0.00
 Target: ~  |  Max Loss: -$200
@@ -235,13 +291,14 @@ gbKPZKillah_YYYYMMDD_HHmmss.csv
 One row is appended when each ATM position closes:
 
 ```
-OpenTime,Instrument,OpenPrice,Qty,CloseTime,Trigger,Direction,AtmStrategy,RealizedPnL
-2026-04-29 10:31:00,MNQ 06-26,21245.75,1,2026-04-29 10:44:22,PZ+KZ,Long,MyATM_2pt,125.00
+OpenTime,Account,Instrument,OpenPrice,Qty,CloseTime,Trigger,Direction,AtmStrategy,RealizedPnL
+2026-04-29 10:31:00,Sim101,MNQ 06-26,21245.75,1,2026-04-29 10:44:22,PZ+KZ,Long,MyATM_2pt,125.00
 ```
 
 | Column | Content |
 |---|---|
 | `OpenTime` | Bar time at signal — `yyyy-MM-dd HH:mm:ss` |
+| `Account` | NinjaTrader account name (e.g. `Sim101`, `MyBroker-Live`) |
 | `Instrument` | Contract name including expiry (e.g. `MNQ 06-26`) |
 | `OpenPrice` | ATM entry fill price |
 | `Qty` | Filled quantity |
@@ -263,8 +320,9 @@ KingPanaZilla/
 ├── gbKingOrderBlock.cs         — King Order Block indicator
 ├── gbPANAKanal.cs              — PANA Kanal indicator
 ├── gbThunderZilla.cs           — ThunderZilla indicator
-├── gbKingPanaZillaKillah.cs    — ATM strategy driven by gbKingPanaZilla signals (Playr101)
 ├── gbBarStatus.cs              — Bar completion progress display (standalone)
+├── NewsSignals.cs              — Economic calendar news filter indicator (Playr101)
+├── gbKingPanaZillaKillah.cs    — ATM strategy driven by gbKingPanaZilla signals (Playr101)
 └── originals/                  — Unmodified vendor source files
     ├── RenkoKings_KingOrderBlock.cs
     ├── RenkoKings_ThunderZilla.cs
@@ -272,7 +330,7 @@ KingPanaZilla/
     └── ninZaBarStatus.cs
 ```
 
-Each indicator is its own file. `gbKingPanaZilla` references the three child indicators and must be compiled after them. `gbKingPanaZillaKillah` references the indicator namespace and must be compiled last.
+Each indicator is its own file. `gbKingPanaZilla` references the three child indicators and must be compiled after them. `NewsSignals` is standalone. `gbKingPanaZillaKillah` references both the `gbKingPanaZilla` and `NewsSignals` namespaces and must be compiled last.
 
 ## Installation
 
@@ -281,13 +339,13 @@ Copy the indicator and strategy files into their respective NinjaTrader 8 custom
 ```
 Documents\NinjaTrader 8\bin\Custom\Indicators\   ← gbKingOrderBlock.cs, gbPANAKanal.cs,
                                                       gbThunderZilla.cs, gbKingPanaZilla.cs,
-                                                      gbBarStatus.cs
+                                                      gbBarStatus.cs, NewsSignals.cs
 Documents\NinjaTrader 8\bin\Custom\Strategies\   ← gbKingPanaZillaKillah.cs
 ```
 
 Then compile via **NinjaTrader → Tools → Edit NinjaScript → Compile**.
 
-Compile order matters: the three child indicators (`gbKingOrderBlock`, `gbPANAKanal`, `gbThunderZilla`) must compile before `gbKingPanaZilla`, and `gbKingPanaZillaKillah` must compile after all indicators.
+Compile order matters: the three child indicators (`gbKingOrderBlock`, `gbPANAKanal`, `gbThunderZilla`) must compile before `gbKingPanaZilla`. `NewsSignals` is standalone and can compile in any order. `gbKingPanaZillaKillah` must compile after all indicators.
 
 ---
 
