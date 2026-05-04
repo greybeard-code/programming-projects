@@ -1794,7 +1794,7 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
         }
 
         [NinjaScriptProperty]
-        [Display (Name = "Use EMA Filter", Order = 4, GroupName = "Signals", Description = "When enabled, longs require short EMA above long EMA and shorts require short EMA below long EMA.")]
+        [Display (Name = "Use EMA Crossover Filter", Order = 4, GroupName = "Signals", Description = "When enabled, longs require short EMA above long EMA and shorts require short EMA below long EMA.")]
         [RefreshProperties (RefreshProperties.All)]
         public bool UseEmaFilter
         {
