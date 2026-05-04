@@ -65,7 +65,6 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
         private double sessionStartTotalRealizedPnL = 0.0;
         private double totalRunningPnL = 0.0;
         private double lastAtmRealizedPnL = 0.0;
-        private DateTime lastPnlSessionDate = Core.Globals.MinDate;
         private bool dailyLimitHit = false;
         private string dailyPnlStatusMessage = string.Empty;
 
@@ -141,7 +140,7 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
                 Description = "Strategy utilizing gbKingPanaZilla signals.";
                 Name = "gbKingPanaZillaKillah";
                 StrategyName = Name;
-                _version = "1.5.3";
+                _version = "1.5.4";
 
                 Author = "Playr101";
                 Credits = "GreyBeard";
@@ -410,7 +409,6 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
             else if (State == State.Realtime)
             {
                 sessionStartTotalRealizedPnL = totalRealizedPnL;
-                lastPnlSessionDate = Core.Globals.MinDate;
                 lastAtmRealizedPnL = 0.0;
                 dailyRealizedPnL = 0.0;
                 dailyUnrealizedPnL = 0.0;
@@ -801,8 +799,13 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
 
             ManageNewsFilter ();
 
-            if (lastPnlSessionDate == Core.Globals.MinDate || Bars.IsFirstBarOfSession || tickTime.Date != lastPnlSessionDate.Date)
+            if (Bars.IsFirstBarOfSession)
             {
+                if (EnableDebug)
+                    Print ($"{tickTime:yyyy-MM-dd HH:mm:ss} | DAILY PNL RESET | "
+                        + $"Bars.IsFirstBarOfSession={Bars.IsFirstBarOfSession} | "
+                        + $"TotalRealizedBeforeReset={totalRealizedPnL:F2}");
+
                 sessionStartTotalRealizedPnL = totalRealizedPnL;
                 lastAtmRealizedPnL = 0.0;
                 dailyRealizedPnL = 0.0;
@@ -810,7 +813,6 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
                 totalRunningPnL = totalRealizedPnL;
                 dailyLimitHit = false;
                 dailyPnlStatusMessage = string.Empty;
-                lastPnlSessionDate = tickTime.Date;
             }
 
             if (orderId.Length > 0)
@@ -902,18 +904,46 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
 
             double dailyPnlToCheck = dailyRealizedPnL + (UseUnrealizedPnl ? dailyUnrealizedPnL : 0.0);
 
+            if (EnableDebug)
+                Print ($"{tickTime:yyyy-MM-dd HH:mm:ss} | DAILY PNL CHECK | "
+                    + $"Closed={dailyRealizedPnL:F2} | "
+                    + $"Open={dailyUnrealizedPnL:F2} | "
+                    + $"Check={dailyPnlToCheck:F2} | "
+                    + $"TotalRunning={totalRunningPnL:F2} | "
+                    + $"PTEnabled={UseDailyProfitTarget} | "
+                    + $"PT={DailyProfitTarget:F2} | "
+                    + $"LLEnabled={UseDailyLossLimit} | "
+                    + $"LL={DailyLossLimit:F2} | "
+                    + $"LimitHit={dailyLimitHit} | "
+                    + $"ATM={atmStrategyId} | "
+                    + $"Order={orderId}");
+
             if (!dailyLimitHit)
             {
                 if (UseDailyProfitTarget && dailyPnlToCheck >= DailyProfitTarget)
                 {
                     dailyLimitHit = true;
                     dailyPnlStatusMessage = $"DAILY PROFIT TARGET HIT: {dailyPnlToCheck:C}";
+
+                    if (EnableDebug)
+                        Print ($"{tickTime:yyyy-MM-dd HH:mm:ss} | DAILY PROFIT TARGET HIT | "
+                            + $"Check={dailyPnlToCheck:F2} >= PT={DailyProfitTarget:F2} | "
+                            + $"Closed={dailyRealizedPnL:F2} | Open={dailyUnrealizedPnL:F2} | "
+                            + $"Calling FlattenAll()");
+
                     FlattenAll ();
                 }
                 else if (UseDailyLossLimit && dailyPnlToCheck <= -DailyLossLimit)
                 {
                     dailyLimitHit = true;
                     dailyPnlStatusMessage = $"DAILY LOSS LIMIT HIT: {dailyPnlToCheck:C}";
+
+                    if (EnableDebug)
+                        Print ($"{tickTime:yyyy-MM-dd HH:mm:ss} | DAILY LOSS LIMIT HIT | "
+                            + $"Check={dailyPnlToCheck:F2} <= LL=-{DailyLossLimit:F2} | "
+                            + $"Closed={dailyRealizedPnL:F2} | Open={dailyUnrealizedPnL:F2} | "
+                            + $"Calling FlattenAll()");
+
                     FlattenAll ();
                 }
             }
@@ -1764,7 +1794,7 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
         }
 
         [NinjaScriptProperty]
-        [Display (Name = "Use EMA Crossover Filter", Order = 4, GroupName = "Signals", Description = "When enabled, longs require short EMA above long EMA and shorts require short EMA below long EMA.")]
+        [Display (Name = "Use EMA Filter", Order = 4, GroupName = "Signals", Description = "When enabled, longs require short EMA above long EMA and shorts require short EMA below long EMA.")]
         [RefreshProperties (RefreshProperties.All)]
         public bool UseEmaFilter
         {
