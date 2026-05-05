@@ -156,6 +156,50 @@ A **bar-completion progress indicator** that shows how far through the current b
 
 ---
 
+### gbSuperJumpBoost — Super JumpBoost
+
+An **ATR-derived multi-level zone indicator** that builds supply/demand zones from four configurable trend vectors and tracks price interaction with each zone through its full lifecycle (active → returned → broken).
+
+**How it works:**
+
+1. **Trend Vectors** — four independent `JumpBoostInfo` instances each run a trend-flip algorithm using ATR-scaled offsets (`OffsetLevel1`–`OffsetLevel4` relative to `OffsetBase`). Each vector tracks its own uptrend/downtrend state, a trailing stop level, and a slowdown counter that delays weak-trend transitions (`SensitiveModeEnabled` increases sensitivity by widening slowdown and split windows). A fifth master vector (using `TrendMultiplierStop`) drives the bar-painting stop check.
+2. **Zone Formation** — when two or more adjacent trend vectors agree on direction, their price levels (trend line values) are sorted and assembled into a `ZoneInfo` with up to four lines: `TopPrice`, `PriceLevel1`, `PriceLevel2`, `BottomPrice`. Zones are only accepted if price is on the correct side of the zone's key level at formation time.
+3. **Zone Lifecycle** — zones cycle through three lists:
+   - **Active** — zone is untested; price is still on the entry side.
+   - **Inactive** — zone has returned at least one signal; price broke through the key level after a return.
+   - **Broken** — zone was never traded and price closed through the key level.
+4. **Signals** — two signal types per zone:
+   - **Return** — a confirming close on the correct side of the zone's inner level, following a wick through it, within the max `SignalQuantityPerZone` limit and `SignalSplit` bar spacing.
+   - **Zone Start** — fires immediately when a new zone is accepted.
+5. **Extremum Tracking** — independently tracks swing highs/lows using a configurable `ExtremeNeighborhood`. Levels migrate from *naked* (untested) to *tested* (closed through) lists and render as distinct horizontal lines.
+6. **Rendering** — active and inactive zones draw up to four parallel horizontal lines per zone, each with its own `Stroke` (weight, colour, opacity). Broken zones use a separate neutral stroke. Price labels and bar/background highlighting complete the visual.
+
+**Output plots:** `Signal_State` (±1 = Bullish/Bearish bias), `Signal_Trade` (±1 = Return signal, ±2 = Zone Start), `Signal_Zone` (±1 = current zone direction)
+
+**Key parameters:** `SensitiveModeEnabled`, `OffsetLevel1`–`OffsetLevel4`, `OffsetBase`, `ReferencePricePeriod`, `LineLevelsOffset`, `ExtremeNeighborhood`, `SignalCloseThreshold`, `SignalQuantityPerZone`, `SignalSplit`
+
+---
+
+### gbSumoPullback — Sumo Pullback
+
+A **multi-MA cloud pullback indicator** that signals when a two-candle reversal pattern fires entirely inside a stacked moving average cloud.
+
+**How it works:**
+
+1. **MA Cloud** — one slow MA (default SMA 60) and three fast MAs (default EMA 14 / EMA 30 / EMA 45) are computed each bar. The cloud maximum and minimum are the highest and lowest values across all four. Two `Draw.Region` fills shade the space between the slow MA and the cloud's max/min, coloured by trend direction.
+2. **Trend Alignment Check** — the slow MA must be the *minimum* of all four MAs to confirm an uptrend stack (fast MAs fanned above it), or the *maximum* to confirm a downtrend stack. This ensures the cloud is properly sorted before a pullback can signal.
+3. **Candle Pattern** — a valid signal requires the full price bar to sit *inside* the cloud (`min > Low` and `max < High`) and a two-bar reversal: prior candle opposite-direction, current candle trend-direction.
+4. **Signal Spacing** — the first occurrence resets a bar counter; a second signal can only fire after `SignalSplitFirst` bars; subsequent signals require `SignalSplitSecond` bars. The counter resets when either limit elapses without a second signal.
+5. **Fair Value Plot** — the arithmetic mean of all four MAs is plotted as a gold square line, giving a single reference price for the cloud midpoint.
+
+**Output plots:** `FairValue` (mean of all four MAs), `Signal_Trade` (±1)
+
+**Key parameters:** `SlowMAType`, `SlowMAPeriod`, `FastMA1Type`/`FastMA1Period`, `FastMA2Type`/`FastMA2Period`, `FastMA3Type`/`FastMA3Period`, `SignalSplitFirst`, `SignalSplitSecond`
+
+> **Note:** The `SlowMASmoothingEnabled` / `FastMA*SmoothingEnabled` properties are present in the parameter panel but the smoothing pass is not yet implemented — the raw MA value is always used.
+
+---
+
 ## Common Features (all indicators)
 
 | Feature | Details |
@@ -321,16 +365,20 @@ KingPanaZilla/
 ├── gbPANAKanal.cs              — PANA Kanal indicator
 ├── gbThunderZilla.cs           — ThunderZilla indicator
 ├── gbBarStatus.cs              — Bar completion progress display (standalone)
+├── gbSuperJumpBoost.cs         — ATR-derived multi-level zone indicator (standalone)
+├── gbSumoPullback.cs           — Multi-MA cloud pullback indicator (standalone)
 ├── NewsSignals.cs              — Economic calendar news filter indicator (Playr101)
 ├── gbKingPanaZillaKillah.cs    — ATM strategy driven by gbKingPanaZilla signals (Playr101)
 └── originals/                  — Unmodified vendor source files
     ├── RenkoKings_KingOrderBlock.cs
     ├── RenkoKings_ThunderZilla.cs
     ├── ninZaPANAKanal.cs
-    └── ninZaBarStatus.cs
+    ├── ninZaBarStatus.cs
+    ├── ninZaSuperJumpBoost.cs
+    └── RenkoKings_SumoPullback.cs
 ```
 
-Each indicator is its own file. `gbKingPanaZilla` references the three child indicators and must be compiled after them. `NewsSignals` is standalone. `gbKingPanaZillaKillah` references both the `gbKingPanaZilla` and `NewsSignals` namespaces and must be compiled last.
+Each indicator is its own file. `gbKingPanaZilla` references the three child indicators and must be compiled after them. `gbSuperJumpBoost` and `gbSumoPullback` are fully standalone. `NewsSignals` is standalone. `gbKingPanaZillaKillah` references both the `gbKingPanaZilla` and `NewsSignals` namespaces and must be compiled last.
 
 ## Installation
 
@@ -339,13 +387,14 @@ Copy the indicator and strategy files into their respective NinjaTrader 8 custom
 ```
 Documents\NinjaTrader 8\bin\Custom\Indicators\   ← gbKingOrderBlock.cs, gbPANAKanal.cs,
                                                       gbThunderZilla.cs, gbKingPanaZilla.cs,
-                                                      gbBarStatus.cs, NewsSignals.cs
+                                                      gbBarStatus.cs, gbSuperJumpBoost.cs,
+                                                      gbSumoPullback.cs, NewsSignals.cs
 Documents\NinjaTrader 8\bin\Custom\Strategies\   ← gbKingPanaZillaKillah.cs
 ```
 
 Then compile via **NinjaTrader → Tools → Edit NinjaScript → Compile**.
 
-Compile order matters: the three child indicators (`gbKingOrderBlock`, `gbPANAKanal`, `gbThunderZilla`) must compile before `gbKingPanaZilla`. `NewsSignals` is standalone and can compile in any order. `gbKingPanaZillaKillah` must compile after all indicators.
+Compile order matters: the three child indicators (`gbKingOrderBlock`, `gbPANAKanal`, `gbThunderZilla`) must compile before `gbKingPanaZilla`. `gbSuperJumpBoost`, `gbSumoPullback`, and `NewsSignals` are standalone and can compile in any order. `gbKingPanaZillaKillah` must compile after all indicators.
 
 ---
 
