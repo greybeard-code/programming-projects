@@ -24,7 +24,7 @@ using SolidColorBrush = System.Windows.Media.SolidColorBrush;
 using Color = System.Windows.Media.Color;
 #endregion
 
-namespace NinjaTrader.NinjaScript.Indicators
+namespace NinjaTrader.NinjaScript.Indicators.GreyBeard.KingPanaZilla
 {
 [CategoryOrder("Gradient", 1000030)]
 [CategoryOrder("Critical", 1000070)]
@@ -469,17 +469,8 @@ public class gbSuperJumpBoost : Indicator
 	[Display(Name = "Switched On", Order = 0, GroupName = "Critical")]
 	public bool SwitchedOn { get; set; }
 
-	[Display(Name = "Website", Order = 0, GroupName = "Developer")]
-	public string Website => "greybeard";
-
-	[Display(Name = "Update", Order = 10, GroupName = "Developer")]
-	public string Update => "27 Jun 2025";
-
-	[Display(Name = "Logo: Enabled", Order = 20, GroupName = "Developer")]
-	public bool LogoEnabled { get; set; }
-
-	[Display(Name = "Instruction: Enabled", Order = 30, GroupName = "Developer")]
-	public bool InstructionEnabled { get; set; }
+	[Display(Name = "Version", Order = 10, GroupName = "Developer")]
+	public string Version => "1.0 Beta";
 
 	[Display(Name = "Screen DPI", Order = 100, GroupName = "General")]
 	public int ScreenDPI { get; set; }
@@ -1196,8 +1187,6 @@ public class gbSuperJumpBoost : Indicator
 			MarkerOffset = 10;
 			AlertBlockingSeconds = 60;
 			SwitchedOn = true;
-			LogoEnabled = true;
-			InstructionEnabled = true;
 			ScreenDPI = 99;
 			BarEnabled = true;
 			BarBullish = Brushes.DodgerBlue;
@@ -2395,7 +2384,7 @@ public class gbSuperJumpBoost : Indicator
 		string text2 = "gb Super JumpBoost" + $": {arg3} alert on {arg2} at {arg}";
 		string popupMessage = $"There has been a {arg3} signal.\n\nAlert chart: {arg2}.\nAlert time: {text}";
 		string text3 = "\n_______________________\n\n";
-		string text4 = popupMessage + text3 + "gb Super JumpBoost\nWebsite: https://greybeard.local";
+		string text4 = popupMessage + text3 + "gb Super JumpBoost";
 		if (PopupEnabled && isCharting)
 		{
 			ChartControl.Dispatcher.InvokeAsync(delegate
@@ -2470,10 +2459,6 @@ public class gbSuperJumpBoost : Indicator
 
 	private void OnInstructionClose(object sender, RoutedEventArgs e)
 	{
-		TriggerCustomEvent((Action<object>)delegate
-		{
-			InstructionEnabled = false;
-		}, (object)e);
 	}
 
 	private void OnToggleDrag(object sender, DragDeltaEventArgs e)
@@ -2672,19 +2657,19 @@ namespace NinjaTrader.NinjaScript.Indicators
 {
 	public partial class Indicator : NinjaTrader.Gui.NinjaScript.IndicatorRenderBase
 	{
-		private gbSuperJumpBoost[] cachegbSuperJumpBoost;
-		public gbSuperJumpBoost gbSuperJumpBoost(bool sensitiveModeEnabled, double offsetLevel1, double offsetLevel2, double offsetLevel3, double offsetLevel4, double offsetBase, int referencePricePeriod, int lineLevelsOffset, int extremeNeighborhood, int signalCloseThreshold, int signalQuantityPerZone, int signalSplit)
+		private GreyBeard.KingPanaZilla.gbSuperJumpBoost[] cachegbSuperJumpBoost;
+		public GreyBeard.KingPanaZilla.gbSuperJumpBoost gbSuperJumpBoost(bool sensitiveModeEnabled, double offsetLevel1, double offsetLevel2, double offsetLevel3, double offsetLevel4, double offsetBase, int referencePricePeriod, int lineLevelsOffset, int extremeNeighborhood, int signalCloseThreshold, int signalQuantityPerZone, int signalSplit)
 		{
 			return gbSuperJumpBoost(Input, sensitiveModeEnabled, offsetLevel1, offsetLevel2, offsetLevel3, offsetLevel4, offsetBase, referencePricePeriod, lineLevelsOffset, extremeNeighborhood, signalCloseThreshold, signalQuantityPerZone, signalSplit);
 		}
 
-		public gbSuperJumpBoost gbSuperJumpBoost(ISeries<double> input, bool sensitiveModeEnabled, double offsetLevel1, double offsetLevel2, double offsetLevel3, double offsetLevel4, double offsetBase, int referencePricePeriod, int lineLevelsOffset, int extremeNeighborhood, int signalCloseThreshold, int signalQuantityPerZone, int signalSplit)
+		public GreyBeard.KingPanaZilla.gbSuperJumpBoost gbSuperJumpBoost(ISeries<double> input, bool sensitiveModeEnabled, double offsetLevel1, double offsetLevel2, double offsetLevel3, double offsetLevel4, double offsetBase, int referencePricePeriod, int lineLevelsOffset, int extremeNeighborhood, int signalCloseThreshold, int signalQuantityPerZone, int signalSplit)
 		{
 			if (cachegbSuperJumpBoost != null)
 				for (int idx = 0; idx < cachegbSuperJumpBoost.Length; idx++)
 					if (cachegbSuperJumpBoost[idx] != null && cachegbSuperJumpBoost[idx].SensitiveModeEnabled == sensitiveModeEnabled && cachegbSuperJumpBoost[idx].OffsetLevel1 == offsetLevel1 && cachegbSuperJumpBoost[idx].OffsetLevel2 == offsetLevel2 && cachegbSuperJumpBoost[idx].OffsetLevel3 == offsetLevel3 && cachegbSuperJumpBoost[idx].OffsetLevel4 == offsetLevel4 && cachegbSuperJumpBoost[idx].OffsetBase == offsetBase && cachegbSuperJumpBoost[idx].ReferencePricePeriod == referencePricePeriod && cachegbSuperJumpBoost[idx].LineLevelsOffset == lineLevelsOffset && cachegbSuperJumpBoost[idx].ExtremeNeighborhood == extremeNeighborhood && cachegbSuperJumpBoost[idx].SignalCloseThreshold == signalCloseThreshold && cachegbSuperJumpBoost[idx].SignalQuantityPerZone == signalQuantityPerZone && cachegbSuperJumpBoost[idx].SignalSplit == signalSplit && cachegbSuperJumpBoost[idx].EqualsInput(input))
 						return cachegbSuperJumpBoost[idx];
-			return CacheIndicator<gbSuperJumpBoost>(new gbSuperJumpBoost(){ SensitiveModeEnabled = sensitiveModeEnabled, OffsetLevel1 = offsetLevel1, OffsetLevel2 = offsetLevel2, OffsetLevel3 = offsetLevel3, OffsetLevel4 = offsetLevel4, OffsetBase = offsetBase, ReferencePricePeriod = referencePricePeriod, LineLevelsOffset = lineLevelsOffset, ExtremeNeighborhood = extremeNeighborhood, SignalCloseThreshold = signalCloseThreshold, SignalQuantityPerZone = signalQuantityPerZone, SignalSplit = signalSplit }, input, ref cachegbSuperJumpBoost);
+			return CacheIndicator<GreyBeard.KingPanaZilla.gbSuperJumpBoost>(new GreyBeard.KingPanaZilla.gbSuperJumpBoost(){ SensitiveModeEnabled = sensitiveModeEnabled, OffsetLevel1 = offsetLevel1, OffsetLevel2 = offsetLevel2, OffsetLevel3 = offsetLevel3, OffsetLevel4 = offsetLevel4, OffsetBase = offsetBase, ReferencePricePeriod = referencePricePeriod, LineLevelsOffset = lineLevelsOffset, ExtremeNeighborhood = extremeNeighborhood, SignalCloseThreshold = signalCloseThreshold, SignalQuantityPerZone = signalQuantityPerZone, SignalSplit = signalSplit }, input, ref cachegbSuperJumpBoost);
 		}
 	}
 }
@@ -2693,12 +2678,12 @@ namespace NinjaTrader.NinjaScript.MarketAnalyzerColumns
 {
 	public partial class MarketAnalyzerColumn : MarketAnalyzerColumnBase
 	{
-		public Indicators.gbSuperJumpBoost gbSuperJumpBoost(bool sensitiveModeEnabled, double offsetLevel1, double offsetLevel2, double offsetLevel3, double offsetLevel4, double offsetBase, int referencePricePeriod, int lineLevelsOffset, int extremeNeighborhood, int signalCloseThreshold, int signalQuantityPerZone, int signalSplit)
+		public Indicators.GreyBeard.KingPanaZilla.gbSuperJumpBoost gbSuperJumpBoost(bool sensitiveModeEnabled, double offsetLevel1, double offsetLevel2, double offsetLevel3, double offsetLevel4, double offsetBase, int referencePricePeriod, int lineLevelsOffset, int extremeNeighborhood, int signalCloseThreshold, int signalQuantityPerZone, int signalSplit)
 		{
 			return indicator.gbSuperJumpBoost(Input, sensitiveModeEnabled, offsetLevel1, offsetLevel2, offsetLevel3, offsetLevel4, offsetBase, referencePricePeriod, lineLevelsOffset, extremeNeighborhood, signalCloseThreshold, signalQuantityPerZone, signalSplit);
 		}
 
-		public Indicators.gbSuperJumpBoost gbSuperJumpBoost(ISeries<double> input , bool sensitiveModeEnabled, double offsetLevel1, double offsetLevel2, double offsetLevel3, double offsetLevel4, double offsetBase, int referencePricePeriod, int lineLevelsOffset, int extremeNeighborhood, int signalCloseThreshold, int signalQuantityPerZone, int signalSplit)
+		public Indicators.GreyBeard.KingPanaZilla.gbSuperJumpBoost gbSuperJumpBoost(ISeries<double> input , bool sensitiveModeEnabled, double offsetLevel1, double offsetLevel2, double offsetLevel3, double offsetLevel4, double offsetBase, int referencePricePeriod, int lineLevelsOffset, int extremeNeighborhood, int signalCloseThreshold, int signalQuantityPerZone, int signalSplit)
 		{
 			return indicator.gbSuperJumpBoost(input, sensitiveModeEnabled, offsetLevel1, offsetLevel2, offsetLevel3, offsetLevel4, offsetBase, referencePricePeriod, lineLevelsOffset, extremeNeighborhood, signalCloseThreshold, signalQuantityPerZone, signalSplit);
 		}
@@ -2709,12 +2694,12 @@ namespace NinjaTrader.NinjaScript.Strategies
 {
 	public partial class Strategy : NinjaTrader.Gui.NinjaScript.StrategyRenderBase
 	{
-		public Indicators.gbSuperJumpBoost gbSuperJumpBoost(bool sensitiveModeEnabled, double offsetLevel1, double offsetLevel2, double offsetLevel3, double offsetLevel4, double offsetBase, int referencePricePeriod, int lineLevelsOffset, int extremeNeighborhood, int signalCloseThreshold, int signalQuantityPerZone, int signalSplit)
+		public Indicators.GreyBeard.KingPanaZilla.gbSuperJumpBoost gbSuperJumpBoost(bool sensitiveModeEnabled, double offsetLevel1, double offsetLevel2, double offsetLevel3, double offsetLevel4, double offsetBase, int referencePricePeriod, int lineLevelsOffset, int extremeNeighborhood, int signalCloseThreshold, int signalQuantityPerZone, int signalSplit)
 		{
 			return indicator.gbSuperJumpBoost(Input, sensitiveModeEnabled, offsetLevel1, offsetLevel2, offsetLevel3, offsetLevel4, offsetBase, referencePricePeriod, lineLevelsOffset, extremeNeighborhood, signalCloseThreshold, signalQuantityPerZone, signalSplit);
 		}
 
-		public Indicators.gbSuperJumpBoost gbSuperJumpBoost(ISeries<double> input , bool sensitiveModeEnabled, double offsetLevel1, double offsetLevel2, double offsetLevel3, double offsetLevel4, double offsetBase, int referencePricePeriod, int lineLevelsOffset, int extremeNeighborhood, int signalCloseThreshold, int signalQuantityPerZone, int signalSplit)
+		public Indicators.GreyBeard.KingPanaZilla.gbSuperJumpBoost gbSuperJumpBoost(ISeries<double> input , bool sensitiveModeEnabled, double offsetLevel1, double offsetLevel2, double offsetLevel3, double offsetLevel4, double offsetBase, int referencePricePeriod, int lineLevelsOffset, int extremeNeighborhood, int signalCloseThreshold, int signalQuantityPerZone, int signalSplit)
 		{
 			return indicator.gbSuperJumpBoost(input, sensitiveModeEnabled, offsetLevel1, offsetLevel2, offsetLevel3, offsetLevel4, offsetBase, referencePricePeriod, lineLevelsOffset, extremeNeighborhood, signalCloseThreshold, signalQuantityPerZone, signalSplit);
 		}

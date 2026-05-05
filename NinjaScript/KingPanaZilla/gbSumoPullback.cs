@@ -20,7 +20,7 @@ using NinjaTrader.Gui.Tools;
 using NinjaTrader.NinjaScript.DrawingTools;
 #endregion
 
-namespace NinjaTrader.NinjaScript.Indicators
+namespace NinjaTrader.NinjaScript.Indicators.GreyBeard.KingPanaZilla
 {
 [CategoryOrder("Critical", 1000070)]
 [CategoryOrder("Special", 1000060)]
@@ -290,17 +290,8 @@ public class gbSumoPullback : Indicator
 	[Display(Name = "Alert Blocking (Seconds)", Order = 50, GroupName = "Alerts", Description = "The minimum interval between 2 consecutive alerts")]
 	public int AlertBlockingSeconds { get; set; }
 
-	[Display(Name = "Website", Order = 0, GroupName = "Developer")]
-	public string Website => "greybeard";
-
-	[Display(Name = "Update", Order = 10, GroupName = "Developer")]
-	public string Update => "18 Apr 2023";
-
-	[Display(Name = "Logo: Enabled", Order = 20, GroupName = "Developer")]
-	public bool LogoEnabled { get; set; }
-
-	[Display(Name = "Instruction: Enabled", Order = 30, GroupName = "Developer")]
-	public bool InstructionEnabled { get; set; }
+	[Display(Name = "Version", Order = 10, GroupName = "Developer")]
+	public string Version => "1.0 Beta";
 
 	[Display(Name = "Screen DPI", Order = 100, GroupName = "General")]
 	public int ScreenDPI { get; set; }
@@ -567,15 +558,6 @@ public class gbSumoPullback : Indicator
 						{
 							return;
 						}
-						ChartControl.Dispatcher.InvokeAsync(delegate
-						{
-							if (InstructionEnabled && instructionPanel == null)
-							{
-								instructionPanel = new InstructionPanel(indicatorNameFull);
-								instructionPanel.closeButton.MouseLeftButtonUp += OnInstructionClose;
-								UserControlCollection.Add(instructionPanel);
-							}
-						});
 					}
 				}
 				else
@@ -633,8 +615,6 @@ public class gbSumoPullback : Indicator
 			MarkerFont = new SimpleFont("Arial", 20);
 			MarkerOffset = 10;
 			AlertBlockingSeconds = 60;
-			LogoEnabled = true;
-			InstructionEnabled = true;
 			ScreenDPI = 99;
 			BackgroundEnabled = true;
 			BackgroundBullish = Brushes.LimeGreen;
@@ -902,10 +882,6 @@ public class gbSumoPullback : Indicator
 
 	private void OnInstructionClose(object sender, RoutedEventArgs e)
 	{
-		TriggerCustomEvent((Action<object>)delegate
-		{
-			InstructionEnabled = false;
-		}, (object)e);
 	}
 
 	private double GetMA(ISeries<double> input, gbSumoPullbackMAType maType, int period)
@@ -1007,19 +983,19 @@ namespace NinjaTrader.NinjaScript.Indicators
 {
 	public partial class Indicator : NinjaTrader.Gui.NinjaScript.IndicatorRenderBase
 	{
-		private gbSumoPullback[] cachegbSumoPullback;
-		public gbSumoPullback gbSumoPullback(gbSumoPullbackMAType slowMAType, int slowMAPeriod, bool slowMASmoothingEnabled, gbSumoPullbackMAType slowMASmoothingMethod, int slowMASmoothingPeriod, gbSumoPullbackMAType fastMA1Type, int fastMA1Period, bool fastMA1SmoothingEnabled, gbSumoPullbackMAType fastMA1SmoothingMethod, int fastMA1SmoothingPeriod, gbSumoPullbackMAType fastMA2Type, int fastMA2Period, bool fastMA2SmoothingEnabled, gbSumoPullbackMAType fastMA2SmoothingMethod, int fastMA2SmoothingPeriod, gbSumoPullbackMAType fastMA3Type, int fastMA3Period, bool fastMA3SmoothingEnabled, gbSumoPullbackMAType fastMA3SmoothingMethod, int fastMA3SmoothingPeriod, int signalSplitFirst, int signalSplitSecond)
+		private GreyBeard.KingPanaZilla.gbSumoPullback[] cachegbSumoPullback;
+		public GreyBeard.KingPanaZilla.gbSumoPullback gbSumoPullback(gbSumoPullbackMAType slowMAType, int slowMAPeriod, bool slowMASmoothingEnabled, gbSumoPullbackMAType slowMASmoothingMethod, int slowMASmoothingPeriod, gbSumoPullbackMAType fastMA1Type, int fastMA1Period, bool fastMA1SmoothingEnabled, gbSumoPullbackMAType fastMA1SmoothingMethod, int fastMA1SmoothingPeriod, gbSumoPullbackMAType fastMA2Type, int fastMA2Period, bool fastMA2SmoothingEnabled, gbSumoPullbackMAType fastMA2SmoothingMethod, int fastMA2SmoothingPeriod, gbSumoPullbackMAType fastMA3Type, int fastMA3Period, bool fastMA3SmoothingEnabled, gbSumoPullbackMAType fastMA3SmoothingMethod, int fastMA3SmoothingPeriod, int signalSplitFirst, int signalSplitSecond)
 		{
 			return gbSumoPullback(Input, slowMAType, slowMAPeriod, slowMASmoothingEnabled, slowMASmoothingMethod, slowMASmoothingPeriod, fastMA1Type, fastMA1Period, fastMA1SmoothingEnabled, fastMA1SmoothingMethod, fastMA1SmoothingPeriod, fastMA2Type, fastMA2Period, fastMA2SmoothingEnabled, fastMA2SmoothingMethod, fastMA2SmoothingPeriod, fastMA3Type, fastMA3Period, fastMA3SmoothingEnabled, fastMA3SmoothingMethod, fastMA3SmoothingPeriod, signalSplitFirst, signalSplitSecond);
 		}
 
-		public gbSumoPullback gbSumoPullback(ISeries<double> input, gbSumoPullbackMAType slowMAType, int slowMAPeriod, bool slowMASmoothingEnabled, gbSumoPullbackMAType slowMASmoothingMethod, int slowMASmoothingPeriod, gbSumoPullbackMAType fastMA1Type, int fastMA1Period, bool fastMA1SmoothingEnabled, gbSumoPullbackMAType fastMA1SmoothingMethod, int fastMA1SmoothingPeriod, gbSumoPullbackMAType fastMA2Type, int fastMA2Period, bool fastMA2SmoothingEnabled, gbSumoPullbackMAType fastMA2SmoothingMethod, int fastMA2SmoothingPeriod, gbSumoPullbackMAType fastMA3Type, int fastMA3Period, bool fastMA3SmoothingEnabled, gbSumoPullbackMAType fastMA3SmoothingMethod, int fastMA3SmoothingPeriod, int signalSplitFirst, int signalSplitSecond)
+		public GreyBeard.KingPanaZilla.gbSumoPullback gbSumoPullback(ISeries<double> input, gbSumoPullbackMAType slowMAType, int slowMAPeriod, bool slowMASmoothingEnabled, gbSumoPullbackMAType slowMASmoothingMethod, int slowMASmoothingPeriod, gbSumoPullbackMAType fastMA1Type, int fastMA1Period, bool fastMA1SmoothingEnabled, gbSumoPullbackMAType fastMA1SmoothingMethod, int fastMA1SmoothingPeriod, gbSumoPullbackMAType fastMA2Type, int fastMA2Period, bool fastMA2SmoothingEnabled, gbSumoPullbackMAType fastMA2SmoothingMethod, int fastMA2SmoothingPeriod, gbSumoPullbackMAType fastMA3Type, int fastMA3Period, bool fastMA3SmoothingEnabled, gbSumoPullbackMAType fastMA3SmoothingMethod, int fastMA3SmoothingPeriod, int signalSplitFirst, int signalSplitSecond)
 		{
 			if (cachegbSumoPullback != null)
 				for (int idx = 0; idx < cachegbSumoPullback.Length; idx++)
 					if (cachegbSumoPullback[idx] != null && cachegbSumoPullback[idx].SlowMAType == slowMAType && cachegbSumoPullback[idx].SlowMAPeriod == slowMAPeriod && cachegbSumoPullback[idx].SlowMASmoothingEnabled == slowMASmoothingEnabled && cachegbSumoPullback[idx].SlowMASmoothingMethod == slowMASmoothingMethod && cachegbSumoPullback[idx].SlowMASmoothingPeriod == slowMASmoothingPeriod && cachegbSumoPullback[idx].FastMA1Type == fastMA1Type && cachegbSumoPullback[idx].FastMA1Period == fastMA1Period && cachegbSumoPullback[idx].FastMA1SmoothingEnabled == fastMA1SmoothingEnabled && cachegbSumoPullback[idx].FastMA1SmoothingMethod == fastMA1SmoothingMethod && cachegbSumoPullback[idx].FastMA1SmoothingPeriod == fastMA1SmoothingPeriod && cachegbSumoPullback[idx].FastMA2Type == fastMA2Type && cachegbSumoPullback[idx].FastMA2Period == fastMA2Period && cachegbSumoPullback[idx].FastMA2SmoothingEnabled == fastMA2SmoothingEnabled && cachegbSumoPullback[idx].FastMA2SmoothingMethod == fastMA2SmoothingMethod && cachegbSumoPullback[idx].FastMA2SmoothingPeriod == fastMA2SmoothingPeriod && cachegbSumoPullback[idx].FastMA3Type == fastMA3Type && cachegbSumoPullback[idx].FastMA3Period == fastMA3Period && cachegbSumoPullback[idx].FastMA3SmoothingEnabled == fastMA3SmoothingEnabled && cachegbSumoPullback[idx].FastMA3SmoothingMethod == fastMA3SmoothingMethod && cachegbSumoPullback[idx].FastMA3SmoothingPeriod == fastMA3SmoothingPeriod && cachegbSumoPullback[idx].SignalSplitFirst == signalSplitFirst && cachegbSumoPullback[idx].SignalSplitSecond == signalSplitSecond && cachegbSumoPullback[idx].EqualsInput(input))
 						return cachegbSumoPullback[idx];
-			return CacheIndicator<gbSumoPullback>(new gbSumoPullback(){ SlowMAType = slowMAType, SlowMAPeriod = slowMAPeriod, SlowMASmoothingEnabled = slowMASmoothingEnabled, SlowMASmoothingMethod = slowMASmoothingMethod, SlowMASmoothingPeriod = slowMASmoothingPeriod, FastMA1Type = fastMA1Type, FastMA1Period = fastMA1Period, FastMA1SmoothingEnabled = fastMA1SmoothingEnabled, FastMA1SmoothingMethod = fastMA1SmoothingMethod, FastMA1SmoothingPeriod = fastMA1SmoothingPeriod, FastMA2Type = fastMA2Type, FastMA2Period = fastMA2Period, FastMA2SmoothingEnabled = fastMA2SmoothingEnabled, FastMA2SmoothingMethod = fastMA2SmoothingMethod, FastMA2SmoothingPeriod = fastMA2SmoothingPeriod, FastMA3Type = fastMA3Type, FastMA3Period = fastMA3Period, FastMA3SmoothingEnabled = fastMA3SmoothingEnabled, FastMA3SmoothingMethod = fastMA3SmoothingMethod, FastMA3SmoothingPeriod = fastMA3SmoothingPeriod, SignalSplitFirst = signalSplitFirst, SignalSplitSecond = signalSplitSecond }, input, ref cachegbSumoPullback);
+			return CacheIndicator<GreyBeard.KingPanaZilla.gbSumoPullback>(new GreyBeard.KingPanaZilla.gbSumoPullback(){ SlowMAType = slowMAType, SlowMAPeriod = slowMAPeriod, SlowMASmoothingEnabled = slowMASmoothingEnabled, SlowMASmoothingMethod = slowMASmoothingMethod, SlowMASmoothingPeriod = slowMASmoothingPeriod, FastMA1Type = fastMA1Type, FastMA1Period = fastMA1Period, FastMA1SmoothingEnabled = fastMA1SmoothingEnabled, FastMA1SmoothingMethod = fastMA1SmoothingMethod, FastMA1SmoothingPeriod = fastMA1SmoothingPeriod, FastMA2Type = fastMA2Type, FastMA2Period = fastMA2Period, FastMA2SmoothingEnabled = fastMA2SmoothingEnabled, FastMA2SmoothingMethod = fastMA2SmoothingMethod, FastMA2SmoothingPeriod = fastMA2SmoothingPeriod, FastMA3Type = fastMA3Type, FastMA3Period = fastMA3Period, FastMA3SmoothingEnabled = fastMA3SmoothingEnabled, FastMA3SmoothingMethod = fastMA3SmoothingMethod, FastMA3SmoothingPeriod = fastMA3SmoothingPeriod, SignalSplitFirst = signalSplitFirst, SignalSplitSecond = signalSplitSecond }, input, ref cachegbSumoPullback);
 		}
 	}
 }
@@ -1028,12 +1004,12 @@ namespace NinjaTrader.NinjaScript.MarketAnalyzerColumns
 {
 	public partial class MarketAnalyzerColumn : MarketAnalyzerColumnBase
 	{
-		public Indicators.gbSumoPullback gbSumoPullback(gbSumoPullbackMAType slowMAType, int slowMAPeriod, bool slowMASmoothingEnabled, gbSumoPullbackMAType slowMASmoothingMethod, int slowMASmoothingPeriod, gbSumoPullbackMAType fastMA1Type, int fastMA1Period, bool fastMA1SmoothingEnabled, gbSumoPullbackMAType fastMA1SmoothingMethod, int fastMA1SmoothingPeriod, gbSumoPullbackMAType fastMA2Type, int fastMA2Period, bool fastMA2SmoothingEnabled, gbSumoPullbackMAType fastMA2SmoothingMethod, int fastMA2SmoothingPeriod, gbSumoPullbackMAType fastMA3Type, int fastMA3Period, bool fastMA3SmoothingEnabled, gbSumoPullbackMAType fastMA3SmoothingMethod, int fastMA3SmoothingPeriod, int signalSplitFirst, int signalSplitSecond)
+		public Indicators.GreyBeard.KingPanaZilla.gbSumoPullback gbSumoPullback(gbSumoPullbackMAType slowMAType, int slowMAPeriod, bool slowMASmoothingEnabled, gbSumoPullbackMAType slowMASmoothingMethod, int slowMASmoothingPeriod, gbSumoPullbackMAType fastMA1Type, int fastMA1Period, bool fastMA1SmoothingEnabled, gbSumoPullbackMAType fastMA1SmoothingMethod, int fastMA1SmoothingPeriod, gbSumoPullbackMAType fastMA2Type, int fastMA2Period, bool fastMA2SmoothingEnabled, gbSumoPullbackMAType fastMA2SmoothingMethod, int fastMA2SmoothingPeriod, gbSumoPullbackMAType fastMA3Type, int fastMA3Period, bool fastMA3SmoothingEnabled, gbSumoPullbackMAType fastMA3SmoothingMethod, int fastMA3SmoothingPeriod, int signalSplitFirst, int signalSplitSecond)
 		{
 			return indicator.gbSumoPullback(Input, slowMAType, slowMAPeriod, slowMASmoothingEnabled, slowMASmoothingMethod, slowMASmoothingPeriod, fastMA1Type, fastMA1Period, fastMA1SmoothingEnabled, fastMA1SmoothingMethod, fastMA1SmoothingPeriod, fastMA2Type, fastMA2Period, fastMA2SmoothingEnabled, fastMA2SmoothingMethod, fastMA2SmoothingPeriod, fastMA3Type, fastMA3Period, fastMA3SmoothingEnabled, fastMA3SmoothingMethod, fastMA3SmoothingPeriod, signalSplitFirst, signalSplitSecond);
 		}
 
-		public Indicators.gbSumoPullback gbSumoPullback(ISeries<double> input , gbSumoPullbackMAType slowMAType, int slowMAPeriod, bool slowMASmoothingEnabled, gbSumoPullbackMAType slowMASmoothingMethod, int slowMASmoothingPeriod, gbSumoPullbackMAType fastMA1Type, int fastMA1Period, bool fastMA1SmoothingEnabled, gbSumoPullbackMAType fastMA1SmoothingMethod, int fastMA1SmoothingPeriod, gbSumoPullbackMAType fastMA2Type, int fastMA2Period, bool fastMA2SmoothingEnabled, gbSumoPullbackMAType fastMA2SmoothingMethod, int fastMA2SmoothingPeriod, gbSumoPullbackMAType fastMA3Type, int fastMA3Period, bool fastMA3SmoothingEnabled, gbSumoPullbackMAType fastMA3SmoothingMethod, int fastMA3SmoothingPeriod, int signalSplitFirst, int signalSplitSecond)
+		public Indicators.GreyBeard.KingPanaZilla.gbSumoPullback gbSumoPullback(ISeries<double> input , gbSumoPullbackMAType slowMAType, int slowMAPeriod, bool slowMASmoothingEnabled, gbSumoPullbackMAType slowMASmoothingMethod, int slowMASmoothingPeriod, gbSumoPullbackMAType fastMA1Type, int fastMA1Period, bool fastMA1SmoothingEnabled, gbSumoPullbackMAType fastMA1SmoothingMethod, int fastMA1SmoothingPeriod, gbSumoPullbackMAType fastMA2Type, int fastMA2Period, bool fastMA2SmoothingEnabled, gbSumoPullbackMAType fastMA2SmoothingMethod, int fastMA2SmoothingPeriod, gbSumoPullbackMAType fastMA3Type, int fastMA3Period, bool fastMA3SmoothingEnabled, gbSumoPullbackMAType fastMA3SmoothingMethod, int fastMA3SmoothingPeriod, int signalSplitFirst, int signalSplitSecond)
 		{
 			return indicator.gbSumoPullback(input, slowMAType, slowMAPeriod, slowMASmoothingEnabled, slowMASmoothingMethod, slowMASmoothingPeriod, fastMA1Type, fastMA1Period, fastMA1SmoothingEnabled, fastMA1SmoothingMethod, fastMA1SmoothingPeriod, fastMA2Type, fastMA2Period, fastMA2SmoothingEnabled, fastMA2SmoothingMethod, fastMA2SmoothingPeriod, fastMA3Type, fastMA3Period, fastMA3SmoothingEnabled, fastMA3SmoothingMethod, fastMA3SmoothingPeriod, signalSplitFirst, signalSplitSecond);
 		}
@@ -1044,12 +1020,12 @@ namespace NinjaTrader.NinjaScript.Strategies
 {
 	public partial class Strategy : NinjaTrader.Gui.NinjaScript.StrategyRenderBase
 	{
-		public Indicators.gbSumoPullback gbSumoPullback(gbSumoPullbackMAType slowMAType, int slowMAPeriod, bool slowMASmoothingEnabled, gbSumoPullbackMAType slowMASmoothingMethod, int slowMASmoothingPeriod, gbSumoPullbackMAType fastMA1Type, int fastMA1Period, bool fastMA1SmoothingEnabled, gbSumoPullbackMAType fastMA1SmoothingMethod, int fastMA1SmoothingPeriod, gbSumoPullbackMAType fastMA2Type, int fastMA2Period, bool fastMA2SmoothingEnabled, gbSumoPullbackMAType fastMA2SmoothingMethod, int fastMA2SmoothingPeriod, gbSumoPullbackMAType fastMA3Type, int fastMA3Period, bool fastMA3SmoothingEnabled, gbSumoPullbackMAType fastMA3SmoothingMethod, int fastMA3SmoothingPeriod, int signalSplitFirst, int signalSplitSecond)
+		public Indicators.GreyBeard.KingPanaZilla.gbSumoPullback gbSumoPullback(gbSumoPullbackMAType slowMAType, int slowMAPeriod, bool slowMASmoothingEnabled, gbSumoPullbackMAType slowMASmoothingMethod, int slowMASmoothingPeriod, gbSumoPullbackMAType fastMA1Type, int fastMA1Period, bool fastMA1SmoothingEnabled, gbSumoPullbackMAType fastMA1SmoothingMethod, int fastMA1SmoothingPeriod, gbSumoPullbackMAType fastMA2Type, int fastMA2Period, bool fastMA2SmoothingEnabled, gbSumoPullbackMAType fastMA2SmoothingMethod, int fastMA2SmoothingPeriod, gbSumoPullbackMAType fastMA3Type, int fastMA3Period, bool fastMA3SmoothingEnabled, gbSumoPullbackMAType fastMA3SmoothingMethod, int fastMA3SmoothingPeriod, int signalSplitFirst, int signalSplitSecond)
 		{
 			return indicator.gbSumoPullback(Input, slowMAType, slowMAPeriod, slowMASmoothingEnabled, slowMASmoothingMethod, slowMASmoothingPeriod, fastMA1Type, fastMA1Period, fastMA1SmoothingEnabled, fastMA1SmoothingMethod, fastMA1SmoothingPeriod, fastMA2Type, fastMA2Period, fastMA2SmoothingEnabled, fastMA2SmoothingMethod, fastMA2SmoothingPeriod, fastMA3Type, fastMA3Period, fastMA3SmoothingEnabled, fastMA3SmoothingMethod, fastMA3SmoothingPeriod, signalSplitFirst, signalSplitSecond);
 		}
 
-		public Indicators.gbSumoPullback gbSumoPullback(ISeries<double> input , gbSumoPullbackMAType slowMAType, int slowMAPeriod, bool slowMASmoothingEnabled, gbSumoPullbackMAType slowMASmoothingMethod, int slowMASmoothingPeriod, gbSumoPullbackMAType fastMA1Type, int fastMA1Period, bool fastMA1SmoothingEnabled, gbSumoPullbackMAType fastMA1SmoothingMethod, int fastMA1SmoothingPeriod, gbSumoPullbackMAType fastMA2Type, int fastMA2Period, bool fastMA2SmoothingEnabled, gbSumoPullbackMAType fastMA2SmoothingMethod, int fastMA2SmoothingPeriod, gbSumoPullbackMAType fastMA3Type, int fastMA3Period, bool fastMA3SmoothingEnabled, gbSumoPullbackMAType fastMA3SmoothingMethod, int fastMA3SmoothingPeriod, int signalSplitFirst, int signalSplitSecond)
+		public Indicators.GreyBeard.KingPanaZilla.gbSumoPullback gbSumoPullback(ISeries<double> input , gbSumoPullbackMAType slowMAType, int slowMAPeriod, bool slowMASmoothingEnabled, gbSumoPullbackMAType slowMASmoothingMethod, int slowMASmoothingPeriod, gbSumoPullbackMAType fastMA1Type, int fastMA1Period, bool fastMA1SmoothingEnabled, gbSumoPullbackMAType fastMA1SmoothingMethod, int fastMA1SmoothingPeriod, gbSumoPullbackMAType fastMA2Type, int fastMA2Period, bool fastMA2SmoothingEnabled, gbSumoPullbackMAType fastMA2SmoothingMethod, int fastMA2SmoothingPeriod, gbSumoPullbackMAType fastMA3Type, int fastMA3Period, bool fastMA3SmoothingEnabled, gbSumoPullbackMAType fastMA3SmoothingMethod, int fastMA3SmoothingPeriod, int signalSplitFirst, int signalSplitSecond)
 		{
 			return indicator.gbSumoPullback(input, slowMAType, slowMAPeriod, slowMASmoothingEnabled, slowMASmoothingMethod, slowMASmoothingPeriod, fastMA1Type, fastMA1Period, fastMA1SmoothingEnabled, fastMA1SmoothingMethod, fastMA1SmoothingPeriod, fastMA2Type, fastMA2Period, fastMA2SmoothingEnabled, fastMA2SmoothingMethod, fastMA2SmoothingPeriod, fastMA3Type, fastMA3Period, fastMA3SmoothingEnabled, fastMA3SmoothingMethod, fastMA3SmoothingPeriod, signalSplitFirst, signalSplitSecond);
 		}
