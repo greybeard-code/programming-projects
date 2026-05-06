@@ -7,6 +7,7 @@ using System.IO;
 using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Media;
 using System.Windows.Threading;
 using System.Xml.Serialization;
@@ -27,6 +28,7 @@ namespace NinjaTrader.NinjaScript.Indicators.GreyBeard.KingPanaZilla
 [CategoryOrder("Graphics", 1000020)]
 [CategoryOrder("Gradient", 1000030)]
 [CategoryOrder("Alerts", 1000040)]
+[CategoryOrder("Toggle", 1000050)]
 [CategoryOrder("Developer", 0)]
 [CategoryOrder("Critical", 1000070)]
 public class gbThunderZilla : Indicator
@@ -136,6 +138,8 @@ public class gbThunderZilla : Indicator
 
 	private const int oBOSSafeReversalPeriod = 3;
 
+	private gbThunderZillaTextPosition togglePositionAlignment;
+
 	private const int defaultMargin = 5;
 
 	private const string toolTipSpace = "  ";
@@ -165,6 +169,10 @@ public class gbThunderZilla : Indicator
 	private SignalTradeInfo trendState;
 
 	private Window alertWindow;
+
+	private Grid toggle;
+	private Button toggleButton;
+	private Thumb toggleDrag;
 
 	private const string prefix = "gbThunderZilla";
 
@@ -396,7 +404,16 @@ public class gbThunderZilla : Indicator
 	[Display(Name = "Alert Blocking (Seconds)", Order = 70, GroupName = "Alerts", Description = "The minimum interval between 2 consecutive alerts")]
 	public int AlertBlockingSeconds { get; set; }
 
-	[Display(Name = "Website", Order = 0, GroupName = "Developer")]
+	[Display(Name = "Switched On", Order = 0, GroupName = "Critical")]
+	public bool SwitchedOn { get; set; }
+
+	[Display(Name = "Author",  Order = 0,  GroupName = "Developer")]
+	public string Author  => "GreyBeard";
+
+	[Display(Name = "Version", Order = 1,  GroupName = "Developer")]
+	public string Version => "1.0";
+
+	[Display(Name = "Website", Order = 5,  GroupName = "Developer")]
 	public string Website => "greybeard.com";
 
 	[Display(Name = "Update", Order = 10, GroupName = "Developer")]
@@ -643,6 +660,132 @@ public class gbThunderZilla : Indicator
 	[NinjaScriptProperty]
 	public int SignalQuantityPerTrend { get; set; }
 
+	[Display(Name = "Enabled", Order = 0, GroupName = "Toggle")]
+	public bool ToggleEnabled { get; set; }
+
+	[XmlIgnore]
+	[Display(Name = "Background: On", Order = 10, GroupName = "Toggle")]
+	public Brush ToggleBackBrushOn { get; set; }
+
+	[Browsable(false)]
+	public string ToggleBackBrushOnSerialize
+	{
+		get
+		{
+			return Serialize.BrushToString(ToggleBackBrushOn);
+		}
+		set
+		{
+			ToggleBackBrushOn = Serialize.StringToBrush(value);
+		}
+	}
+
+	[Display(Name = "Background: Off", Order = 11, GroupName = "Toggle")]
+	[XmlIgnore]
+	public Brush ToggleBackBrushOff { get; set; }
+
+	[Browsable(false)]
+	public string ToggleBackBrushOffSerialize
+	{
+		get
+		{
+			return Serialize.BrushToString(ToggleBackBrushOff);
+		}
+		set
+		{
+			ToggleBackBrushOff = Serialize.StringToBrush(value);
+		}
+	}
+
+	[Display(Name = "Text: String", Order = 20, GroupName = "Toggle")]
+	public string ToggleTextString { get; set; }
+
+	[XmlIgnore]
+	[Display(Name = "Text: Color", Order = 21, GroupName = "Toggle")]
+	public Brush ToggleTextBrush { get; set; }
+
+	[Browsable(false)]
+	public string ToggleTextBrushSerialize
+	{
+		get
+		{
+			return Serialize.BrushToString(ToggleTextBrush);
+		}
+		set
+		{
+			ToggleTextBrush = Serialize.StringToBrush(value);
+		}
+	}
+	[Display(Name = "Text: Size", Order = 22, GroupName = "Toggle")]
+	public int ToggleTextSize { get; set; }
+
+	[Display(Name = "Drag Bar: Color", Order = 30, GroupName = "Toggle")]
+	[XmlIgnore]
+	public Brush ToggleDragBrush { get; set; }
+
+	[Browsable(false)]
+	public string ToggleDragBrushSerialize
+	{
+		get
+		{
+			return Serialize.BrushToString(ToggleDragBrush);
+		}
+		set
+		{
+			ToggleDragBrush = Serialize.StringToBrush(value);
+		}
+	}
+
+	[Display(Name = "Position: Alignment", Order = 40, GroupName = "Toggle")]
+	public gbThunderZillaTextPosition TogglePositionAlignment
+	{
+		get
+		{
+			return togglePositionAlignment;
+		}
+		set
+		{
+			switch (value)
+			{
+				case gbThunderZillaTextPosition.TopLeft:
+					TogglePositionMarginLeft = 5.0;
+					TogglePositionMarginTop = 5.0;
+					break;
+				case gbThunderZillaTextPosition.TopRight:
+					TogglePositionMarginRight = 5.0;
+					TogglePositionMarginTop = 5.0;
+					break;
+				case gbThunderZillaTextPosition.BottomRight:
+					TogglePositionMarginRight = 5.0;
+					TogglePositionMarginBottom = 5.0;
+					break;
+				case gbThunderZillaTextPosition.BottomLeft:
+					TogglePositionMarginLeft = 5.0;
+					TogglePositionMarginBottom = 5.0;
+					break;
+				case gbThunderZillaTextPosition.Center:
+					TogglePositionMarginLeft = 5.0;
+					TogglePositionMarginTop = 5.0;
+					TogglePositionMarginRight = 5.0;
+					TogglePositionMarginBottom = 5.0;
+					break;
+			}
+			togglePositionAlignment = value;
+		}
+	}
+
+	[Display(Name = "Position: Margin Left", Order = 41, GroupName = "Toggle")]
+	public double TogglePositionMarginLeft { get; set; }
+
+	[Display(Name = "Position: Margin Top", Order = 42, GroupName = "Toggle")]
+	public double TogglePositionMarginTop { get; set; }
+
+	[Display(Name = "Position: Margin Right", Order = 43, GroupName = "Toggle")]
+	public double TogglePositionMarginRight { get; set; }
+
+	[Display(Name = "Position: Margin Bottom", Order = 44, GroupName = "Toggle")]
+	public double TogglePositionMarginBottom { get; set; }
+
 	[Display(Name = "Z Order", Order = 0, GroupName = "Special")]
 	public int IndicatorZOrder { get; set; }
 
@@ -825,6 +968,7 @@ public class gbThunderZilla : Indicator
 				MarkerFont = new SimpleFont("Arial", 20);
 				MarkerOffset = 10;
 				AlertBlockingSeconds = 60;
+				SwitchedOn = true;
 				ScreenDPI = 100;
 				PlotSlowEnabled = true;
 				PlotTrendUptrend = Brushes.DodgerBlue;
@@ -852,6 +996,18 @@ public class gbThunderZilla : Indicator
 				StopOffsetMultiplierStop = 60.0;
 				SignalQuantityPerFlat = 2;
 				SignalQuantityPerTrend = 999;
+				ToggleEnabled = true;
+				ToggleBackBrushOn = Brushes.DodgerBlue;
+				ToggleBackBrushOff = Brushes.Silver;
+				ToggleTextString = "ThunderZilla";
+				ToggleTextBrush = Brushes.White;
+				ToggleTextSize = 10;
+				ToggleDragBrush = Brushes.LimeGreen;
+				TogglePositionAlignment = gbThunderZillaTextPosition.TopLeft;
+				TogglePositionMarginLeft = 5.0;
+				TogglePositionMarginTop = 5.0;
+				TogglePositionMarginRight = 5.0;
+				TogglePositionMarginBottom = 5.0;
 				IndicatorZOrder = 0;
 				UserNote = "instrument (period)";
 				AddPlot(new Stroke(Brushes.Gold, DashStyleHelper.Solid, 5f), PlotStyle.Line, "Trend");
@@ -899,6 +1055,53 @@ public class gbThunderZilla : Indicator
 				{
 					return;
 				}
+				ChartControl.Dispatcher.InvokeAsync(delegate
+				{
+					if (ToggleEnabled && toggle == null)
+					{
+						Thickness thickness = new Thickness(TogglePositionMarginLeft, TogglePositionMarginTop, TogglePositionMarginRight, TogglePositionMarginBottom);
+
+						toggle = new Grid();
+						toggle.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+						toggle.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(6) });
+						toggle.HorizontalAlignment = HorizontalAlignment.Left;
+						toggle.VerticalAlignment = VerticalAlignment.Top;
+						toggle.Margin = thickness;
+
+						toggleButton = new Button
+						{
+							Content = ToggleTextString,
+							Foreground = ToggleTextBrush,
+							FontSize = ToggleTextSize,
+							Background = SwitchedOn ? ToggleBackBrushOn : ToggleBackBrushOff,
+							Padding = new Thickness(6, 3, 6, 3),
+							Cursor = System.Windows.Input.Cursors.Hand
+						};
+						var btnBorder = new FrameworkElementFactory(typeof(System.Windows.Controls.Border));
+						btnBorder.SetValue(System.Windows.Controls.Border.BackgroundProperty, new System.Windows.Data.Binding("Background") { RelativeSource = new System.Windows.Data.RelativeSource(System.Windows.Data.RelativeSourceMode.TemplatedParent) });
+						btnBorder.SetValue(System.Windows.Controls.Border.PaddingProperty, new System.Windows.Data.Binding("Padding") { RelativeSource = new System.Windows.Data.RelativeSource(System.Windows.Data.RelativeSourceMode.TemplatedParent) });
+						var btnContent = new FrameworkElementFactory(typeof(ContentPresenter));
+						btnBorder.AppendChild(btnContent);
+						toggleButton.Template = new ControlTemplate(typeof(Button)) { VisualTree = btnBorder };
+						Grid.SetColumn(toggleButton, 0);
+						toggle.Children.Add(toggleButton);
+
+						toggleDrag = new Thumb
+						{
+							Width = 6,
+							Cursor = System.Windows.Input.Cursors.SizeAll
+						};
+						var rectFactory = new FrameworkElementFactory(typeof(System.Windows.Shapes.Rectangle));
+						rectFactory.SetValue(System.Windows.Shapes.Shape.FillProperty, ToggleDragBrush);
+						toggleDrag.Template = new ControlTemplate(typeof(Thumb)) { VisualTree = rectFactory };
+						Grid.SetColumn(toggleDrag, 1);
+						toggle.Children.Add(toggleDrag);
+
+						toggleDrag.DragDelta += OnToggleDrag;
+						toggleButton.Click += OnToggleClick;
+						UserControlCollection.Add(toggle);
+					}
+				});
 				break;
 
 			case State.Historical:
@@ -909,6 +1112,14 @@ public class gbThunderZilla : Indicator
 				{
 					ChartControl.Dispatcher.InvokeAsync(delegate
 					{
+						if (toggle != null)
+						{
+							toggleDrag.DragDelta -= OnToggleDrag;
+							toggleButton.Click -= OnToggleClick;
+							toggle = null;
+							toggleButton = null;
+							toggleDrag = null;
+						}
 						if (alertWindow != null)
 						{
 							alertWindow.Close();
@@ -1180,7 +1391,10 @@ public class gbThunderZilla : Indicator
 					}
 				}
 			}
-			PaintBar(trendState);
+			if (SwitchedOn)
+			{
+				PaintBar(trendState);
+			}
 			if (!isCharting || !CloudEnabled || CloudOpacity <= 0)
 			{
 				return;
@@ -1199,7 +1413,11 @@ public class gbThunderZilla : Indicator
 			{
 				int startBarsAgo = (flag8 ? 1 : (CurrentBar - crossIndex));
 				tag = "gbThunderZilla.cloud." + ((!flag8) ? crossIndex : (CurrentBar - 1));
-				Draw.Region(this, tag, startBarsAgo, 0, Trend, seriesMinMax, null, brush3, CloudOpacity);
+				Region region = Draw.Region(this, tag, startBarsAgo, 0, Trend, seriesMinMax, null, brush3, CloudOpacity);
+				if (!SwitchedOn)
+				{
+					((NinjaScript)region).IsVisible = false;
+				}
 			}
 		}
 		else
@@ -1462,7 +1680,7 @@ public class gbThunderZilla : Indicator
 
 	protected override void OnRender(ChartControl chartControl, ChartScale chartScale)
 	{
-		if (isCharting && ChartControl != null && !IsInHitTest)
+		if (isCharting && SwitchedOn && ChartControl != null && !IsInHitTest)
 		{
 			if (MarkerRenderingMethod == gbThunderZilla_RenderingMethod.Custom)
 			{
@@ -1538,6 +1756,83 @@ public class gbThunderZilla : Indicator
 		}
 	}
 
+	private void OnToggleDrag(object sender, DragDeltaEventArgs e)
+	{
+		TriggerCustomEvent((Action<object>)delegate
+		{
+			if (isCharting)
+			{
+				ChartControl.Dispatcher.InvokeAsync(delegate
+				{
+					var m = toggle.Margin;
+					toggle.Margin = new Thickness(m.Left + e.HorizontalChange, m.Top + e.VerticalChange, m.Right - e.HorizontalChange, m.Bottom - e.VerticalChange);
+					TogglePositionMarginLeft = toggle.Margin.Left;
+					TogglePositionMarginTop = toggle.Margin.Top;
+					TogglePositionMarginRight = toggle.Margin.Right;
+					TogglePositionMarginBottom = toggle.Margin.Bottom;
+				});
+			}
+		}, (object)e);
+	}
+
+	private void OnToggleClick(object sender, RoutedEventArgs e)
+	{
+		TriggerCustomEvent((Action<object>)delegate
+		{
+			if (isCharting)
+			{
+				ChartControl.Dispatcher.InvokeAsync(delegate
+				{
+					SwitchedOn = !SwitchedOn;
+					toggleButton.Background = SwitchedOn ? ToggleBackBrushOn : ToggleBackBrushOff;
+					if (BarEnabled)
+					{
+						if (!SwitchedOn)
+						{
+							for (int num = CurrentBar; num >= 0; num--)
+							{
+								int num2 = CurrentBar - num;
+								CandleOutlineBrushes[num2] = ChartBars.Properties.ChartStyle.Stroke2.Brush;
+								double valueAt = Close.GetValueAt(num);
+								double valueAt2 = Open.GetValueAt(num);
+								if (MathExtentions.ApproxCompare(valueAt, valueAt2) > 0)
+								{
+									BarBrushes[num2] = ChartBars.Properties.ChartStyle.UpBrush;
+								}
+								if (MathExtentions.ApproxCompare(valueAt, valueAt2) < 0)
+								{
+									BarBrushes[num2] = ChartBars.Properties.ChartStyle.DownBrush;
+								}
+							}
+						}
+						else
+						{
+							for (int num3 = CurrentBar; num3 >= 0; num3--)
+							{
+								if (Signal_Trend.IsValidDataPointAt(num3))
+								{
+									int num4 = Convert.ToInt32(Signal_Trend.GetValueAt(num3));
+									SignalTradeInfo signalTradeInfo = ((num4 != 0) ? ((num4 == 1) ? SignalTradeInfo.UptrendStart : SignalTradeInfo.DowntrendStart) : SignalTradeInfo.NoSignal);
+									PaintBar(signalTradeInfo, isToggleClickEvent: true, num3);
+								}
+							}
+						}
+					}
+					IEnumerator<IDrawingTool> enumerator = ((IEnumerable<IDrawingTool>)DrawObjects).GetEnumerator();
+					while (enumerator.MoveNext())
+					{
+						IDrawingTool current = enumerator.Current;
+						if (current.Tag.Contains("gbThunderZilla"))
+						{
+							((IChartObject)current).IsVisible = SwitchedOn;
+						}
+					}
+					ChartControl.InvalidateVisual();
+				});
+			}
+		}, (object)e);
+	}
+
 	private void PrintMarker(SignalInfo signalInfo, bool isBullish)
 	{
 		if (isCharting && MarkerEnabled && CurrentBar >= BarsRequiredToPlot)
@@ -1554,33 +1849,65 @@ public class gbThunderZilla : Indicator
 		}
 	}
 
-	private void PaintBar(SignalTradeInfo trendState)
+	private void PaintBar(SignalTradeInfo trendState, bool isToggleClickEvent = false, int barIndex = 0)
 	{
 		if (!isCharting || !BarEnabled)
+		{
 			return;
-
-		Brush brush = (trendState == SignalTradeInfo.NoSignal) ? BarNeutral
-		            : (trendState == SignalTradeInfo.UptrendStart)  ? BarUptrend : BarDowntrend;
-		int num  = MathExtentions.ApproxCompare(Close[0], Open[0]);
-		int num2 = (trendState == SignalTradeInfo.NoSignal) ? 0
-		         : (trendState == SignalTradeInfo.UptrendStart) ? 1 : -1;
-
+		}
+		Brush brush = ((trendState == SignalTradeInfo.NoSignal) ? BarNeutral : ((trendState != SignalTradeInfo.UptrendStart) ? BarDowntrend : BarUptrend));
+		int num = ((!isToggleClickEvent) ? MathExtentions.ApproxCompare(Close[0], Open[0]) : MathExtentions.ApproxCompare(Close.GetValueAt(barIndex), Open.GetValueAt(barIndex)));
+		int num2 = ((trendState != SignalTradeInfo.NoSignal) ? ((trendState == SignalTradeInfo.UptrendStart) ? 1 : (-1)) : 0);
+		int num3 = CurrentBar - barIndex;
 		if (BarOutlineEnabled && !BrushExtensions.IsTransparent(brush))
-			CandleOutlineBrush = brush;
-
+		{
+			if (!isToggleClickEvent)
+			{
+				CandleOutlineBrush = brush;
+			}
+			else
+			{
+				CandleOutlineBrushes[num3] = brush;
+			}
+		}
 		if (!BarBiasBased)
 		{
 			if (num != 0)
-				BarBrush = brush;
+			{
+				if (!isToggleClickEvent)
+				{
+					BarBrush = brush;
+				}
+				else
+				{
+					BarBrushes[num3] = brush;
+				}
+			}
 		}
 		else if (!BrushExtensions.IsTransparent(brush))
 		{
 			if (num != 0)
-				BarBrush = (num2 * num <= 0) ? Brushes.Transparent : brush;
+			{
+				if (!isToggleClickEvent)
+				{
+					BarBrush = ((num2 * num <= 0) ? Brushes.Transparent : brush);
+				}
+				else
+				{
+					BarBrushes[num3] = ((num2 * num <= 0) ? Brushes.Transparent : brush);
+				}
+			}
 		}
 		else if (num2 * num < 0)
 		{
-			BarBrush = Brushes.Transparent;
+			if (!isToggleClickEvent)
+			{
+				BarBrush = Brushes.Transparent;
+			}
+			else
+			{
+				BarBrushes[num3] = Brushes.Transparent;
+			}
 		}
 	}
 
@@ -1700,6 +2027,15 @@ public enum gbThunderZillaMAType
 	WMA = 8,
 	WilderMA = 9,
 	ZLEMA = 10
+}
+
+public enum gbThunderZillaTextPosition
+{
+	BottomLeft = 0,
+	BottomRight = 1,
+	Center = 2,
+	TopLeft = 3,
+	TopRight = 4
 }
 
 public enum gbThunderZilla_RenderingMethod

@@ -46,6 +46,7 @@ using NinjaTrader.NinjaScript.DrawingTools;
 
 namespace NinjaTrader.NinjaScript.Indicators.GreyBeard.KingPanaZilla
 {
+[CategoryOrder("Developer",                  0)]
 [CategoryOrder("General",                    1000010)]
 [CategoryOrder("KingOrderBlock Parameters",  1000020)]
 [CategoryOrder("PANAKanal Parameters",       1000030)]
@@ -278,6 +279,12 @@ public class gbKingPanaZilla : Indicator
 	// =========================================================
 	#region Properties
 
+	[Display(Name = "Author",  Order = 0, GroupName = "Developer")]
+	public string Author  => "GreyBeard";
+
+	[Display(Name = "Version", Order = 1, GroupName = "Developer")]
+	public string Version => "1.0";
+
 	// ---- KingOrderBlock parameters --------------------------
 	[Display(Name = "Swing Point: Neighborhood", Order = 0, GroupName = "KingOrderBlock Parameters")]
 	[Range(1, int.MaxValue)]
@@ -417,7 +424,6 @@ namespace NinjaTrader.NinjaScript.Indicators
 	public partial class Indicator : NinjaTrader.Gui.NinjaScript.IndicatorRenderBase
 	{
 		private GreyBeard.KingPanaZilla.gbKingPanaZilla[] cachegbKingPanaZilla;
-
 		public GreyBeard.KingPanaZilla.gbKingPanaZilla gbKingPanaZilla()
 		{
 			return gbKingPanaZilla(Input);
@@ -427,9 +433,9 @@ namespace NinjaTrader.NinjaScript.Indicators
 		{
 			if (cachegbKingPanaZilla != null)
 				for (int idx = 0; idx < cachegbKingPanaZilla.Length; idx++)
-					if (cachegbKingPanaZilla[idx] != null && cachegbKingPanaZilla[idx].EqualsInput(input))
+					if (cachegbKingPanaZilla[idx] != null &&  cachegbKingPanaZilla[idx].EqualsInput(input))
 						return cachegbKingPanaZilla[idx];
-			return CacheIndicator<GreyBeard.KingPanaZilla.gbKingPanaZilla>(new GreyBeard.KingPanaZilla.gbKingPanaZilla(){}, input, ref cachegbKingPanaZilla);
+			return CacheIndicator<GreyBeard.KingPanaZilla.gbKingPanaZilla>(new GreyBeard.KingPanaZilla.gbKingPanaZilla(), input, ref cachegbKingPanaZilla);
 		}
 	}
 }
@@ -443,7 +449,7 @@ namespace NinjaTrader.NinjaScript.MarketAnalyzerColumns
 			return indicator.gbKingPanaZilla(Input);
 		}
 
-		public Indicators.GreyBeard.KingPanaZilla.gbKingPanaZilla gbKingPanaZilla(ISeries<double> input)
+		public Indicators.GreyBeard.KingPanaZilla.gbKingPanaZilla gbKingPanaZilla(ISeries<double> input )
 		{
 			return indicator.gbKingPanaZilla(input);
 		}
@@ -459,7 +465,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 			return indicator.gbKingPanaZilla(Input);
 		}
 
-		public Indicators.GreyBeard.KingPanaZilla.gbKingPanaZilla gbKingPanaZilla(ISeries<double> input)
+		public Indicators.GreyBeard.KingPanaZilla.gbKingPanaZilla gbKingPanaZilla(ISeries<double> input )
 		{
 			return indicator.gbKingPanaZilla(input);
 		}

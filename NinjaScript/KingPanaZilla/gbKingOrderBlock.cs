@@ -8,6 +8,7 @@ using System.Linq;
 using System.Reflection;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Media;
 using System.Windows.Threading;
 using System.Xml.Serialization;
@@ -26,6 +27,15 @@ using SharpDX.Direct2D1;
 
 namespace NinjaTrader.NinjaScript.Indicators.GreyBeard.KingPanaZilla
 {
+
+public enum gbKingOrderBlockTextPosition
+{
+	BottomLeft = 0,
+	BottomRight = 1,
+	Center = 2,
+	TopLeft = 3,
+	TopRight = 4
+}
 
 public enum gbKingOrderBlock_MarkerRenderingMethod
 {
@@ -74,12 +84,14 @@ public class gbKingOrderBlock_SoundConverter : TypeConverter
 	}
 }
 
-[CategoryOrder("Alerts", 1000040)]
-[CategoryOrder("Special", 1000060)]
-[CategoryOrder("Graphics", 1000020)]
-[CategoryOrder("Critical", 1000070)]
-[CategoryOrder("General", 1000010)]
-[CategoryOrder("Gradient", 1000030)]
+[CategoryOrder("Developer",  0)]
+[CategoryOrder("Alerts",    1000040)]
+[CategoryOrder("Special",   1000060)]
+[CategoryOrder("Graphics",  1000020)]
+[CategoryOrder("Critical",  1000070)]
+[CategoryOrder("General",   1000010)]
+[CategoryOrder("Toggle",    1000050)]
+[CategoryOrder("Gradient",  1000030)]
 public class gbKingOrderBlock : Indicator
 {
 	private class MarkerInfo
@@ -392,6 +404,8 @@ public class gbKingOrderBlock : Indicator
 		Breakout
 	}
 
+	private gbKingOrderBlockTextPosition togglePositionAlignment;
+
 	private const int defaultMargin = 5;
 
 	private const string toolTipSpace = "  ";
@@ -500,6 +514,10 @@ public class gbKingOrderBlock : Indicator
 
 	private Window alertWindow;
 	private bool alertWindowClosed;
+
+	private Grid toggle;
+	private System.Windows.Controls.Button toggleButton;
+	private Thumb toggleDrag;
 
 	private const string prefix = "gbKingOrderBlock";
 
@@ -736,6 +754,12 @@ public class gbKingOrderBlock : Indicator
 	[Range(0, int.MaxValue)]
 	[Display(Name = "Alert Blocking (Seconds)", Order = 50, GroupName = "Alerts", Description = "The minimum interval between 2 consecutive alerts")]
 	public int AlertBlockingSeconds { get; set; }
+
+	[Display(Name = "Author",    Order = 0,   GroupName = "Developer")]
+	public string Author  => "GreyBeard";
+
+	[Display(Name = "Version",   Order = 1,   GroupName = "Developer")]
+	public string Version => "1.0";
 
 	[Display(Name = "Screen DPI", Order = 100, GroupName = "General")]
 	[Range(99, 500)]
@@ -1191,11 +1215,144 @@ public class gbKingOrderBlock : Indicator
 	[NinjaScriptProperty]
 	public int SignalTradeSplitBars { get; set; }
 
+	[Display(Name = "Enabled", Order = 0, GroupName = "Toggle")]
+	public bool ToggleEnabled { get; set; }
+
+	[Display(Name = "Background: On", Order = 10, GroupName = "Toggle")]
+	[XmlIgnore]
+	public System.Windows.Media.Brush ToggleBackBrushOn { get; set; }
+
+	[Browsable(false)]
+	public string ToggleBackBrushOnSerialize
+	{
+		get
+		{
+			return Serialize.BrushToString(ToggleBackBrushOn);
+		}
+		set
+		{
+			ToggleBackBrushOn = Serialize.StringToBrush(value);
+		}
+	}
+
+	[XmlIgnore]
+	[Display(Name = "Background: Off", Order = 12, GroupName = "Toggle")]
+	public System.Windows.Media.Brush ToggleBackBrushOff { get; set; }
+
+	[Browsable(false)]
+	public string ToggleBackBrushOffSerialize
+	{
+		get
+		{
+			return Serialize.BrushToString(ToggleBackBrushOff);
+		}
+		set
+		{
+			ToggleBackBrushOff = Serialize.StringToBrush(value);
+		}
+	}
+
+	[Display(Name = "Text: String", Order = 20, GroupName = "Toggle")]
+	public string ToggleTextString { get; set; }
+
+	[XmlIgnore]
+	[Display(Name = "Text: Color", Order = 22, GroupName = "Toggle")]
+	public System.Windows.Media.Brush ToggleTextBrush { get; set; }
+
+	[Browsable(false)]
+	public string ToggleTextBrushSerialize
+	{
+		get
+		{
+			return Serialize.BrushToString(ToggleTextBrush);
+		}
+		set
+		{
+			ToggleTextBrush = Serialize.StringToBrush(value);
+		}
+	}
+
+	[Range(1, int.MaxValue)]
+	[Display(Name = "Text: Size", Order = 24, GroupName = "Toggle")]
+	public int ToggleTextSize { get; set; }
+
+	[Display(Name = "Drag Bar: Color", Order = 30, GroupName = "Toggle")]
+	[XmlIgnore]
+	public System.Windows.Media.Brush ToggleDragBrush { get; set; }
+
+	[Browsable(false)]
+	public string ToggleDragBrushSerialize
+	{
+		get
+		{
+			return Serialize.BrushToString(ToggleDragBrush);
+		}
+		set
+		{
+			ToggleDragBrush = Serialize.StringToBrush(value);
+		}
+	}
+
+	[Display(Name = "Position: Alignment", Order = 40, GroupName = "Toggle")]
+	public gbKingOrderBlockTextPosition TogglePositionAlignment
+	{
+		get
+		{
+			return togglePositionAlignment;
+		}
+		set
+		{
+			if (value == gbKingOrderBlockTextPosition.TopLeft)
+			{
+				double togglePositionMarginTop = (TogglePositionMarginLeft = 5.0);
+				TogglePositionMarginTop = togglePositionMarginTop;
+			}
+			if (value == gbKingOrderBlockTextPosition.TopRight)
+			{
+				double togglePositionMarginTop = (TogglePositionMarginRight = 5.0);
+				TogglePositionMarginTop = togglePositionMarginTop;
+			}
+			if (value == gbKingOrderBlockTextPosition.BottomRight)
+			{
+				double togglePositionMarginTop = (TogglePositionMarginRight = 5.0);
+				TogglePositionMarginBottom = togglePositionMarginTop;
+			}
+			if (value == gbKingOrderBlockTextPosition.BottomLeft)
+			{
+				double togglePositionMarginTop = (TogglePositionMarginLeft = 5.0);
+				TogglePositionMarginBottom = togglePositionMarginTop;
+			}
+			if (value == gbKingOrderBlockTextPosition.Center)
+			{
+				double num5 = (TogglePositionMarginBottom = 5.0);
+				double num7 = (TogglePositionMarginRight = num5);
+				double togglePositionMarginTop = (TogglePositionMarginTop = num7);
+				TogglePositionMarginLeft = togglePositionMarginTop;
+			}
+			togglePositionAlignment = value;
+		}
+	}
+
+	[Display(Name = "Position: Margin Left", Order = 42, GroupName = "Toggle")]
+	public double TogglePositionMarginLeft { get; set; }
+
+	[Display(Name = "Position: Margin Top", Order = 44, GroupName = "Toggle")]
+	public double TogglePositionMarginTop { get; set; }
+
+	[Display(Name = "Position: Margin Right", Order = 46, GroupName = "Toggle")]
+	public double TogglePositionMarginRight { get; set; }
+
+	[Display(Name = "Position: Margin Bottom", Order = 48, GroupName = "Toggle")]
+	public double TogglePositionMarginBottom { get; set; }
+
 	[Display(Name = "Z Order", Order = 0, GroupName = "Special")]
 	public int IndicatorZOrder { get; set; }
 
 	[Display(Name = "User Note", Order = 10, GroupName = "Special")]
 	public string UserNote { get; set; }
+
+	[Display(Name = "Switched On", Order = 0, GroupName = "Critical")]
+	public bool SwitchedOn { get; set; }
 
 	[Browsable(false)]
 	[XmlIgnore]
@@ -1295,6 +1452,7 @@ public class gbKingOrderBlock : Indicator
 				MarkerFont = new SimpleFont("Arial", 20);
 				MarkerOffset = 10;
 				AlertBlockingSeconds = 60;
+				SwitchedOn = true;
 				ScreenDPI = 99;
 				GradientEnabled = true;
 				ImbalanceActiveTopStart = Brushes.DeepPink;
@@ -1355,6 +1513,18 @@ public class gbKingOrderBlock : Indicator
 				OrderBlockAge = 500;
 				SignalTradeQuantityPerOrderBlock = 3;
 				SignalTradeSplitBars = 6;
+				ToggleEnabled = true;
+				ToggleBackBrushOn = Brushes.DodgerBlue;
+				ToggleBackBrushOff = Brushes.Silver;
+				ToggleTextString = "King Order Block";
+				ToggleTextBrush = Brushes.White;
+				ToggleTextSize = 10;
+				ToggleDragBrush = Brushes.LimeGreen;
+				TogglePositionAlignment = gbKingOrderBlockTextPosition.TopLeft;
+				TogglePositionMarginLeft = 5.0;
+				TogglePositionMarginTop = 5.0;
+				TogglePositionMarginRight = 5.0;
+				TogglePositionMarginBottom = 5.0;
 				IndicatorZOrder = -10;
 				UserNote = "instrument (period)";
 				AddPlot(Brushes.Transparent, "Signal Trade");
@@ -1446,6 +1616,46 @@ public class gbKingOrderBlock : Indicator
 						rearmTimer.Interval = TimeSpan.FromMilliseconds(100.0);
 						rearmTimer.Tick += OnRearmTimerTick;
 					}
+					if (ToggleEnabled && toggle == null)
+					{
+						toggle = new Grid();
+						toggle.HorizontalAlignment = (TogglePositionAlignment == gbKingOrderBlockTextPosition.TopLeft || TogglePositionAlignment == gbKingOrderBlockTextPosition.BottomLeft) ? HorizontalAlignment.Left : ((TogglePositionAlignment == gbKingOrderBlockTextPosition.Center) ? HorizontalAlignment.Center : HorizontalAlignment.Right);
+						toggle.VerticalAlignment = (TogglePositionAlignment == gbKingOrderBlockTextPosition.TopLeft || TogglePositionAlignment == gbKingOrderBlockTextPosition.TopRight) ? VerticalAlignment.Top : ((TogglePositionAlignment == gbKingOrderBlockTextPosition.Center) ? VerticalAlignment.Center : VerticalAlignment.Bottom);
+						toggle.Margin = new Thickness(TogglePositionMarginLeft, TogglePositionMarginTop, TogglePositionMarginRight, TogglePositionMarginBottom);
+						toggle.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+						toggle.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(6) });
+
+						toggleButton = new System.Windows.Controls.Button
+						{
+							Content = ToggleTextString,
+							Foreground = ToggleTextBrush,
+							FontSize = ToggleTextSize,
+							Background = SwitchedOn ? ToggleBackBrushOn : ToggleBackBrushOff,
+							BorderThickness = new Thickness(0),
+							Padding = new Thickness(6, 2, 6, 2),
+							Cursor = System.Windows.Input.Cursors.Hand
+						};
+						Grid.SetColumn(toggleButton, 0);
+						toggle.Children.Add(toggleButton);
+
+						toggleDrag = new Thumb
+						{
+							Width = 6,
+							Background = ToggleDragBrush,
+							Cursor = System.Windows.Input.Cursors.SizeAll,
+							Opacity = 0.8
+						};
+						var rectFactory = new FrameworkElementFactory(typeof(System.Windows.Shapes.Rectangle));
+						rectFactory.SetValue(System.Windows.Shapes.Shape.FillProperty, ToggleDragBrush);
+						toggleDrag.Template = new ControlTemplate(typeof(Thumb)) { VisualTree = rectFactory };
+						Grid.SetColumn(toggleDrag, 1);
+						toggle.Children.Add(toggleDrag);
+
+						toggleButton.Click += OnToggleClick;
+						toggleDrag.DragDelta += OnToggleDrag;
+						if (base.ChartControl.Parent is Grid chartGrid)
+							chartGrid.Children.Add(toggle);
+					}
 				});
 			}
 			else
@@ -1458,6 +1668,18 @@ public class gbKingOrderBlock : Indicator
 				{
 					base.ChartControl.Dispatcher.InvokeAsync(delegate
 					{
+						if (toggle != null)
+						{
+							if (toggleDrag != null)
+								toggleDrag.DragDelta -= OnToggleDrag;
+							if (toggleButton != null)
+								toggleButton.Click -= OnToggleClick;
+							if (base.ChartControl.Parent is Grid chartGrid)
+								chartGrid.Children.Remove(toggle);
+							toggle = null;
+							toggleButton = null;
+							toggleDrag = null;
+						}
 						if (alertWindow != null)
 						{
 							alertWindow.Close();
@@ -2152,6 +2374,10 @@ public class gbKingOrderBlock : Indicator
 				{
 					dot.ZOrder = -100;
 				}
+				if (!SwitchedOn)
+				{
+					dot.IsVisible = false;
+				}
 			}
 		}
 		catch (Exception exception)
@@ -2453,7 +2679,7 @@ public class gbKingOrderBlock : Indicator
 	{
 		try
 		{
-			if (isCharting && !base.IsInHitTest)
+			if (isCharting && SwitchedOn && !base.IsInHitTest)
 			{
 				base.OnRender(chartControl, chartScale);
 				fromIndex = base.ChartBars.FromIndex;
@@ -2779,6 +3005,65 @@ public class gbKingOrderBlock : Indicator
 		{
 			Print(exception.ToString());
 		}
+	}
+
+	private void OnToggleDrag(object sender, DragDeltaEventArgs e)
+	{
+		TriggerCustomEvent(delegate
+		{
+			try
+			{
+				if (isCharting)
+				{
+					base.ChartControl.Dispatcher.InvokeAsync(delegate
+					{
+						toggle.Margin = new Thickness(
+							toggle.Margin.Left + e.HorizontalChange,
+							toggle.Margin.Top + e.VerticalChange,
+							toggle.Margin.Right - e.HorizontalChange,
+							toggle.Margin.Bottom - e.VerticalChange);
+						TogglePositionMarginLeft = toggle.Margin.Left;
+						TogglePositionMarginTop = toggle.Margin.Top;
+						TogglePositionMarginRight = toggle.Margin.Right;
+						TogglePositionMarginBottom = toggle.Margin.Bottom;
+					});
+				}
+			}
+			catch (Exception exception)
+			{
+				Print(exception.ToString());
+			}
+		}, e);
+	}
+
+	private void OnToggleClick(object sender, RoutedEventArgs e)
+	{
+		TriggerCustomEvent(delegate
+		{
+			try
+			{
+				if (isCharting)
+				{
+					base.ChartControl.Dispatcher.InvokeAsync(delegate
+					{
+						SwitchedOn = !SwitchedOn;
+						toggleButton.Background = SwitchedOn ? ToggleBackBrushOn : ToggleBackBrushOff;
+						foreach (IDrawingTool drawObject in base.DrawObjects)
+						{
+							if (drawObject.Tag.Contains("gbKingOrderBlock"))
+							{
+								drawObject.IsVisible = SwitchedOn;
+							}
+						}
+						base.ChartControl.InvalidateVisual();
+					});
+				}
+			}
+			catch (Exception exception)
+			{
+				Print(exception.ToString());
+			}
+		}, e);
 	}
 
 	private void PrintMarker(bool isBullish, SignalType signalType)

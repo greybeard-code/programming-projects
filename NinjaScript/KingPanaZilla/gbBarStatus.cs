@@ -193,6 +193,12 @@ public class gbBarStatus : Indicator
 
 	private DispatcherTimer timer;
 
+	[Display(Name = "Author",  Order = 0,  GroupName = "Developer")]
+	public string Author  => "GreyBeard";
+
+	[Display(Name = "Version", Order = 1,  GroupName = "Developer")]
+	public string Version => "1.0";
+
 	[Display(Name = "Update", Order = 10, GroupName = "Developer")]
 	public string Update => "28 Jun 2023";
 
