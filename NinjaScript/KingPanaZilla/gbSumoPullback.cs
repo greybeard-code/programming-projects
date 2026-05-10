@@ -1,4 +1,4 @@
-﻿#region Using declarations
+#region Using declarations
 using System;
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
@@ -132,8 +132,6 @@ public class gbSumoPullback : Indicator
 	private Brush backgroundBullish;
 
 	private Brush backgroundBearish;
-
-	private bool isUnlicensed = false;
 
 	private Window alertWindow;
 

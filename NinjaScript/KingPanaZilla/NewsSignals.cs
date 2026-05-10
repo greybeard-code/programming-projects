@@ -109,7 +109,7 @@ namespace NinjaTrader.NinjaScript.Indicators.Playr101
         private const float IMPACT_PAD = 10;
         private const float DESC_PAD = 0;
 
-        public NewsEvent[] newsEvents = null;
+        private NewsEvent[] newsEvents = null;
 
         private DateTime lastNewsUpdate = DateTime.MinValue;
         private string lastLoadError;
@@ -155,6 +155,9 @@ namespace NinjaTrader.NinjaScript.Indicators.Playr101
         private double minutesFromRecentNews = double.NaN;
         private string nextNewsTitle = string.Empty;
         private DateTime nextNewsTime = Core.Globals.MinDate;
+
+        [Display (Name = "Version", Order = 0, GroupName = "Debug")]
+        public string Version => "1.0.1";
 
         public override string DisplayName
         {
@@ -729,7 +732,13 @@ namespace NinjaTrader.NinjaScript.Indicators.Playr101
 
         private void LoadNews ()
         {
+            // Kick off HTTP fetch on a background thread to avoid blocking the NT8 data thread
             lastNewsUpdate = DateTime.Now;
+            System.Threading.Tasks.Task.Run (() => LoadNewsBackground ());
+        }
+
+        private void LoadNewsBackground ()
+        {
             lastLoadError = null;
 
             try
@@ -805,10 +814,22 @@ namespace NinjaTrader.NinjaScript.Indicators.Playr101
 
                                 DateTime parsedDateTime;
 
+                                // The FF calendar feed provides date/time strings in US Eastern Time (ET).
+                                // Parse as unspecified, then convert from ET to local time.
                                 if (!DateTime.TryParse (newsEvent.Date + " " + newsEvent.Time, ffDateTimeCulture, DateTimeStyles.None, out parsedDateTime))
                                     continue;
 
-                                newsEvent.DateTimeLocal = DateTime.SpecifyKind (parsedDateTime, DateTimeKind.Utc).ToLocalTime ();
+                                try
+                                {
+                                    TimeZoneInfo easternZone = TimeZoneInfo.FindSystemTimeZoneById ("Eastern Standard Time");
+                                    newsEvent.DateTimeLocal = TimeZoneInfo.ConvertTimeToUtc (
+                                        DateTime.SpecifyKind (parsedDateTime, DateTimeKind.Unspecified), easternZone).ToLocalTime ();
+                                }
+                                catch
+                                {
+                                    // Fallback: treat as UTC if Eastern timezone lookup fails
+                                    newsEvent.DateTimeLocal = DateTime.SpecifyKind (parsedDateTime, DateTimeKind.Utc).ToLocalTime ();
+                                }
 
                                 if (Debug)
                                     Print ("Succesfully parsed datetime: " + newsEvent.DateTimeLocal.ToString () + " to local time.");
@@ -870,46 +891,6 @@ namespace NinjaTrader.NinjaScript.Indicators.Playr101
 
             XmlNode child = node.SelectSingleNode (childName);
             return child == null || child.InnerText == null ? string.Empty : child.InnerText;
-        }
-
-        public static DateTime ParseDateFromString (string s)
-        {
-            string[] formats =
-            {
-                "yyyyMMdd","MM/dd/yyyy","MM-dd-yyyy","M-dd-yyyy", "M-d-yyyy", "MM-d-yyyy",
-                "yyyy-MM-dd", "yyyy-M-d", "yyyy-MM-d", "yyyy-M-dd",
-                "M/dd/yyyy", "M/d/yyyy", "MM/d/yyyy", "MM/dd/yyyy hh:mm:ss tt", "yyyy-MM-dd hh:mm:ss",
-                "M/d/yyyy","M/d/yy","MM/dd/yy","MM/dd/yyyy","yy/MM/dd","yyyy-MM-dd",
-                "dd-MMM-yy","dddd, MMMM d, yyyy","dddd, MMMM dd, yyyy","MMMM dd, yyyy","dddd, dd MMMM, yyyy","dd MMMM, yyyy",
-                "dddd, MMMM d, yyyy h:mm tt","dddd, MMMM d, yyyy hh:mm tt","dddd, MMMM d, yyyy H:mm",
-                "dddd, MMMM d, yyyy HH:mm","dddd, MMMM dd, yyyy h:mm tt","dddd, MMMM dd, yyyy hh:mm tt",
-                "dddd, MMMM dd, yyyy H:mm","dddd, MMMM dd, yyyy HH:mm","MMMM dd, yyyy h:mm tt",
-                "MMMM dd, yyyy hh:mm tt","MMMM dd, yyyy H:mm","MMMM dd, yyyy HH:mm","dddd, dd MMMM, yyyy h:mm tt",
-                "dddd, dd MMMM, yyyy hh:mm tt","dddd, dd MMMM, yyyy H:mm","dddd, dd MMMM, yyyy HH:mm","dd MMMM, yyyy h:mm tt",
-                "dd MMMM, yyyy hh:mm tt","dd MMMM, yyyy H:mm","dd MMMM, yyyy HH:mm","dddd, MMMM d, yyyy h:mm:ss tt","dddd, MMMM d, yyyy hh:mm:ss tt",
-                "dddd, MMMM d, yyyy H:mm:ss","dddd, MMMM d, yyyy HH:mm:ss","dddd, MMMM dd, yyyy h:mm:ss tt","dddd, MMMM dd, yyyy hh:mm:ss tt",
-                "dddd, MMMM dd, yyyy H:mm:ss","dddd, MMMM dd, yyyy HH:mm:ss","MMMM dd, yyyy h:mm:ss tt","MMMM dd, yyyy hh:mm:ss tt",
-                "MMMM dd, yyyy H:mm:ss","MMMM dd, yyyy HH:mm:ss","dddd, dd MMMM, yyyy h:mm:ss tt",
-                "dddd, dd MMMM, yyyy hh:mm:ss tt","dddd, dd MMMM, yyyy H:mm:ss","dddd, dd MMMM, yyyy HH:mm:ss","dd MMMM, yyyy h:mm:ss tt",
-                "dd MMMM, yyyy hh:mm:ss tt","dd MMMM, yyyy H:mm:ss","dd MMMM, yyyy HH:mm:ss","M/d/yyyy h:mm tt","M/d/yyyy hh:mm tt","M/d/yyyy H:mm",
-                "M/d/yyyy HH:mm","M/d/yy h:mm tt","M/d/yy hh:mm tt","M/d/yy H:mm","M/d/yy HH:mm","MM/dd/yy h:mm tt",
-                "MM/dd/yy hh:mm tt","MM/dd/yy H:mm","MM/dd/yy HH:mm","MM/dd/yyyy h:mm tt",
-                "MM/dd/yyyy hh:mm tt","MM/dd/yyyy H:mm","MM/dd/yyyy HH:mm","yy/MM/dd h:mm tt",
-                "yy/MM/dd hh:mm tt","yy/MM/dd H:mm","yy/MM/dd HH:mm","yyyy-MM-dd h:mm tt","yyyy-MM-dd hh:mm tt",
-                "yyyy-MM-dd H:mm","yyyy-MM-dd HH:mm","dd-MMM-yy h:mm tt","dd-MMM-yy hh:mm tt","dd-MMM-yy H:mm","dd-MMM-yy HH:mm",
-                "M/d/yyyy h:mm:ss tt","M/d/yyyy hh:mm:ss tt","M/d/yyyy H:mm:ss",
-                "M/d/yyyy HH:mm:ss","M/d/yy h:mm:ss tt","M/d/yy hh:mm:ss tt","M/d/yy H:mm:ss","M/d/yy HH:mm:ss",
-                "MM/dd/yy h:mm:ss tt","MM/dd/yy hh:mm:ss tt","MM/dd/yy H:mm:ss","MM/dd/yy HH:mm:ss","MM/dd/yyyy h:mm:ss tt",
-                "MM/dd/yyyy hh:mm:ss tt","MM/dd/yyyy H:mm:ss","MM/dd/yyyy HH:mm:ss","yy/MM/dd h:mm:ss tt",
-                "yy/MM/dd hh:mm:ss tt","yy/MM/dd H:mm:ss","yy/MM/dd HH:mm:ss","yyyy-MM-dd h:mm:ss tt","yyyy-MM-dd hh:mm:ss tt",
-                "yyyy-MM-dd H:mm:ss","yyyy-MM-dd HH:mm:ss","dd-MMM-yy h:mm:ss tt","dd-MMM-yy hh:mm:ss tt","dd-MMM-yy H:mm:ss",
-                "dd-MMM-yy HH:mm:ss","MMMM dd","yyyy'-'MM'-'dd'T'HH':'mm':'ss.fffffffK",
-                "ddd, dd MMM yyyy HH':'mm':'ss 'GMT'","yyyy'-'MM'-'dd'T'HH':'mm':'ss",
-                "h:mm tt","hh:mm tt","H:mm","HH:mm","h:mm:ss tt","hh:mm:ss tt","H:mm:ss","HH:mm:ss",
-                "yyyy'-'MM'-'dd HH':'mm':'ss'Z'", "MMMM yyyy", "MMMM, yyyy"
-            };
-
-            return DateTime.ParseExact (s, formats, new CultureInfo ("en-GB"), DateTimeStyles.None);
         }
 
         #region Strategy Accessors

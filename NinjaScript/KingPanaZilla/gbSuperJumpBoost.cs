@@ -1,4 +1,4 @@
-﻿#region Using declarations
+#region Using declarations
 using System;
 using System.Collections.Generic;
 using System.ComponentModel;
@@ -385,11 +385,11 @@ public class gbSuperJumpBoost : Indicator
 	[Display(Name = "Sound: Bearish", Order = 18, GroupName = "Alerts")]
 	public string SoundBearish { get; set; }
 
-	[Display(Name = "Sound: Zone Bullish Start", Order = 16, GroupName = "Alerts")]
+	[Display(Name = "Sound: Zone Bullish Start", Order = 17, GroupName = "Alerts")]
 	[TypeConverter(typeof(gbSuperJumpBoost_SoundConverter))]
 	public string SoundZoneBullishStart { get; set; }
 
-	[Display(Name = "Sound: Zone Bearish Start", Order = 18, GroupName = "Alerts")]
+	[Display(Name = "Sound: Zone Bearish Start", Order = 19, GroupName = "Alerts")]
 	[TypeConverter(typeof(gbSuperJumpBoost_SoundConverter))]
 	public string SoundZoneBearishStart { get; set; }
 

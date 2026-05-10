@@ -45,7 +45,7 @@ public class gbBarStatus : Indicator
 				if (!BrushExtensions.IsTransparent(solidColorBrush))
 				{
 					int num = 50;
-					if (solidColorBrush.Color.R >= 50 || solidColorBrush.Color.G >= num || solidColorBrush.Color.B >= num)
+					if (solidColorBrush.Color.R >= 50 && solidColorBrush.Color.G >= num && solidColorBrush.Color.B >= num)
 					{
 						return false;
 					}
@@ -193,8 +193,8 @@ public class gbBarStatus : Indicator
 
 	private DispatcherTimer timer;
 
-	[Display(Name = "Update", Order = 10, GroupName = "Developer")]
-	public string Update => "28 Jun 2023";
+	[Display(Name = "Version", Order = 10, GroupName = "Developer")]
+	public string Version => "1.0.1";
 
 	[Display(Name = "Count Mode", Order = 0, GroupName = "General")]
 	public gbBarStatus_CountMode CountMode { get; set; }
@@ -489,10 +489,14 @@ public class gbBarStatus : Indicator
 				break;
 
 			case State.Configure:
-				Calculate = Calculate.OnEachTick;
-				IsOverlay = true;
-				timer = new DispatcherTimer();
-				timer.Interval = TimeSpan.FromMilliseconds(500.0);
+				// Stop any existing timer before creating a new one (handles replay re-entry)
+				if (timer != null)
+				{
+					timer.Stop();
+					timer.Tick -= OnTick;
+					timer = null;
+				}
+				timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(500.0) };
 				timer.Tick += OnTick;
 				timer.Start();
 				eProgressBarWidth = (ProgressBarEnabled ? ProgressBarWidth : 0);
@@ -610,7 +614,7 @@ public class gbBarStatus : Indicator
 								upperBound = Open[0] + (double)(value3 + BoundOffset) * TickSize;
 								lowerBound = Open[0] - (double)(value3 + BoundOffset) * TickSize;
 							}
-							else if (!((CurrentBar != 1) ? (MathExtentions.ApproxCompare(Close[1], Close[2]) > 0) : (MathExtentions.ApproxCompare(Close[0], Close[1]) > 0)))
+							else if (CurrentBar >= 2 && !((CurrentBar != 1) ? (MathExtentions.ApproxCompare(Close[1], Close[2]) > 0) : (MathExtentions.ApproxCompare(Close[0], Close[1]) > 0)))
 							{
 								upperBound = Close[1] + (double)(num + BoundOffset) * TickSize;
 								lowerBound = Close[1] - (double)(value3 + BoundOffset) * TickSize;
@@ -1183,7 +1187,6 @@ public class gbBarStatus : Indicator
 
 
 }
-}
 
 public enum gbBarStatus_CountMode
 {
@@ -1196,6 +1199,8 @@ public enum gbBarStatus_PositionAlignment
 	Top,
 	Bottom
 }
+
+} // namespace NinjaTrader.NinjaScript.Indicators.GreyBeard.KingPanaZilla
 
 #region NinjaScript generated code. Neither change nor remove.
 

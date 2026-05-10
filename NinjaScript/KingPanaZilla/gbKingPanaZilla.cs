@@ -14,17 +14,17 @@ using NinjaTrader.NinjaScript.DrawingTools;
 #endregion
 
 // ============================================================
-//  gbKingPanaZilla  — GreyBeard composite signal indicator
+//  gbKingPanaZilla  â€” GreyBeard composite signal indicator
 //
 //  Loads gbKingOrderBlock, gbPANAKanal, and gbThunderZilla and
 //  emits three cross-system trade signal plots:
 //
-//  PanaZillia_Trade  — PanaKanal >= 2  AND Thunder >= 3  →  +1
-//                    — PanaKanal <= -2 AND Thunder <= -3 →  -1
-//  KingZilla_Trade   — Thunder  >= 3   AND KingOrder >= 1  →  +1
-//                    — Thunder  <= -3  AND KingOrder <= -1 →  -1
-//  KingPana_Trade    — PanaKanal >= 2  AND KingOrder >= 1  →  +1
-//                    — PanaKanal <= -2 AND KingOrder <= -1 →  -1
+//  PanaZilla_Trade  â€” PanaKanal >= 2  AND Thunder >= 3  â†’  +1
+//                    â€” PanaKanal <= -2 AND Thunder <= -3 â†’  -1
+//  KingZilla_Trade   â€” Thunder  >= 3   AND KingOrder >= 1  â†’  +1
+//                    â€” Thunder  <= -3  AND KingOrder <= -1 â†’  -1
+//  KingPana_Trade    â€” PanaKanal >= 2  AND KingOrder >= 1  â†’  +1
+//                    â€” PanaKanal <= -2 AND KingOrder <= -1 â†’  -1
 //
 //  Plot values: +1 = buy signal, -1 = sell signal, 0 = no signal.
 //
@@ -46,6 +46,7 @@ using NinjaTrader.NinjaScript.DrawingTools;
 
 namespace NinjaTrader.NinjaScript.Indicators.GreyBeard.KingPanaZilla
 {
+[CategoryOrder("Developer",                  0)]
 [CategoryOrder("General",                    1000010)]
 [CategoryOrder("KingOrderBlock Parameters",  1000020)]
 [CategoryOrder("PANAKanal Parameters",       1000030)]
@@ -62,11 +63,14 @@ public class gbKingPanaZilla : Indicator
 	// ---- CSV logging ----------------------------------------
 	private StreamWriter _logWriter;
 
+	[Display(Name = "Version", Order = 0, GroupName = "Developer")]
+	public string Version => "1.0.1";
+
 	// ---- signal output series (Values[0..2]) ----------------
 	// +1 = buy signal, -1 = sell signal, 0 = no signal
 	[Browsable(false)]
 	[XmlIgnore]
-	public NinjaTrader.NinjaScript.Series<double> PanaZillia_Trade => Values[0];
+	public NinjaTrader.NinjaScript.Series<double> PanaZilla_Trade => Values[0];
 
 	[Browsable(false)]
 	[XmlIgnore]
@@ -87,7 +91,7 @@ public class gbKingPanaZilla : Indicator
 		switch (State)
 		{
 		case State.SetDefaults:
-			Description              = "Composite signal indicator — combines gbKingOrderBlock, gbPANAKanal, and gbThunderZilla into three cross-system trade signals (+1 buy / -1 sell).";
+			Description              = "Composite signal indicator â€” combines gbKingOrderBlock, gbPANAKanal, and gbThunderZilla into three cross-system trade signals (+1 buy / -1 sell).";
 			Name                     = "gbKingPanaZilla";
 			Calculate                = Calculate.OnBarClose;
 			IsOverlay                = true;
@@ -134,17 +138,27 @@ public class gbKingPanaZilla : Indicator
 			KingZillaBrush  = Brushes.DodgerBlue;
 			KingPanaBrush   = Brushes.LimeGreen;
 			ArrowOffset     = 3;
+
+			// ---- Plots (must be in SetDefaults per NT8 requirement) ---------
+			// Transparent plots — +1/−1/0 readable from DataBox and other scripts.
+			// Visual arrows are drawn in OnBarUpdate via Draw.ArrowUp/Down.
+			AddPlot(new Stroke(Brushes.Transparent, 1), PlotStyle.Dot, “PanaZilla Trade”);
+			AddPlot(new Stroke(Brushes.Transparent, 1), PlotStyle.Dot, “KingZilla Trade”);
+			AddPlot(new Stroke(Brushes.Transparent, 1), PlotStyle.Dot, “KingPana Trade”);
 			break;
 
 		case State.Configure:
-			// Transparent plots — +1/−1/0 readable from DataBox and other scripts.
-			// Visual arrows are drawn in OnBarUpdate via Draw.ArrowUp/Down.
-			AddPlot(new Stroke(Brushes.Transparent, 1), PlotStyle.Dot, "PanaZillia Trade");
-			AddPlot(new Stroke(Brushes.Transparent, 1), PlotStyle.Dot, "KingZilla Trade");
-			AddPlot(new Stroke(Brushes.Transparent, 1), PlotStyle.Dot, "KingPana Trade");
 			break;
 
 		case State.DataLoaded:
+			// Close any existing log writer before creating a new one (handles replay reset)
+			if (_logWriter != null)
+			{
+				_logWriter.Flush();
+				_logWriter.Dispose();
+				_logWriter = null;
+			}
+
 			// Factory methods (CacheIndicator) add child indicators to NinjaScripts so
 			// their OnBarUpdate runs automatically. AddChartIndicator is Strategy-only;
 			// add the three child indicators directly to the chart if visual rendering
@@ -182,7 +196,7 @@ public class gbKingPanaZilla : Indicator
 					Globals.UserDataDir,
 					"gbKPZlog_" + DateTime.Now.ToString("yyyyMMdd_HHmmss") + ".csv");
 				_logWriter = new StreamWriter(logPath, append: false, encoding: Encoding.UTF8);
-				_logWriter.WriteLine("DateTime,Instrument,Price,PanaZillia_Trade,KingZilla_Trade,KingPana_Trade");
+				_logWriter.WriteLine("DateTime,Instrument,Price,PanaZilla_Trade,KingZilla_Trade,KingPana_Trade");
 				_logWriter.Flush();
 			}
 			break;
@@ -417,7 +431,6 @@ namespace NinjaTrader.NinjaScript.Indicators
 	public partial class Indicator : NinjaTrader.Gui.NinjaScript.IndicatorRenderBase
 	{
 		private GreyBeard.KingPanaZilla.gbKingPanaZilla[] cachegbKingPanaZilla;
-
 		public GreyBeard.KingPanaZilla.gbKingPanaZilla gbKingPanaZilla()
 		{
 			return gbKingPanaZilla(Input);
@@ -427,9 +440,9 @@ namespace NinjaTrader.NinjaScript.Indicators
 		{
 			if (cachegbKingPanaZilla != null)
 				for (int idx = 0; idx < cachegbKingPanaZilla.Length; idx++)
-					if (cachegbKingPanaZilla[idx] != null && cachegbKingPanaZilla[idx].EqualsInput(input))
+					if (cachegbKingPanaZilla[idx] != null &&  cachegbKingPanaZilla[idx].EqualsInput(input))
 						return cachegbKingPanaZilla[idx];
-			return CacheIndicator<GreyBeard.KingPanaZilla.gbKingPanaZilla>(new GreyBeard.KingPanaZilla.gbKingPanaZilla(){}, input, ref cachegbKingPanaZilla);
+			return CacheIndicator<GreyBeard.KingPanaZilla.gbKingPanaZilla>(new GreyBeard.KingPanaZilla.gbKingPanaZilla(), input, ref cachegbKingPanaZilla);
 		}
 	}
 }
@@ -443,7 +456,7 @@ namespace NinjaTrader.NinjaScript.MarketAnalyzerColumns
 			return indicator.gbKingPanaZilla(Input);
 		}
 
-		public Indicators.GreyBeard.KingPanaZilla.gbKingPanaZilla gbKingPanaZilla(ISeries<double> input)
+		public Indicators.GreyBeard.KingPanaZilla.gbKingPanaZilla gbKingPanaZilla(ISeries<double> input )
 		{
 			return indicator.gbKingPanaZilla(input);
 		}
@@ -459,7 +472,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 			return indicator.gbKingPanaZilla(Input);
 		}
 
-		public Indicators.GreyBeard.KingPanaZilla.gbKingPanaZilla gbKingPanaZilla(ISeries<double> input)
+		public Indicators.GreyBeard.KingPanaZilla.gbKingPanaZilla gbKingPanaZilla(ISeries<double> input )
 		{
 			return indicator.gbKingPanaZilla(input);
 		}
