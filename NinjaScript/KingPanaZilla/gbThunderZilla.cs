@@ -384,7 +384,7 @@ public class gbThunderZilla : Indicator
 	public string MarkerStringDowntrendStart { get; set; }
 
 	[Display(Name = "Marker: String Downtrend Slowdown", Order = 48, GroupName = "Alerts")]
-	public string MarkerStringDowntrendSlowdown { get; set; }
+	public string MarkerStringDowntrendSlowndown { get; set; }
 
 	[Display(Name = "Marker: String Downtrend Pullback", Order = 49, GroupName = "Alerts")]
 	public string MarkerStringDowntrendPullback { get; set; }
@@ -407,11 +407,17 @@ public class gbThunderZilla : Indicator
 	[Display(Name = "Switched On", Order = 0, GroupName = "Critical")]
 	public bool SwitchedOn { get; set; }
 
-	[Display(Name = "Website", Order = 0, GroupName = "Developer")]
+	[Display(Name = "Author",  Order = 0,  GroupName = "Developer")]
+	public string Author  => "GreyBeard";
+
+	[Display(Name = "Version", Order = 1,  GroupName = "Developer")]
+	public string Version => "1.0";
+
+	[Display(Name = "Website", Order = 5,  GroupName = "Developer")]
 	public string Website => "greybeard.com";
 
-	[Display(Name = "Version", Order = 10, GroupName = "Developer")]
-	public string Version => "1.0.1";
+	[Display(Name = "Update", Order = 10, GroupName = "Developer")]
+	public string Update => "11 Aug 2025";
 
 	[Display(Name = "Screen DPI", Order = 100, GroupName = "General")]
 	public int ScreenDPI { get; set; }
@@ -810,7 +816,7 @@ public class gbThunderZilla : Indicator
 			{
 				return "ThunderZilla by GreyBeard" + GetUserNote();
 			}
-			return base.DisplayName;
+			return DisplayName;
 		}
 	}
 
@@ -854,32 +860,10 @@ public class gbThunderZilla : Indicator
 		}
 	}
 
-	private ISeries<double> GetMASeries(ISeries<double> input, gbThunderZillaMAType maType, int period)
-	{
-		switch (maType)
-		{
-			case gbThunderZillaMAType.EMA:     return EMA(input, period);
-			case gbThunderZillaMAType.SMA:     return SMA(input, period);
-			case gbThunderZillaMAType.WMA:     return WMA(input, period);
-			case gbThunderZillaMAType.HMA:     return HMA(input, period);
-			case gbThunderZillaMAType.DEMA:    return DEMA(input, period);
-			case gbThunderZillaMAType.TEMA:    return TEMA(input, period);
-			case gbThunderZillaMAType.TMA:     return TMA(input, period);
-			case gbThunderZillaMAType.LinReg:  return LinReg(input, period);
-			case gbThunderZillaMAType.VWMA:    return VWMA(input, period);
-			case gbThunderZillaMAType.WilderMA:return EMA(input, 2 * period - 1);
-			case gbThunderZillaMAType.ZLEMA:   return ZLEMA(input, period);
-			default:                           return SMA(input, period);
-		}
-	}
-
 	private double GetMASmoothed(ISeries<double> input, gbThunderZillaMAType maType, int period, bool smoothEnabled, gbThunderZillaMAType smoothMethod, int smoothPeriod)
 	{
-		ISeries<double> baseSeries = GetMASeries(input, maType, period);
-		if (!smoothEnabled || smoothPeriod <= 1)
-			return baseSeries[0];
-		// Apply smoothing MA on top of the base MA series
-		return GetMA(baseSeries, smoothMethod, smoothPeriod);
+		double val = GetMA(input, maType, period);
+		return val;
 	}
 
 	private static Brush CreateAverageBrush(Brush a, Brush b)
@@ -977,7 +961,7 @@ public class gbThunderZilla : Indicator
 				MarkerStringUptrendSlowdown = "\u2b18";
 				MarkerStringUptrendPullback = "\u2b06 + Buy";
 				MarkerStringDowntrendStart = "Trend + \u25bc";
-				MarkerStringDowntrendSlowdown = "\u2b19";
+				MarkerStringDowntrendSlowndown = "\u2b19";
 				MarkerStringDowntrendPullback = "Sell + \u2b07";
 				MarkerStringMoveStopUp = "\u235f";
 				MarkerStringMoveStopDown = "\u235f";
@@ -1548,9 +1532,9 @@ public class gbThunderZilla : Indicator
 		}
 		sumoSignalTrade = 0;
 		double num = GetMASmoothed(Input, TrendMAType, TrendPeriod, TrendSmoothingEnabled, TrendSmoothingMethod, TrendSmoothingPeriod);
-		double num2 = GetMA(Input, sumoFastMA1Type, sumoFastMA1Period);
-		double num3 = GetMA(Input, sumoFastMA2Type, sumoFastMA2Period);
-		double num4 = GetMA(Input, sumoFastMA3Type, sumoFastMA3Period);
+		double num2 = EMA(Input, 14)[0];
+		double num3 = EMA(Input, 30)[0];
+		double num4 = EMA(Input, 45)[0];
 		double[] source = new double[4] { num, num2, num3, num4 };
 		double num5 = source.Max();
 		double num6 = source.Min();
@@ -1571,14 +1555,14 @@ public class gbThunderZilla : Indicator
 					{
 						sumoSignalTrade = -1;
 						sumoCountSignalBars++;
-						sumoNextBar = CurrentBar + sumoSignalSplitSecond;
+						sumoNextBar = CurrentBar + 30;
 					}
 				}
 				else
 				{
 					sumoSignalTrade = -1;
 					sumoCountSignalBars++;
-					sumoNextBar = CurrentBar + sumoSignalSplitFirst;
+					sumoNextBar = CurrentBar + 15;
 				}
 			}
 		}
@@ -1597,14 +1581,14 @@ public class gbThunderZilla : Indicator
 				{
 					sumoSignalTrade = 1;
 					sumoCountSignalBars++;
-					sumoNextBar = CurrentBar + sumoSignalSplitSecond;
+					sumoNextBar = CurrentBar + 30;
 				}
 			}
 			else
 			{
 				sumoSignalTrade = 1;
 				sumoCountSignalBars++;
-				sumoNextBar = CurrentBar + sumoSignalSplitFirst;
+				sumoNextBar = CurrentBar + 15;
 			}
 		}
 		if (CurrentBar > sumoNextBar && sumoCountSignalBars != 0)
@@ -1746,7 +1730,7 @@ public class gbThunderZilla : Indicator
 	{
 		bool isBullish = markerInfo.IsBullish;
 		SignalInfo signalInfo = markerInfo.SignalInfo;
-		string text = ((signalInfo == SignalInfo.Trend) ? ((!isBullish) ? MarkerStringDowntrendStart : MarkerStringUptrendStart) : ((signalInfo == SignalInfo.Slowdown) ? ((!isBullish) ? MarkerStringDowntrendSlowdown : MarkerStringUptrendSlowdown) : ((signalInfo == SignalInfo.Pullback) ? ((!isBullish) ? MarkerStringDowntrendPullback : MarkerStringUptrendPullback) : ((!isBullish) ? MarkerStringMoveStopDown : MarkerStringMoveStopUp))));
+		string text = ((signalInfo == SignalInfo.Trend) ? ((!isBullish) ? MarkerStringDowntrendStart : MarkerStringUptrendStart) : ((signalInfo == SignalInfo.Slowdown) ? ((!isBullish) ? MarkerStringDowntrendSlowndown : MarkerStringUptrendSlowdown) : ((signalInfo == SignalInfo.Pullback) ? ((!isBullish) ? MarkerStringDowntrendPullback : MarkerStringUptrendPullback) : ((!isBullish) ? MarkerStringMoveStopDown : MarkerStringMoveStopUp))));
 		if (string.IsNullOrWhiteSpace(text) || (!isBullish && MathExtentions.ApproxCompare(High.GetValueAt(markerInfo.BarIndex), chartScale.MaxValue) >= 0) || (isBullish && MathExtentions.ApproxCompare(Low.GetValueAt(markerInfo.BarIndex), chartScale.MinValue) <= 0))
 		{
 			return;
@@ -1857,7 +1841,7 @@ public class gbThunderZilla : Indicator
 			tag = "gbThunderZilla.marker." + text + "." + CurrentBar;
 			Brush textBrush = ((!isBullish) ? MarkerBrushBearish : MarkerBrushBullish);
 			double y = ((signalInfo != SignalInfo.MoveStop && signalInfo != SignalInfo.Trend) ? ((!isBullish) ? High[0] : Low[0]) : Trend[0]);
-			string text2 = ((signalInfo == SignalInfo.Trend) ? ((!isBullish) ? MarkerStringDowntrendStart : MarkerStringUptrendStart) : ((signalInfo == SignalInfo.Slowdown) ? ((!isBullish) ? MarkerStringDowntrendSlowdown : MarkerStringUptrendSlowdown) : ((signalInfo == SignalInfo.Pullback) ? ((!isBullish) ? MarkerStringDowntrendPullback : MarkerStringUptrendPullback) : ((!isBullish) ? MarkerStringMoveStopDown : MarkerStringMoveStopUp))));
+			string text2 = ((signalInfo == SignalInfo.Trend) ? ((!isBullish) ? MarkerStringDowntrendStart : MarkerStringUptrendStart) : ((signalInfo == SignalInfo.Slowdown) ? ((!isBullish) ? MarkerStringDowntrendSlowndown : MarkerStringUptrendSlowdown) : ((signalInfo == SignalInfo.Pullback) ? ((!isBullish) ? MarkerStringDowntrendPullback : MarkerStringUptrendPullback) : ((!isBullish) ? MarkerStringMoveStopDown : MarkerStringMoveStopUp))));
 			text2 = FormatMarkerString(text2);
 			int num = ComputeTextHeight(text2, MarkerFont);
 			int yPixelOffset = ((!isBullish) ? 1 : (-1)) * (MarkerOffset + num / 2);

@@ -364,11 +364,17 @@ public class gbPANAKanal : Indicator
 	[Display(Name = "Switched On", Order = 0, GroupName = "Critical")]
 	public bool SwitchedOn { get; set; }
 
-	[Display(Name = "Telegram:", Order = 0, GroupName = "Developer")]
+	[Display(Name = "Author",   Order = 0,  GroupName = "Developer")]
+	public string Author  => "GreyBeard";
+
+	[Display(Name = "Version",  Order = 1,  GroupName = "Developer")]
+	public string Version => "1.0";
+
+	[Display(Name = "Telegram:", Order = 5, GroupName = "Developer")]
 	public string Website => "https://t.me/val1312q";
 
-	[Display(Name = "Version", Order = 10, GroupName = "Developer")]
-	public string Version => "1.0.1";
+	[Display(Name = "Update", Order = 10, GroupName = "Developer")]
+	public new string Update => "05 Oct 2024";
 
 	[Display(Name = "Screen DPI", Order = 100, GroupName = "General")]
 	public int ScreenDPI { get; set; }
@@ -689,7 +695,7 @@ public class gbPANAKanal : Indicator
 			{
 				return "PANA Kanal by GreyBeard" + GetUserNote();
 			}
-			return base.DisplayName;
+			return DisplayName;
 		}
 	}
 
@@ -725,7 +731,7 @@ public class gbPANAKanal : Indicator
 			IsOverlay = true;
 			DisplayInDataBox = true;
 			DrawOnPricePanel = true;
-			IsSuspendedWhileInactive = false;
+			IsSuspendedWhileInactive = true;
 			IsAutoScale = true;
 			BarsRequiredToPlot = 0;
 			ShowTransparentPlotsInDataBox = true;

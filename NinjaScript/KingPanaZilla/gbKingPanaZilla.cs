@@ -292,6 +292,12 @@ public class gbKingPanaZilla : Indicator
 	// =========================================================
 	#region Properties
 
+	[Display(Name = "Author",  Order = 0, GroupName = "Developer")]
+	public string Author  => "GreyBeard";
+
+	[Display(Name = "Version", Order = 1, GroupName = "Developer")]
+	public string Version => "1.0";
+
 	// ---- KingOrderBlock parameters --------------------------
 	[Display(Name = "Swing Point: Neighborhood", Order = 0, GroupName = "KingOrderBlock Parameters")]
 	[Range(1, int.MaxValue)]

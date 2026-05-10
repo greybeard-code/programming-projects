@@ -84,14 +84,14 @@ public class gbKingOrderBlock_SoundConverter : TypeConverter
 	}
 }
 
-[CategoryOrder("Alerts", 1000040)]
-[CategoryOrder("Developer", 0)]
-[CategoryOrder("Special", 1000060)]
-[CategoryOrder("Graphics", 1000020)]
-[CategoryOrder("Critical", 1000070)]
-[CategoryOrder("General", 1000010)]
-[CategoryOrder("Toggle", 1000050)]
-[CategoryOrder("Gradient", 1000030)]
+[CategoryOrder("Developer",  0)]
+[CategoryOrder("Alerts",    1000040)]
+[CategoryOrder("Special",   1000060)]
+[CategoryOrder("Graphics",  1000020)]
+[CategoryOrder("Critical",  1000070)]
+[CategoryOrder("General",   1000010)]
+[CategoryOrder("Toggle",    1000050)]
+[CategoryOrder("Gradient",  1000030)]
 public class gbKingOrderBlock : Indicator
 {
 	private class MarkerInfo
@@ -162,8 +162,6 @@ public class gbKingOrderBlock : Indicator
 
 		public int BarEnd { get; set; }
 
-		public bool IsBroken { get; set; }
-
 		[BackupProperties]
 		public bool BackupIsHasOrderBlock { get; set; }
 
@@ -178,7 +176,6 @@ public class gbKingOrderBlock : Indicator
 			BarStart = barStart;
 			BosChochType = bosChochType;
 			BarEnd = barEnd;
-			IsBroken = isBroken;
 			IsHasOrderBlock = isHasOrderBlock;
 		}
 	}
@@ -758,8 +755,11 @@ public class gbKingOrderBlock : Indicator
 	[Display(Name = "Alert Blocking (Seconds)", Order = 50, GroupName = "Alerts", Description = "The minimum interval between 2 consecutive alerts")]
 	public int AlertBlockingSeconds { get; set; }
 
-	[Display(Name = "Version", Order = 0, GroupName = "Developer")]
-	public string Version => "1.0.1";
+	[Display(Name = "Author",    Order = 0,   GroupName = "Developer")]
+	public string Author  => "GreyBeard";
+
+	[Display(Name = "Version",   Order = 1,   GroupName = "Developer")]
+	public string Version => "1.0";
 
 	[Display(Name = "Screen DPI", Order = 100, GroupName = "General")]
 	[Range(99, 500)]
@@ -1608,15 +1608,14 @@ public class gbKingOrderBlock : Indicator
 				{
 					return;
 				}
-				// Create rearmTimer on data thread before InvokeAsync to avoid race condition
-				if (rearmTimer == null)
-				{
-					rearmTimer = new DispatcherTimer();
-					rearmTimer.Interval = TimeSpan.FromMilliseconds(100.0);
-					rearmTimer.Tick += OnRearmTimerTick;
-				}
 				base.ChartControl.Dispatcher.InvokeAsync(delegate
 				{
+					if (rearmTimer == null)
+					{
+						rearmTimer = new DispatcherTimer();
+						rearmTimer.Interval = TimeSpan.FromMilliseconds(100.0);
+						rearmTimer.Tick += OnRearmTimerTick;
+					}
 					if (ToggleEnabled && toggle == null)
 					{
 						toggle = new Grid();
@@ -1699,7 +1698,6 @@ public class gbKingOrderBlock : Indicator
 		catch (Exception exception)
 		{
 			Print(exception.ToString());
-			throw; // Re-throw so NT8 can surface initialization errors on the chart
 		}
 	}
 

@@ -1,4 +1,4 @@
-#region Using declarations
+﻿#region Using declarations
 using System;
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
@@ -132,6 +132,8 @@ public class gbSumoPullback : Indicator
 	private Brush backgroundBullish;
 
 	private Brush backgroundBearish;
+
+	private bool isUnlicensed = false;
 
 	private Window alertWindow;
 
@@ -287,6 +289,9 @@ public class gbSumoPullback : Indicator
 
 	[Display(Name = "Alert Blocking (Seconds)", Order = 50, GroupName = "Alerts", Description = "The minimum interval between 2 consecutive alerts")]
 	public int AlertBlockingSeconds { get; set; }
+
+	[Display(Name = "Author",  Order = 0,  GroupName = "Developer")]
+	public string Author  => "GreyBeard";
 
 	[Display(Name = "Version", Order = 10, GroupName = "Developer")]
 	public string Version => "1.0 Beta";
