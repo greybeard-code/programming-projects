@@ -155,7 +155,11 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
                 StartBehavior = StartBehavior.WaitUntilFlat;
                 TimeInForce = TimeInForce.Day;
                 TraceOrders = true;
-                RealtimeErrorHandling = RealtimeErrorHandling.StopStrategy;
+                // IgnoreAllErrors is intentional for ATM strategies: ATM callbacks
+                // can surface benign/transient errors that would incorrectly halt
+                // the strategy under StopStrategyCancelEntries. The naked-position
+                // watchdog and FlattenEverything provide the safety net instead.
+                RealtimeErrorHandling = RealtimeErrorHandling.IgnoreAllErrors;
                 BarsRequiredToTrade = 2;
                 IsInstantiatedOnEachOptimizationIteration = false;
                 IsUnmanaged = false;
