@@ -4719,11 +4719,12 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
                     RemainingPosition = _markerCurrent.RemainingPosition
                 };
 
-                DrawMarkerEntryExitLine (live);
+                DrawMarkerEntryExitLine (live, isLive: true);
             }
         }
 
-        private void DrawMarkerEntryExitLine (MarkerEntryExitData data)
+        // isLive = true suppresses the exit label so it does not appear while the trade is still open.
+        private void DrawMarkerEntryExitLine (MarkerEntryExitData data, bool isLive = false)
         {
             if (OrderMode != OrderManagementMode.AtmStrategy)
                 return;
@@ -4762,6 +4763,11 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
                 Draw.Text (this, data.EntryLabelTag, false, entryText,
                     entryBarsAgo, data.EntryPrice, -15, brush, font,
                     System.Windows.TextAlignment.Center, Brushes.Transparent, Brushes.Transparent, 0);
+
+                // Exit label is suppressed while the trade is open — only draw it once the
+                // marker has been finalised (IsLive == false, meaning it came from _markerList).
+                if (isLive)
+                    return;
 
                 string exitText = string.Format ("EXIT\nEntry: {0:F2}\nExit: {1:F2}",
                     data.EntryPrice, data.ExitPrice);
