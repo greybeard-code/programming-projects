@@ -20,7 +20,7 @@ Each of the three output plots uses **+1 (buy), −1 (sell), 0 (no signal)**:
 
 | Plot | Condition (buy) | Condition (sell) |
 |---|---|---|
-| `PanaZillia_Trade` | PanaKanal `Signal_Trade ≥ 2` **AND** ThunderZilla `Signal_Trade ≥ 3` | PanaKanal `≤ −2` AND ThunderZilla `≤ −3` |
+| `PanaZilla_Trade` | PanaKanal `Signal_Trade ≥ 2` **AND** ThunderZilla `Signal_Trade ≥ 3` | PanaKanal `≤ −2` AND ThunderZilla `≤ −3` |
 | `KingZilla_Trade` | ThunderZilla `Signal_Trade ≥ 3` **AND** KingOrderBlock `Signal_Trade ≥ 1` | ThunderZilla `≤ −3` AND KingOrderBlock `≤ −1` |
 | `KingPana_Trade` | PanaKanal `Signal_Trade ≥ 2` **AND** KingOrderBlock `Signal_Trade ≥ 1` | PanaKanal `≤ −2` AND KingOrderBlock `≤ −1` |
 
@@ -29,7 +29,7 @@ The signal thresholds capture the **highest-conviction sub-signals** from each c
 - ThunderZilla ≥ 3 = Pullback signal (both SolarWind + Sumo aligned with a pullback)
 - KingOrderBlock ≥ 1 = any Return or Breakout signal
 
-**Output plots:** `PanaZillia_Trade`, `KingZilla_Trade`, `KingPana_Trade`
+**Output plots:** `PanaZilla_Trade`, `KingZilla_Trade`, `KingPana_Trade`
 
 **Child indicator signal scales (for reference):**
 
@@ -265,11 +265,11 @@ A **standalone news-awareness indicator** by Playr101 that fetches the ForexFact
 
 ### gbKingPanaZillaKillah — ATM Strategy by Playr101
 
-An **ATM-mode strategy** (v1.5.1) that drives NinjaTrader 8's native ATM Strategy engine from the three `gbKingPanaZilla` signals. Selecting any combination of the three signal outputs (PZ, KZ, KP) is controlled via per-signal toggles. Risk is managed by a daily profit target and daily loss limit evaluated tick-by-tick against both realized and (optionally) open equity.
+An **ATM-mode strategy** (v1.5.6) that drives NinjaTrader 8's native ATM Strategy engine from the three `gbKingPanaZilla` signals. Selecting any combination of the three signal outputs (PZ, KZ, KP) is controlled via per-signal toggles. Risk is managed by a daily profit target and daily loss limit evaluated tick-by-tick against both realized and (optionally) open equity.
 
 **How it works:**
 
-1. **Signal evaluation** — on each primary bar, `PanaZillia_Trade`, `KingZilla_Trade`, and `KingPana_Trade` are read from `gbKingPanaZilla`. Any enabled signal at +1 triggers a long entry; at −1 a short entry.
+1. **Signal evaluation** — on each primary bar, `PanaZilla_Trade`, `KingZilla_Trade`, and `KingPana_Trade` are read from `gbKingPanaZilla`. Any enabled signal at +1 triggers a long entry; at −1 a short entry.
 2. **EMA filter** — when enabled, long entries require price above the EMA and short entries require price below it. Signals in the wrong direction relative to the EMA are suppressed.
 3. **News filter** — when enabled, entries are blocked during a configurable pre/post window around qualifying news events, sourced from the `NewsSignals` indicator. Optionally, open positions are flattened when a warning window begins.
 4. **ATM order submission** — entries are placed via `AtmStrategyCreate` with a user-selected ATM template. Only one ATM position is open at a time; new signals are ignored while a position is active.
@@ -283,7 +283,7 @@ An **ATM-mode strategy** (v1.5.1) that drives NinjaTrader 8's native ATM Strateg
 | Group | Parameter | Default |
 |---|---|---|
 | Signals | `EnableSignalTracking` | `false` |
-| Signals | `UsePanaZilliaSignals`, `UseKingZillaSignals`, `UseKingPanaSignals` | all `true` |
+| Signals | `UsePanaZillaSignals`, `UseKingZillaSignals`, `UseKingPanaSignals` | all `true` |
 | ATM | `AtmStrategy` | *(select from installed ATM templates)* |
 | EMA Filter | `UseEmaFilter` / `EmaFilterPeriod` | `false` / 50 |
 | News Filter | `EnableNewsFilter` | `false` |
@@ -356,6 +356,83 @@ The writer is flushed after every row and closed cleanly when the strategy is re
 
 ---
 
+### GodZillaKilla — Direct-Signal ATM Strategy by Playr101
+
+An **ATM-mode strategy** (v1.5.2) that reads all five suite indicators directly — `gbKingOrderBlock`, `gbPANAKanal`, `gbThunderZilla`, `gbSuperJumpBoost`, and `gbSumoPullback` — without the `gbKingPanaZilla` intermediary. Two independently-configurable signal **Sets** define which indicators must agree and at what threshold before an entry is submitted.
+
+**How it works:**
+
+1. **Signal Sets** — Set 1 is always active. Set 2 is an optional second configuration that can fire a group-trigger (all-or-nothing) entry independently. Each Set specifies a **Required Count** (minimum number of enabled indicators that must signal), individual per-indicator **Use** toggles, and separate **Long Value** / **Short Value** thresholds:
+
+   | Indicator | Long signal | Short signal |
+   |---|---|---|
+   | `gbKingOrderBlock` | `Signal_Trade ≥` threshold (1=Return, 2=Breakout) | `Signal_Trade ≤` threshold |
+   | `gbPANAKanal` | `Signal_Trade ≥` threshold (1=Trend Start, 2=Break, 3=Pullback) | `Signal_Trade ≤` threshold |
+   | `gbThunderZilla` | `Signal_Trade ≥` threshold (1=Trend Start, 2=Slowdown, 3=Pullback, 4=Move Stop) | `Signal_Trade ≤` threshold |
+   | `gbSuperJumpBoost` | `Signal_Trade ≥` threshold (1=Return, 2=Zone Start) | `Signal_Trade ≤` threshold |
+   | `gbSumoPullback` | `Signal_Trade ≥` threshold (1=Pullback) | `Signal_Trade ≤` threshold |
+
+   The trigger label written to the trade log encodes which indicators fired and the Set that triggered (e.g. `SET1-G3:PA+TH+SJ`).
+
+2. **EMA filter** — when enabled, longs require the short EMA to be above the long EMA; shorts require it below. Configurable short and long EMA periods.
+
+3. **Order modes** — `AtmStrategy` (recommended): entries placed via `AtmStrategyCreate` using a selected NT8 ATM template; only one position open at a time. `FixedTicks`: strategy-managed market entries with fixed stop-loss ticks, profit-target ticks, and an optional breakeven move.
+
+4. **Martingale recovery** — when enabled, a stop-loss on a normal trade immediately submits one opposite-direction recovery entry using a separate `MartingaleAtmStrategy` template. A losing martingale does not trigger another martingale.
+
+5. **News filter** — same `NewsSignals`-based pre/post blocking as gbKingPanaZillaKillah. Disabled automatically during Strategy Analyzer, backtest, and Market Replay.
+
+6. **Risk management** — daily profit target and daily loss limit checked tick-by-tick against realized + (optionally) unrealized PnL. Breach flattens all positions and blocks new entries for the session.
+
+7. **Session filters** — three independent time windows (TF1, TF2, TF3), each with optional flatten-at-close. A configurable **Skip Window** can suppress trading within a recurring intra-session block (e.g. the open auction).
+
+8. **Naked-position watchdog** — wall-clock throttled (runs in realtime only). Detects positions that have no active ATM or working protective orders and immediately flattens them.
+
+9. **Signal tracking** — when enabled, per-indicator win/loss counters are displayed in the dashboard HUD after each trade closes, broken out by which indicators contributed to the trigger.
+
+10. **ATM trade markers** — draws a coloured entry-to-exit line on the price panel for each completed ATM trade. The exit text label (entry price, exit price) appears only after the trade closes, not during the open trade.
+
+11. **Button panel** — on-chart WPF panel with arm-long / arm-short / auto-arm / close-all buttons and a live status label.
+
+**Key parameters:**
+
+| Group | Parameter | Default |
+|---|---|---|
+| ATM Parameters | `OrderMode` | `AtmStrategy` |
+| ATM Parameters | `AtmStrategy` | *(select ATM template)* |
+| ATM Parameters | `MartingaleAtmStrategy` | *(optional)* |
+| Signals | `EnableSignalTracking` | `false` |
+| Signals | `Set1RequiredCount` | 1 |
+| Signals | `Set1Use{KO/PA/TH/SJ/SU}`, threshold values | per-indicator |
+| Signals | `Set2EnableGroupTrigger` | `false` |
+| Filters | `EnableNewsFilter` | `false` |
+| Filters | `EnableEmaFilter` / `EmaShortPeriod` / `EmaLongPeriod` | `false` / 9 / 21 |
+| Risk Management | `UseUnrealizedPNL` | `true` |
+| Risk Management | `EnableDailyProfitTarget` / `DailyProfitTarget` | `false` / $500 |
+| Risk Management | `EnableDailyLossLimit` / `DailyLossLimit` | `true` / $200 |
+| Risk Management | `EnableMartingaleOnStopLoss` | `false` |
+| Session Parameters | `EnableTF1`–`EnableTF3`, start/end times, flatten toggles | TF1 on, TF2 on, TF3 off |
+| Session Parameters | `EnableSkipWindow` / `SkipStartTime` / `SkipEndTime` | `false` |
+| Display | `ShowEntryExitMarkers` / `ShowEntryExitLabels` | `true` / `true` |
+| Logging | `LogEnabled` / `EnableDebug` | `false` / `false` |
+
+**CSV Trade Log:**
+
+Same format as `gbKingPanaZillaKillah`, written to the NinjaTrader user data folder:
+
+```
+GodZillaKilla_YYYYMMDD_HHmmss.csv
+```
+
+```
+OpenTime,Account,Instrument,OpenPrice,Qty,CloseTime,Trigger,Direction,AtmStrategy,RealizedPnL
+2026-04-29 10:32:03,Playback101,MNQ 06-26,27272.75,4,2026-04-29 10:32:13,SET1-G3:PA+TH+SJ,Long,Godzilla_ATM_MNQ_NR_50-3,47.25
+```
+
+The trigger field encodes the Set name, group size (number of indicators that fired), and the abbreviated indicator names (`KO`=KingOrderBlock, `PA`=PANAKanal, `TH`=ThunderZilla, `SJ`=SuperJumpBoost, `SU`=SumoPullback).
+
+---
+
 ## File Structure
 
 ```
@@ -369,6 +446,7 @@ KingPanaZilla/
 ├── gbSumoPullback.cs           — Multi-MA cloud pullback indicator (standalone)
 ├── NewsSignals.cs              — Economic calendar news filter indicator (Playr101)
 ├── gbKingPanaZillaKillah.cs    — ATM strategy driven by gbKingPanaZilla signals (Playr101)
+├── GodZillaKilla.cs            — Direct-signal ATM strategy using all five indicators (Playr101)
 └── originals/                  — Unmodified vendor source files
     ├── RenkoKings_KingOrderBlock.cs
     ├── RenkoKings_ThunderZilla.cs
@@ -378,7 +456,7 @@ KingPanaZilla/
     └── RenkoKings_SumoPullback.cs
 ```
 
-Each indicator is its own file. `gbKingPanaZilla` references the three child indicators and must be compiled after them. `gbSuperJumpBoost` and `gbSumoPullback` are fully standalone. `NewsSignals` is standalone. `gbKingPanaZillaKillah` references both the `gbKingPanaZilla` and `NewsSignals` namespaces and must be compiled last.
+Each indicator is its own file. `gbKingPanaZilla` references the three child indicators and must be compiled after them. `gbSuperJumpBoost` and `gbSumoPullback` are fully standalone. `NewsSignals` is standalone. `gbKingPanaZillaKillah` references both the `gbKingPanaZilla` and `NewsSignals` namespaces. `GodZillaKilla` references all five suite indicators and `NewsSignals` directly — both strategy files must be compiled last.
 
 ## Installation
 
@@ -389,12 +467,12 @@ Documents\NinjaTrader 8\bin\Custom\Indicators\   ← gbKingOrderBlock.cs, gbPANA
                                                       gbThunderZilla.cs, gbKingPanaZilla.cs,
                                                       gbBarStatus.cs, gbSuperJumpBoost.cs,
                                                       gbSumoPullback.cs, NewsSignals.cs
-Documents\NinjaTrader 8\bin\Custom\Strategies\   ← gbKingPanaZillaKillah.cs
+Documents\NinjaTrader 8\bin\Custom\Strategies\   ← gbKingPanaZillaKillah.cs, GodZillaKilla.cs
 ```
 
 Then compile via **NinjaTrader → Tools → Edit NinjaScript → Compile**.
 
-Compile order matters: the three child indicators (`gbKingOrderBlock`, `gbPANAKanal`, `gbThunderZilla`) must compile before `gbKingPanaZilla`. `gbSuperJumpBoost`, `gbSumoPullback`, and `NewsSignals` are standalone and can compile in any order. `gbKingPanaZillaKillah` must compile after all indicators.
+Compile order matters: the three child indicators (`gbKingOrderBlock`, `gbPANAKanal`, `gbThunderZilla`) must compile before `gbKingPanaZilla`. `gbSuperJumpBoost`, `gbSumoPullback`, and `NewsSignals` are standalone and can compile in any order. Both strategy files (`gbKingPanaZillaKillah`, `GodZillaKilla`) must compile after all indicators.
 
 ---
 
