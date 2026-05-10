@@ -724,7 +724,7 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
                 return;
 
             // Entry Logic
-            double pz = _gbIndicator.PanaZillia_Trade[0];
+            double pz = _gbIndicator.PanaZilla_Trade[0];
             double kz = _gbIndicator.KingZilla_Trade[0];
             double kp = _gbIndicator.KingPana_Trade[0];
             // gbSumoPullback Signal_Trade: +1 bullish, -1 bearish, 0 none
@@ -761,7 +761,7 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
                 if (UsePanaZilliaSignals)
                 {
                     poolSize++;
-                    double s = LatestSignalInWindow (_gbIndicator.PanaZillia_Trade, win);
+                    double s = LatestSignalInWindow (_gbIndicator.PanaZilla_Trade, win);
                     if (s > 0) longAgree++; else if (s < 0) shortAgree++;
                 }
                 if (UseKingZillaSignals)
