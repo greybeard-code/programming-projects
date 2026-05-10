@@ -4443,7 +4443,11 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
                 return;
 
             _markerHookedAccount = Account;
-            _markerHookedAccount.PositionUpdate += OnMarkerAccountPositionUpdate;
+            // PositionUpdate intentionally NOT hooked here.
+            // Position tracking is done exclusively on the data thread via CheckMarkerPositionChange
+            // (called from OnBarUpdate). Hooking PositionUpdate from the account thread creates
+            // unsynchronised concurrent access to _markerCurrentQty/_markerLastQty/etc. that
+            // races with CheckMarkerPositionChange and causes duplicate / non-terminating lines.
             _markerHookedAccount.ExecutionUpdate += OnMarkerAccountExecutionUpdate;
             _markerHooked = true;
 
@@ -4487,41 +4491,12 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
 
             try
             {
-                _markerHookedAccount.PositionUpdate -= OnMarkerAccountPositionUpdate;
                 _markerHookedAccount.ExecutionUpdate -= OnMarkerAccountExecutionUpdate;
             }
             catch { }
 
             _markerHookedAccount = null;
             _markerHooked = false;
-        }
-
-        private void OnMarkerAccountPositionUpdate (object sender, PositionEventArgs e)
-        {
-            if (OrderMode != OrderManagementMode.AtmStrategy)
-                return;
-
-            try
-            {
-                if (e == null || e.Position == null || e.Position.Instrument == null)
-                    return;
-
-                if (Instrument == null || e.Position.Instrument.FullName != Instrument.FullName)
-                    return;
-
-                double newQty = Math.Abs (e.Position.Quantity);
-                MarketPosition newMP = e.Position.MarketPosition;
-
-                if (Math.Abs (newQty - _markerCurrentQty) > 0.001 || newMP != _markerCurrentMP)
-                {
-                    _markerCurrentQty = newQty;
-                    _markerCurrentMP = newMP;
-                    HandleMarkerPositionChange ();
-                    _markerLastQty = _markerCurrentQty;
-                    _markerLastMP = _markerCurrentMP;
-                }
-            }
-            catch { }
         }
 
         private void OnMarkerAccountExecutionUpdate (object sender, ExecutionEventArgs e)
@@ -4574,6 +4549,15 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
                     HandleMarkerPositionChange ();
                     _markerLastQty = _markerCurrentQty;
                     _markerLastMP = _markerCurrentMP;
+                }
+                else if (_markerCurrent != null && newMP == MarketPosition.Flat)
+                {
+                    // Safety net: position is genuinely flat but _markerCurrent was not finalised
+                    // (e.g. an execution event arrived before the bar closed and updated _markerLastMP
+                    // to Flat before we could detect the Long→Flat transition above).
+                    HandleMarkerCompleteExit ();
+                    _markerLastQty = 0;
+                    _markerLastMP = MarketPosition.Flat;
                 }
             }
             catch { }
@@ -4670,32 +4654,13 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
             if (_markerCurrent == null)
                 return;
 
-            // Use best available price; never bail — a partial with price=0 is better
-            // than a leak. Drawing is deferred to RedrawCompletedMarkers (data thread).
-            double exitPrice = GetMarkerExecutionPrice ();
-            if (exitPrice <= 0.0) exitPrice = _markerCurrent.EntryPrice; // last resort
-
-            MarkerEntryExitData scale = new MarkerEntryExitData
-            {
-                EntryBar = _markerCurrent.EntryBar,
-                EntryPrice = _markerCurrent.EntryPrice,
-                ExitBar = CurrentBar,
-                ExitPrice = exitPrice,
-                IsLong = _markerCurrent.IsLong,
-                IsComplete = true,
-                LineTag = "GZK_EE_Line_" + _markerLineCounter,
-                EntryLabelTag = "GZK_EE_Entry_" + _markerLineCounter,
-                ExitLabelTag = "GZK_EE_Exit_" + _markerLineCounter,
-                InitialPosition = _markerCurrent.InitialPosition,
-                RemainingPosition = Math.Abs (_markerCurrentQty)
-            };
-
-            _markerList.Add (scale);
-            _markerLineCounter++;
-
+            // Update the remaining-position count only. We do NOT create a separate completed
+            // marker per partial fill — that produces one line per contract for a full ATM exit
+            // (e.g. 4-contract position → 3 spurious lines). The live line drawn in
+            // RedrawCompletedMarkers (using _markerCurrent) continues to extend to Close[0]
+            // until HandleMarkerCompleteExit is called for the final flat transition.
             _markerCurrent.RemainingPosition = Math.Abs (_markerCurrentQty);
             _markerLastExecution = null;
-            // Drawing happens in RedrawCompletedMarkers on the next OnBarUpdate (data thread)
         }
 
         private void HandleMarkerCompleteExit ()
