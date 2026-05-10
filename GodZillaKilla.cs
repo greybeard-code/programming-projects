@@ -903,6 +903,24 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
                     UnhookMarkerAccountEvents ();
                 }
                 catch { }
+
+                // Finalize any open trade marker so it doesn't leak as an unterminated line
+                try
+                {
+                    if (_markerCurrent != null)
+                    {
+                        double lastPrice = 0.0;
+                        try { lastPrice = Close[0]; } catch { }
+                        if (lastPrice <= 0.0) lastPrice = _markerCurrent.EntryPrice;
+
+                        _markerCurrent.ExitBar   = Math.Max (CurrentBar, _markerCurrent.EntryBar);
+                        _markerCurrent.ExitPrice  = lastPrice;
+                        _markerCurrent.IsComplete = true;
+                        _markerList.Add (_markerCurrent);
+                        _markerCurrent = null;
+                    }
+                }
+                catch { }
             }
         }
 
@@ -4652,10 +4670,10 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
             if (_markerCurrent == null)
                 return;
 
+            // Use best available price; never bail — a partial with price=0 is better
+            // than a leak. Drawing is deferred to RedrawCompletedMarkers (data thread).
             double exitPrice = GetMarkerExecutionPrice ();
-
-            if (exitPrice <= 0.0)
-                return;
+            if (exitPrice <= 0.0) exitPrice = _markerCurrent.EntryPrice; // last resort
 
             MarkerEntryExitData scale = new MarkerEntryExitData
             {
@@ -4673,11 +4691,11 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
             };
 
             _markerList.Add (scale);
-            DrawMarkerEntryExitLine (scale);
             _markerLineCounter++;
 
             _markerCurrent.RemainingPosition = Math.Abs (_markerCurrentQty);
             _markerLastExecution = null;
+            // Drawing happens in RedrawCompletedMarkers on the next OnBarUpdate (data thread)
         }
 
         private void HandleMarkerCompleteExit ()
@@ -4685,20 +4703,20 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
             if (_markerCurrent == null)
                 return;
 
+            // Use best available price; never bail — a closed marker with an approximate
+            // exit price is better than _markerCurrent leaking and never terminating.
+            // Drawing is deferred to RedrawCompletedMarkers (data thread).
             double exitPrice = GetMarkerExecutionPrice ();
-
-            if (exitPrice <= 0.0)
-                return;
+            if (exitPrice <= 0.0) exitPrice = _markerCurrent.EntryPrice; // last resort
 
             _markerCurrent.ExitBar = CurrentBar;
             _markerCurrent.ExitPrice = exitPrice;
             _markerCurrent.IsComplete = true;
 
             _markerList.Add (_markerCurrent);
-            DrawMarkerEntryExitLine (_markerCurrent);
-
             _markerCurrent = null;
             _markerLastExecution = null;
+            // Drawing happens in RedrawCompletedMarkers on the next OnBarUpdate (data thread)
         }
 
         private void RedrawCompletedMarkers ()
@@ -4709,12 +4727,34 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
             if (!ShowEntryExitMarkers)
                 return;
 
+            // Redraw all completed (historical) trade lines
             for (int i = 0; i < _markerList.Count; i++)
             {
                 MarkerEntryExitData m = _markerList[i];
 
                 if (m.IsComplete)
                     DrawMarkerEntryExitLine (m);
+            }
+
+            // Draw the live open trade line extending to the current bar
+            if (_markerCurrent != null && _markerCurrent.EntryBar >= 0)
+            {
+                MarkerEntryExitData live = new MarkerEntryExitData
+                {
+                    EntryBar   = _markerCurrent.EntryBar,
+                    EntryPrice = _markerCurrent.EntryPrice,
+                    ExitBar    = CurrentBar,
+                    ExitPrice  = Close[0],
+                    IsLong     = _markerCurrent.IsLong,
+                    IsComplete = true,  // lets DrawMarkerEntryExitLine render it
+                    LineTag         = _markerCurrent.LineTag,
+                    EntryLabelTag   = _markerCurrent.EntryLabelTag,
+                    ExitLabelTag    = _markerCurrent.ExitLabelTag,
+                    InitialPosition  = _markerCurrent.InitialPosition,
+                    RemainingPosition = _markerCurrent.RemainingPosition
+                };
+
+                DrawMarkerEntryExitLine (live);
             }
         }
 
