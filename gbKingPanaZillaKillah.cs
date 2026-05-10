@@ -98,17 +98,17 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
             public int Losers;
         }
 
-        private SignalTradeStats panaZilliaStats = new SignalTradeStats();
+        private SignalTradeStats panaZillaStats = new SignalTradeStats();
         private SignalTradeStats kingZillaStats = new SignalTradeStats();
         private SignalTradeStats kingPanaStats = new SignalTradeStats();
 
-        private bool activeTradeUsesPanaZillia = false;
+        private bool activeTradeUsesPanaZilla = false;
         private bool activeTradeUsesKingZilla = false;
         private bool activeTradeUsesKingPana = false;
         private MarketPosition activeTradeDirection = MarketPosition.Flat;
         private string lastTradeClosedSummary = string.Empty;
 
-        private string Version = "";
+        private string _strategyVersion = "";
         private string Credits = "";
 
         // Indicator
@@ -141,7 +141,7 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
                 Description = "Strategy utilizing gbKingPanaZilla signals.";
                 Name = "gbKingPanaZillaKillah";
                 StrategyName = Name;
-                Version = "1.5.6";
+                _strategyVersion = "1.5.6";
 
                 Author = "Playr101";
                 Credits = "GreyBeard, rbro999";
@@ -155,7 +155,7 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
                 StartBehavior = StartBehavior.WaitUntilFlat;
                 TimeInForce = TimeInForce.Day;
                 TraceOrders = true;
-                RealtimeErrorHandling = RealtimeErrorHandling.IgnoreAllErrors;
+                RealtimeErrorHandling = RealtimeErrorHandling.StopStrategy;
                 BarsRequiredToTrade = 2;
                 IsInstantiatedOnEachOptimizationIteration = false;
                 IsUnmanaged = false;
@@ -412,7 +412,8 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
                     _logWriter.Flush ();
                 }
 
-                DrawPnlDisplay ();
+                if (CurrentBar >= 0)
+                    DrawPnlDisplay ();
             }
             else if (State == State.Realtime)
             {
@@ -689,7 +690,14 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
                         return true;
                 }
             }
-            catch { }
+            catch
+            {
+                // Reflection path failed (NT8 version mismatch or permission issue).
+                // Fall through and return false (treat as not-playback). This is the
+                // more-permissive path — news filter could activate in a replay context
+                // if both detection methods fail. Acceptable since this is defensive
+                // detection only; the user can disable EnableNewsFilter manually.
+            }
 
             return false;
         }
@@ -939,7 +947,7 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
                             + $"Closed={dailyRealizedPnL:F2} | Open={dailyUnrealizedPnL:F2} | "
                             + $"Calling FlattenAll()");
 
-                    FlattenAll ();
+                    FlattenEverything ("Daily profit target hit");
                 }
                 else if (UseDailyLossLimit && dailyPnlToCheck <= -DailyLossLimit)
                 {
@@ -952,7 +960,7 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
                             + $"Closed={dailyRealizedPnL:F2} | Open={dailyUnrealizedPnL:F2} | "
                             + $"Calling FlattenAll()");
 
-                    FlattenAll ();
+                    FlattenEverything ("Daily loss limit hit");
                 }
             }
 
@@ -1034,7 +1042,7 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
 
         private void SetActiveTradeSignalSources (bool usePanaZillia, bool useKingZilla, bool useKingPana, MarketPosition direction)
         {
-            activeTradeUsesPanaZillia = usePanaZillia;
+            activeTradeUsesPanaZilla = usePanaZillia;
             activeTradeUsesKingZilla = useKingZilla;
             activeTradeUsesKingPana = useKingPana;
             activeTradeDirection = direction;
@@ -1042,7 +1050,7 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
 
         private void ClearActiveTradeSignalSources ()
         {
-            activeTradeUsesPanaZillia = false;
+            activeTradeUsesPanaZilla = false;
             activeTradeUsesKingZilla = false;
             activeTradeUsesKingPana = false;
             activeTradeDirection = MarketPosition.Flat;
@@ -1056,8 +1064,8 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
             bool isWinner = tradePnl > 0;
             bool isLoser = tradePnl < 0;
 
-            if (activeTradeUsesPanaZillia)
-                IncrementSignalStats (panaZilliaStats, activeTradeDirection, isWinner, isLoser);
+            if (activeTradeUsesPanaZilla)
+                IncrementSignalStats (panaZillaStats, activeTradeDirection, isWinner, isLoser);
 
             if (activeTradeUsesKingZilla)
                 IncrementSignalStats (kingZillaStats, activeTradeDirection, isWinner, isLoser);
@@ -1108,7 +1116,7 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
         {
             List<string> activeSignals = new List<string>();
 
-            if (activeTradeUsesPanaZillia)
+            if (activeTradeUsesPanaZilla)
                 activeSignals.Add ("PanaZillia");
             if (activeTradeUsesKingZilla)
                 activeSignals.Add ("KingZilla");
@@ -1122,7 +1130,7 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
         {
             List<string> activeSignals = new List<string>();
 
-            if (activeTradeUsesPanaZillia)
+            if (activeTradeUsesPanaZilla)
                 activeSignals.Add ("PZ");
             if (activeTradeUsesKingZilla)
                 activeSignals.Add ("KZ");
@@ -1149,7 +1157,7 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
             if (UsePanaZilliaSignals)
             {
                 enabledSignals.Add ("PZ");
-                lines.Add ($"PZ T:{panaZilliaStats.TotalTrades} Lg:{panaZilliaStats.LongTrades} Sh:{panaZilliaStats.ShortTrades} W:{panaZilliaStats.Winners} L:{panaZilliaStats.Losers}");
+                lines.Add ($"PZ T:{panaZillaStats.TotalTrades} Lg:{panaZillaStats.LongTrades} Sh:{panaZillaStats.ShortTrades} W:{panaZillaStats.Winners} L:{panaZillaStats.Losers}");
             }
 
             if (UseKingZillaSignals)
@@ -1211,7 +1219,7 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
                 && !IsTimeInWindow (currentTime, ToTime (StartTime3), ToTime (EndTime3));
 
             if (flatten1 || flatten2 || flatten3)
-                FlattenAll ();
+                FlattenEverything ("Trading window closed");
         }
 
         private bool IsTimeInWindow (int currentTime, int startTime, int endTime)
@@ -1226,11 +1234,6 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
 
             // Overnight window, ex: 180000 -> 040000
             return currentTime >= startTime || currentTime < endTime;
-        }
-
-        private void FlattenAll ()
-        {
-            FlattenEverything ("FlattenAll requested");
         }
 
         private void FlattenEverything (string reason)
@@ -1524,10 +1527,11 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
         {
             _autoArm = !_autoArm;
 
+            // When AutoArm is turned ON, re-arm both directions.
+            // When turned OFF, leave the individual arm flags as-is so the
+            // trader can still selectively arm via the Long/Short buttons.
             if (_autoArm)
                 _armLong = _armShort = true;
-            else
-                _armLong = _armShort = false;
 
             UpdateRBroButtons ();
             UpdateRBroStatusUI ();
@@ -1535,7 +1539,7 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
 
         private void CloseBtn_Click (object sender, RoutedEventArgs e)
         {
-            FlattenAll ();
+            FlattenEverything ("CLOSE ALL button clicked");
             UpdateRBroStatusUI ();
         }
 
@@ -1764,7 +1768,7 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
 
         [ReadOnly (true)]
         [Display (Name = "Strategy Version", GroupName = "Strategy Information", Order = 1)]
-        public string StrategyVersion => Version;
+        public string StrategyVersion => _strategyVersion;
 
         [NinjaScriptProperty]
         [ReadOnly (true)]
