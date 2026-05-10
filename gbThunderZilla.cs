@@ -176,9 +176,9 @@ public class gbThunderZilla : Indicator
 
 	private const string prefix = "gbThunderZilla";
 
-	private const string indicatorName = "ThunderZilla";
+	private const string indicatorName = "gb ThunderZilla";
 
-	private const string indicatorNameFull = "ThunderZilla by GreyBeard";
+	private const string indicatorNameFull = "gb ThunderZilla";
 
 	private bool isCharting;
 
@@ -807,7 +807,7 @@ public class gbThunderZilla : Indicator
 		{
 			if (!(Parent is MarketAnalyzerColumnBase))
 			{
-				return "ThunderZilla by GreyBeard" + GetUserNote();
+				return "gb ThunderZilla" + GetUserNote();
 			}
 			return base.DisplayName;
 		}
@@ -1954,7 +1954,7 @@ public class gbThunderZilla : Indicator
 		string text5 = (flag ? string.Format("The market has entered {0}.", (!isBullish) ? "a DOWNTREND" : "an UPTREND") : (flag2 ? string.Format("The {0} has slowed down.", (!isBullish) ? "DOWNTREND" : "UPTREND") : (flag3 ? string.Format("The {0} has had a PULLBACK.", (!isBullish) ? "downtrend" : "uptrend") : string.Format("The {0} has had a MOVE STOP.", (!isBullish) ? "downtrend" : "uptrend"))));
 		string popupMessage = text5 + "\n\nAlert chart: " + text3 + "\nAlert time: " + text2;
 		string text6 = "\n_______________________\n\n";
-		string text7 = popupMessage + text6 + "ThunderZilla by GreyBeard\nWebsite: https://greybeard.com";
+		string text7 = popupMessage + text6 + "gb ThunderZilla";
 		if (PopupEnabled && isCharting)
 		{
 			ChartControl.Dispatcher.InvokeAsync(delegate
@@ -1965,7 +1965,7 @@ public class gbThunderZilla : Indicator
 				}
 				alertWindow = new Window
 				{
-					Title = "ThunderZilla by GreyBeard",
+					Title = "gb ThunderZilla",
 					Width = 400,
 					Height = 300,
 					WindowStartupLocation = WindowStartupLocation.CenterOwner,

@@ -114,7 +114,7 @@ public class gbPANAKanal : Indicator
 
 	private const string prefix = "gbPANAKanal";
 
-	private const string indicatorName = "PANA Kanal";
+	private const string indicatorName = "gb PanaKanal";
 
 	private bool isCharting;
 
@@ -686,7 +686,7 @@ public class gbPANAKanal : Indicator
 		{
 			if (!(Parent is MarketAnalyzerColumnBase))
 			{
-				return "PANA Kanal by GreyBeard" + GetUserNote();
+				return "gb PanaKanal" + GetUserNote();
 			}
 			return base.DisplayName;
 		}
@@ -719,7 +719,7 @@ public class gbPANAKanal : Indicator
 		{
 		case State.SetDefaults:
 			Name = "gbPANAKanal";
-			Description = "PANA Kanal";
+			Description = "gb PanaKanal";
 			Calculate = Calculate.OnBarClose;
 			IsOverlay = true;
 			DisplayInDataBox = true;
@@ -1905,7 +1905,7 @@ public class gbPANAKanal : Indicator
 		}
 		popupMessage = $"{popupMessage}\n\nAlert chart: {text3}\nAlert time: {text2}";
 		string text5 = "\n_______________________\n\n";
-		string text6 = popupMessage + text5 + "PANA Kanal by GreyBeard\nWebsite: http://greybeard.com";
+		string text6 = popupMessage + text5 + "gb PanaKanal";
 		if (PopupEnabled && isCharting)
 		{
 			ChartControl.Dispatcher.InvokeAsync(delegate
@@ -1914,7 +1914,7 @@ public class gbPANAKanal : Indicator
 					alertWindow.Close();
 				alertWindow = new Window
 				{
-					Title = "PANA Kanal by GreyBeard",
+					Title = "gb PanaKanal",
 					Width = 400, Height = 250,
 					WindowStartupLocation = WindowStartupLocation.CenterScreen,
 					Background = PopupBackgroundBrush,
