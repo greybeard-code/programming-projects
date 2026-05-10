@@ -289,7 +289,7 @@ public class gbSumoPullback : Indicator
 	public int AlertBlockingSeconds { get; set; }
 
 	[Display(Name = "Version", Order = 10, GroupName = "Developer")]
-	public string Version => "1.0 Beta";
+	public string Version => "1.0";
 
 	[Display(Name = "Screen DPI", Order = 100, GroupName = "General")]
 	public int ScreenDPI { get; set; }
