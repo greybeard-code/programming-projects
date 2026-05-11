@@ -1,4 +1,4 @@
-﻿#region Using declarations
+#region Using declarations
 using System;
 using System.Collections.Generic;
 using System.ComponentModel;
@@ -385,11 +385,11 @@ public class gbSuperJumpBoost : Indicator
 	[Display(Name = "Sound: Bearish", Order = 18, GroupName = "Alerts")]
 	public string SoundBearish { get; set; }
 
-	[Display(Name = "Sound: Zone Bullish Start", Order = 16, GroupName = "Alerts")]
+	[Display(Name = "Sound: Zone Bullish Start", Order = 17, GroupName = "Alerts")]
 	[TypeConverter(typeof(gbSuperJumpBoost_SoundConverter))]
 	public string SoundZoneBullishStart { get; set; }
 
-	[Display(Name = "Sound: Zone Bearish Start", Order = 18, GroupName = "Alerts")]
+	[Display(Name = "Sound: Zone Bearish Start", Order = 19, GroupName = "Alerts")]
 	[TypeConverter(typeof(gbSuperJumpBoost_SoundConverter))]
 	public string SoundZoneBearishStart { get; set; }
 
@@ -469,11 +469,8 @@ public class gbSuperJumpBoost : Indicator
 	[Display(Name = "Switched On", Order = 0, GroupName = "Critical")]
 	public bool SwitchedOn { get; set; }
 
-	[Display(Name = "Author",  Order = 0,  GroupName = "Developer")]
-	public string Author  => "GreyBeard";
-
 	[Display(Name = "Version", Order = 10, GroupName = "Developer")]
-	public string Version => "1.0 Beta";
+	public string Version => "1.0";
 
 	[Display(Name = "Screen DPI", Order = 100, GroupName = "General")]
 	public int ScreenDPI { get; set; }
@@ -1160,6 +1157,7 @@ public class gbSuperJumpBoost : Indicator
 			PaintPriceMarkers = true;
 			ScaleJustification = ScaleJustification.Right;
 			IsSuspendedWhileInactive = false;
+			ShowTransparentPlotsInDataBox = true;
 			BarsRequiredToPlot = 0;
 			ConditionBullishBearish = true;
 			ConditionZoneStart = false;
