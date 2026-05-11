@@ -32,34 +32,8 @@ using FontStyle = SharpDX.DirectWrite.FontStyle;
 using NewsPrintLocation = NinjaTrader.NinjaScript.Indicators.Playr101.NewsSignals.NewsPrintLocation;
 #endregion
 
-// Enum used as [NinjaScriptProperty] parameter type — must live at the parent
-// NinjaTrader.NinjaScript namespace (NOT inside ...Strategies.Playr101) so NT8's
-// auto-generated wrapper code in MarketAnalyzerColumns/Strategies can resolve it
-// with bare unqualified references. See AGENTS.md gotcha #16 fix #2.
-namespace NinjaTrader.NinjaScript
-{
-    public enum HudCorner
-    {
-        TopLeft,
-        TopRight,
-        BottomLeft,
-        BottomRight,
-        Center,
-        Hidden        // alias for "do not render"; kept here so the dropdown shows it
-    }
-
-    // Same Tiny/Small/Normal/Large/Huge ladder LiquidityDeltaProfiler uses for its
-    // dashboard. Drives both font size AND box width (per-preset table) so the box
-    // tightens with the text — no more empty real-estate to the right of the panel.
-    public enum GodZillaHudSize
-    {
-        Tiny,
-        Small,
-        Normal,
-        Large,
-        Huge
-    }
-}
+// HudCorner and GodZillaHudSize are defined in GodZillaKilla.cs (NinjaTrader.NinjaScript
+// namespace). Both strategies share these enum types — define once, use from both.
 
 //This namespace holds Strategies in this folder and is required. Do not change it.
 namespace NinjaTrader.NinjaScript.Strategies.Playr101

@@ -32,6 +32,35 @@ using FontWeight = SharpDX.DirectWrite.FontWeight;
 using NewsPrintLocation = NinjaTrader.NinjaScript.Indicators.Playr101.NewsSignals.NewsPrintLocation;
 #endregion
 
+// Enums used as [NinjaScriptProperty] parameter types — must live at the parent
+// NinjaTrader.NinjaScript namespace (NOT inside ...Strategies.Playr101) so NT8's
+// auto-generated wrapper code in MarketAnalyzerColumns/Strategies can resolve them
+// with bare unqualified references. See AGENTS.md gotcha #16 fix #2.
+namespace NinjaTrader.NinjaScript
+{
+    public enum HudCorner
+    {
+        TopLeft,
+        TopRight,
+        BottomLeft,
+        BottomRight,
+        Center,
+        Hidden        // alias for "do not render"; kept here so the dropdown shows it
+    }
+
+    // Same Tiny/Small/Normal/Large/Huge ladder LiquidityDeltaProfiler uses for its
+    // dashboard. Drives both font size AND box width (per-preset table) so the box
+    // tightens with the text — no more empty real-estate to the right of the panel.
+    public enum GodZillaHudSize
+    {
+        Tiny,
+        Small,
+        Normal,
+        Large,
+        Huge
+    }
+}
+
 //This namespace holds Strategies in this folder and is required. Do not change it.
 namespace NinjaTrader.NinjaScript.Strategies.Playr101
 {
@@ -56,29 +85,6 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
     public class GodZillaKilla : Strategy, ICustomTypeDescriptor
     {
         public override string DisplayName => Name;
-
-        // Enums
-        public enum HudCorner
-        {
-            TopLeft,
-            TopRight,
-            BottomLeft,
-            BottomRight,
-            Center,
-            Hidden        // alias for "do not render"; kept here so the dropdown shows it
-        }
-
-        // Same Tiny/Small/Normal/Large/Huge ladder LiquidityDeltaProfiler uses for its
-        // dashboard. Drives both font size AND box width (per-preset table) so the box
-        // tightens with the text — no more empty real-estate to the right of the panel.
-        public enum GodZillaHudSize
-        {
-            Tiny,
-            Small,
-            Normal,
-            Large,
-            Huge
-        }
 
         public enum OrderManagementMode
         {
@@ -176,6 +182,11 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
         private string pendingSessionPnlPrintLabel = string.Empty;
         private DateTime pendingSessionPnlPrintTime = Core.Globals.MinDate;
         private string lastSessionPnlPrintKey = string.Empty;
+
+        // FixedTicks fresh-start SystemPerformance baseline.
+        // Prevents old/historical SystemPerformance trades from leaking into StartFreshOnEnable PnL.
+        private double fixedPerformanceRealizedBaseline = 0.0;
+        private bool fixedPerformanceBaselineCaptured = false;
 
         // Fresh-start inherited/open-position baseline
         private bool freshStartInheritedPositionActive = false;
@@ -394,7 +405,7 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
                 Description = "GodZillaKilla — strategy using direct KingOrderBlock/PANAKanal/ThunderZilla/SuperJumpBoost/SumoPullback child indicator signals.";
                 Name = "GodZillaKilla";
                 StrategyName = Name;
-                _strategyVersion = "1.5.2";
+                _strategyVersion = "1.5.3";
 
                 Author = "Playr101";
                 Credits = "GreyBeard, ninZa.co, RenkoKings, ES, rbro999";
@@ -469,7 +480,7 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
                 SJ_LongOperator = SignalComparisonOperator.Equal;
                 SJ_ShortOperator = SignalComparisonOperator.Equal;
                 SU_LongOperator = SignalComparisonOperator.Equal;
-                SU_ShortOperator = SignalComparisonOperator.Equal;              
+                SU_ShortOperator = SignalComparisonOperator.Equal;
 
                 // Optional second same-bar group trigger set
                 EnableGroupTriggerSet2 = false;
@@ -645,6 +656,13 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
                 SJ_SignalCloseThreshold = 70;
                 SJ_SignalQuantityPerZone = 2;
                 SJ_SignalSplit = 20;
+
+                // Indicator overlay visibility — mirrors UseXXSignals defaults
+                ShowKOIndicator = false;
+                ShowPAIndicator = true;
+                ShowTHIndicator = true;
+                ShowSJIndicator = true;
+                ShowSUIndicator = false;
 
                 // Indicator visual defaults
                 KO_Brush = Brushes.DodgerBlue;
@@ -883,7 +901,7 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
 
                     string logPath = Path.Combine(
                         NinjaTrader.Core.Globals.UserDataDir,
-                        "GodZilla_" + safeAccount + "_" + DateTime.Now.ToString("yyyyMMdd_HHmmss") + ".csv");
+                        "GodZillaKilla_" + safeAccount + "_" + DateTime.Now.ToString("yyyyMMdd_HHmmss") + ".csv");
 
                     _logWriter = new StreamWriter (logPath, append: false, encoding: Encoding.UTF8);
                     _logWriter.WriteLine ("OpenTime,Account,Instrument,OpenPrice,Qty,CloseTime,Trigger,Direction,AtmStrategy,RealizedPnL");
@@ -926,6 +944,8 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
                 ResetFixedOrderState ();
                 ResetMartingaleRecovery ();
                 ClearPendingSignalEntry ();
+
+                CaptureFixedPerformanceBaseline ();
 
                 RequestFixedPerformanceSync ();
                 _lastFixedPerfSyncUtc = DateTime.MinValue;
@@ -1582,6 +1602,9 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
             dailyUnrealizedPnL = 0.0;
             totalRunningPnL = 0.0;
 
+            fixedPerformanceRealizedBaseline = 0.0;
+            fixedPerformanceBaselineCaptured = false;
+
             dailyLimitHit = false;
             dailyPnlStatusMessage = string.Empty;
             lastTradeClosedSummary = string.Empty;
@@ -1973,11 +1996,14 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
             dailyUnrealizedPnL = normalUnrealizedPnL + GetMartingaleUnrealizedPnL ();
 
             if (!fixedTicksPnlSyncedFromPerformance)
-                dailyRealizedPnL = totalRealizedPnL - sessionStartTotalRealizedPnL;
+                dailyRealizedPnL = Math.Round (totalRealizedPnL - sessionStartTotalRealizedPnL, 2);
 
-            totalRunningPnL = totalRealizedPnL + (UseUnrealizedPnl ? dailyUnrealizedPnL : 0.0);
+            double openPnlForTotals = UseUnrealizedPnl ? dailyUnrealizedPnL : 0.0;
 
-            double dailyPnlToCheck = dailyRealizedPnL + (UseUnrealizedPnl ? dailyUnrealizedPnL : 0.0);
+            totalRunningPnL = Math.Round (totalRealizedPnL + openPnlForTotals, 2);
+
+            double dailyRunningPnL = Math.Round (dailyRealizedPnL + openPnlForTotals, 2);
+            double dailyPnlToCheck = dailyRunningPnL;
 
             if (EnableDebug)
                 Print ($"{tickTime:yyyy-MM-dd HH:mm:ss} | DAILY PNL CHECK | "
@@ -2051,6 +2077,53 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
             RequestHudRepaint ();
         }
 
+        private double GetSystemPerformanceCumProfitSafe ()
+        {
+            try
+            {
+                if (SystemPerformance == null || SystemPerformance.AllTrades == null)
+                    return 0.0;
+
+                return SystemPerformance.AllTrades.TradesPerformance.Currency.CumProfit;
+            }
+            catch
+            {
+                return 0.0;
+            }
+        }
+
+        private void CaptureFixedPerformanceBaseline ()
+        {
+            fixedPerformanceRealizedBaseline = 0.0;
+            fixedPerformanceBaselineCaptured = false;
+
+            if (!StartFreshOnEnable)
+                return;
+
+            if (OrderMode != OrderManagementMode.FixedTicks)
+                return;
+
+            fixedPerformanceRealizedBaseline = Math.Round (GetSystemPerformanceCumProfitSafe (), 2);
+            fixedPerformanceBaselineCaptured = true;
+
+            if (EnableDebug)
+            {
+                Print ($"[{Name}] FIXEDTICKS FRESH PERFORMANCE BASELINE | "
+                    + $"Baseline={fixedPerformanceRealizedBaseline:F2}");
+            }
+        }
+
+        private double GetFixedPerformanceBaseline ()
+        {
+            if (!StartFreshOnEnable)
+                return 0.0;
+
+            if (!fixedPerformanceBaselineCaptured)
+                CaptureFixedPerformanceBaseline ();
+
+            return fixedPerformanceRealizedBaseline;
+        }
+
         private void BuildDashboardSnapshot ()
         {
             try
@@ -2077,22 +2150,26 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
                 string lossStr   = EnableDailyLossLimit    ? "-$" + DailyLossLimit.ToString ("F0")   : "off";
                 _hudTargets = "Target " + targetStr + "   MaxLoss " + lossStr;
 
-                double openPnl = UseUnrealizedPnl ? dailyUnrealizedPnL : 0.0;
+                // Open PNL is ONLY open-position unrealized PNL.
+                double openPnl = dailyUnrealizedPnL;
 
-                // Separate color states:
-                // Strategy PNL = totalRunningPnL
-                // Daily PNL    = dailyRealizedPnL
-                // Open PNL     = dailyUnrealizedPnL/openPnl
-                _hudStrategyPnlPositive = totalRunningPnL >= 0;
-                _hudDailyPnlPositive = dailyRealizedPnL >= 0;
+                // Strategy PNL includes open only when UseUnrealizedPnl is true.
+                double strategyPnl = totalRealizedPnL + (UseUnrealizedPnl ? openPnl : 0.0);
+
+                // Daily PNL is daily/session realized + open unrealized when UseUnrealizedPnl is true.
+                double dailyPnl = dailyRealizedPnL + (UseUnrealizedPnl ? openPnl : 0.0);
+
+                strategyPnl = Math.Round (strategyPnl, 2);
+                dailyPnl = Math.Round (dailyPnl, 2);
+                openPnl = Math.Round (openPnl, 2);
+
+                _hudStrategyPnlPositive = strategyPnl >= 0;
+                _hudDailyPnlPositive = dailyPnl >= 0;
                 _hudOpenPnlPositive = openPnl >= 0;
 
-                _hudStrategyPnl = "Strategy PNL " + FormatMoney (totalRunningPnL);
-                _hudDailyPnl = "Daily PNL " + FormatMoney (dailyRealizedPnL);
-
-                _hudPnlOpen = UseUnrealizedPnl
-                    ? "Open PNL  " + FormatMoney (openPnl)
-                    : "";
+                _hudStrategyPnl = "Strategy PNL " + FormatMoney (strategyPnl);
+                _hudDailyPnl = "Daily PNL    " + FormatMoney (dailyPnl);
+                _hudPnlOpen = "Open PNL     " + FormatMoney (openPnl);
 
                 _hudKillHit = dailyLimitHit;
                 _hudKillProfit = dailyLimitHit
@@ -2555,10 +2632,11 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
 
                 EnsureDashboardFonts ();
 
-                const float PAD      = 8f;
-                const float SEP_H    = 4f;
-                const float MARGIN_X = 18f;
-                const float MARGIN_Y = 35f;
+                const float PAD              = 8f;
+                const float SEP_H            = 4f;
+                const float MARGIN_X         = 18f;
+                const float MARGIN_Y         = 35f;
+                const float RIGHT_AXIS_PAD   = 80f;
 
                 float ROW_H   = HudRowHeight ();
                 float TITLE_H = HudTitleHeight ();
@@ -2574,10 +2652,9 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
                 if (showNews && !string.IsNullOrEmpty (news))
                     rows++;
 
-                rows++; // strategy/daily pnl row
-
-                if (!string.IsNullOrEmpty (pnlOpen))
-                    rows++;
+                rows++; // strategy pnl
+                rows++; // daily pnl
+                rows++; // open pnl
 
                 rows++; // targets
                 rows++; // status
@@ -2599,7 +2676,7 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
                         break;
 
                     case HudCorner.TopRight:
-                        bx = rtSize.Width - BOX_W - MARGIN_X;
+                        bx = rtSize.Width - BOX_W - MARGIN_X - RIGHT_AXIS_PAD;
                         by = MARGIN_Y;
                         break;
 
@@ -2615,7 +2692,7 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
 
                     case HudCorner.BottomRight:
                     default:
-                        bx = rtSize.Width - BOX_W - MARGIN_X;
+                        bx = rtSize.Width - BOX_W - MARGIN_X - RIGHT_AXIS_PAD;
                         by = rtSize.Height - boxH - MARGIN_Y;
                         break;
                 }
@@ -2627,8 +2704,8 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
                 if (by < 4f)
                     by = 4f;
 
-                if (bx + BOX_W > rtSize.Width - 4f)
-                    bx = rtSize.Width - BOX_W - 4f;
+                if (bx + BOX_W > rtSize.Width - RIGHT_AXIS_PAD - 4f)
+                    bx = rtSize.Width - BOX_W - RIGHT_AXIS_PAD - 4f;
 
                 if (by + boxH > rtSize.Height - 4f)
                     by = rtSize.Height - boxH - 4f;
@@ -2695,25 +2772,24 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
                     y += ROW_H;
                 }
 
-                // Strategy PNL and Daily PNL use separate colors on the same row.
-                float strategyWidth = w * 0.52f;
-                float dailyX        = x + strategyWidth;
-                float dailyWidth    = w - strategyWidth;
-
+                // Strategy PNL.
                 DrawHudLine (
                     strategyPnl,
                     x,
                     y,
-                    strategyWidth,
+                    w,
                     ROW_H,
                     strategyPnlPositive ? _bTextGreen : _bTextRed,
                     _dashFormat);
 
+                y += ROW_H;
+
+                // Daily PNL.
                 DrawHudLine (
                     dailyPnl,
-                    dailyX,
+                    x,
                     y,
-                    dailyWidth,
+                    w,
                     ROW_H,
                     dailyPnlPositive ? _bTextGreen : _bTextRed,
                     _dashFormat);
@@ -2721,19 +2797,16 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
                 y += ROW_H;
 
                 // Open PNL.
-                if (!string.IsNullOrEmpty (pnlOpen))
-                {
-                    DrawHudLine (
-                        pnlOpen,
-                        x,
-                        y,
-                        w,
-                        ROW_H,
-                        openPnlPositive ? _bTextGreen : _bTextRed,
-                        _dashFormat);
+                DrawHudLine (
+                    pnlOpen,
+                    x,
+                    y,
+                    w,
+                    ROW_H,
+                    openPnlPositive ? _bTextGreen : _bTextRed,
+                    _dashFormat);
 
-                    y += ROW_H;
-                }
+                y += ROW_H;
 
                 // Targets.
                 DrawHudLine (
@@ -4393,7 +4466,6 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
                 return;
 
             double cumulativeClosed = 0.0;
-            double dailyClosed = 0.0;
             Trade lastTrade = null;
 
             try
@@ -4403,6 +4475,20 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
 
                 cumulativeClosed = SystemPerformance.AllTrades.TradesPerformance.Currency.CumProfit;
 
+                double baseline = GetFixedPerformanceBaseline ();
+                double adjustedCumulativeClosed = cumulativeClosed - baseline;
+
+                // Strategy PNL closed component.
+                // In StartFreshOnEnable mode, this ignores all historical trades before enable.
+                totalRealizedPnL = Math.Round (adjustedCumulativeClosed, 2);
+
+                // Daily/session closed PNL should be based on the session baseline,
+                // not calendar-date AllTrades scanning. This prevents flicker between
+                // historical same-day trades and fresh runtime PNL.
+                dailyRealizedPnL = Math.Round (totalRealizedPnL - sessionStartTotalRealizedPnL, 2);
+
+                // Last trade display can still inspect trades, but do not use calendar-date
+                // totals to drive Daily PNL.
                 for (int i = 0; i < SystemPerformance.AllTrades.Count; i++)
                 {
                     Trade trade = SystemPerformance.AllTrades[i];
@@ -4410,25 +4496,27 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
                     if (trade == null || trade.Exit == null)
                         continue;
 
-                    if (trade.Exit.Time.Date == tickTime.Date)
+                    if (StartFreshOnEnable && freshStartInheritedCaptureTime != Core.Globals.MinDate)
                     {
-                        dailyClosed += trade.ProfitCurrency;
-
-                        if (lastTrade == null || trade.Exit.Time > lastTrade.Exit.Time)
-                            lastTrade = trade;
+                        if (trade.Exit.Time < freshStartInheritedCaptureTime)
+                            continue;
                     }
-                }
 
-                totalRealizedPnL = Math.Round (cumulativeClosed, 2);
-                dailyRealizedPnL = Math.Round (dailyClosed, 2);
+                    if (lastTrade == null || trade.Exit.Time > lastTrade.Exit.Time)
+                        lastTrade = trade;
+                }
 
                 if (lastTrade != null)
                 {
-                    string result = lastTrade.ProfitCurrency >= 0 ? "WIN" : "LOSS";
+                    double lastPnl = Math.Round (lastTrade.ProfitCurrency, 2);
+                    string result = lastPnl >= 0 ? "WIN" : "LOSS";
+
+                    lastTradeClosedPnL = lastPnl;
+                    hasLastTradeClosedPnL = true;
 
                     lastTradeClosedSummary =
                         "Last: " + result
-                        + " | PnL " + lastTrade.ProfitCurrency.ToString ("C")
+                        + " | PnL " + lastPnl.ToString ("C")
                         + " | Exit " + lastTrade.Exit.Time.ToString ("HH:mm:ss");
                 }
             }
@@ -7641,7 +7729,7 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
         public bool EnableMartingaleOnStopLoss
         {
             get; set;
-        }      
+        }
 
         // ==================== Session Parameters ====================
         [Display (Name = "Enable TF 1", Order = 1, GroupName = "Session Parameters")]
