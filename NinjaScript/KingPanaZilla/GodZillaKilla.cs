@@ -32,35 +32,6 @@ using FontWeight = SharpDX.DirectWrite.FontWeight;
 using NewsPrintLocation = NinjaTrader.NinjaScript.Indicators.Playr101.NewsSignals.NewsPrintLocation;
 #endregion
 
-// Enums used as [NinjaScriptProperty] parameter types — must live at the parent
-// NinjaTrader.NinjaScript namespace (NOT inside ...Strategies.Playr101) so NT8's
-// auto-generated wrapper code in MarketAnalyzerColumns/Strategies can resolve them
-// with bare unqualified references. See AGENTS.md gotcha #16 fix #2.
-namespace NinjaTrader.NinjaScript
-{
-    public enum HudCorner
-    {
-        TopLeft,
-        TopRight,
-        BottomLeft,
-        BottomRight,
-        Center,
-        Hidden        // alias for "do not render"; kept here so the dropdown shows it
-    }
-
-    // Same Tiny/Small/Normal/Large/Huge ladder LiquidityDeltaProfiler uses for its
-    // dashboard. Drives both font size AND box width (per-preset table) so the box
-    // tightens with the text — no more empty real-estate to the right of the panel.
-    public enum GodZillaHudSize
-    {
-        Tiny,
-        Small,
-        Normal,
-        Large,
-        Huge
-    }
-}
-
 //This namespace holds Strategies in this folder and is required. Do not change it.
 namespace NinjaTrader.NinjaScript.Strategies.Playr101
 {
@@ -85,6 +56,27 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
     public class GodZillaKilla : Strategy, ICustomTypeDescriptor
     {
         public override string DisplayName => Name;
+
+        // Enums — nested inside the class so GodZillaKilla.cs is fully self-contained
+        // and does not conflict with GodZilla.cs (which defines its own copies).
+        public enum HudCorner
+        {
+            TopLeft,
+            TopRight,
+            BottomLeft,
+            BottomRight,
+            Center,
+            Hidden
+        }
+
+        public enum GodZillaHudSize
+        {
+            Tiny,
+            Small,
+            Normal,
+            Large,
+            Huge
+        }
 
         public enum OrderManagementMode
         {

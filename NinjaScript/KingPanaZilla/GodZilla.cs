@@ -32,9 +32,6 @@ using FontStyle = SharpDX.DirectWrite.FontStyle;
 using NewsPrintLocation = NinjaTrader.NinjaScript.Indicators.Playr101.NewsSignals.NewsPrintLocation;
 #endregion
 
-// HudCorner and GodZillaHudSize are defined in GodZillaKilla.cs (NinjaTrader.NinjaScript
-// namespace). Both strategies share these enum types — define once, use from both.
-
 //This namespace holds Strategies in this folder and is required. Do not change it.
 namespace NinjaTrader.NinjaScript.Strategies.Playr101
 {
@@ -60,6 +57,27 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
     public class GodZilla : Strategy, ICustomTypeDescriptor
     {
         public override string DisplayName => Name;
+
+        // Enums — nested inside the class so GodZilla.cs is fully self-contained
+        // and does not conflict with GodZillaKilla.cs (which defines identical copies).
+        public enum HudCorner
+        {
+            TopLeft,
+            TopRight,
+            BottomLeft,
+            BottomRight,
+            Center,
+            Hidden
+        }
+
+        public enum GodZillaHudSize
+        {
+            Tiny,
+            Small,
+            Normal,
+            Large,
+            Huge
+        }
 
         #region Variables
         // Drawing
