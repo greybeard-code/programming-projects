@@ -470,7 +470,7 @@ public class gbSuperJumpBoost : Indicator
 	public bool SwitchedOn { get; set; }
 
 	[Display(Name = "Version", Order = 10, GroupName = "Developer")]
-	public string Version => "1.0";
+	public string Version => "1.0.1";
 
 	[Display(Name = "Screen DPI", Order = 100, GroupName = "General")]
 	public int ScreenDPI { get; set; }
