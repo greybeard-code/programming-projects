@@ -97,12 +97,6 @@ namespace NinjaTrader.NinjaScript.Indicators.GreyBeard
 		[Display(Name = "Update", Order = 10, GroupName = "Developer")]
 		public new string Update { get { return "11 May 2026"; } }
 
-		[Display(Name = "Logo: Enabled", Order = 20, GroupName = "Developer")]
-		public bool LogoEnabled { get; set; }
-
-		[Display(Name = "Instruction: Enabled", Order = 30, GroupName = "Developer")]
-		public bool InstructionEnabled { get; set; }
-
 		// ── General ───────────────────────────────────────────────────────────────
 
 		[Range(99, 500)]
@@ -329,8 +323,6 @@ namespace NinjaTrader.NinjaScript.Indicators.GreyBeard
 					this.MarkerFont            = new SimpleFont("Arial", 26);
 					this.MarkerOffset          = 10;
 					this.AlertBlockingSeconds  = 60;
-					this.LogoEnabled           = true;
-					this.InstructionEnabled    = true;
 					this.ScreenDPI             = 99;
 					this.PlotEnabled           = true;
 					this.PlotRise              = Brushes.DodgerBlue;
