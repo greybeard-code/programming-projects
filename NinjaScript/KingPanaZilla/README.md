@@ -200,6 +200,27 @@ A **multi-MA cloud pullback indicator** that signals when a two-candle reversal 
 
 ---
 
+### gbNobleCloud — Noble Cloud
+
+A **kernel-envelope trend and signal indicator** that wraps a smoothed baseline MA in dynamic standard-deviation bands and fires trade signals when price wicks through a band boundary and closes back inside, confirming cloud re-entry. *Adapted from DDNobleCloud by DD — Thanks DD!*
+
+**How it works:**
+
+1. **Baseline** — a configurable MA (`BaselineMAType`, `BaselinePeriod`) with an optional second smoothing pass (`BaselineSmoothingEnabled`, `BaselineSmoothingMethod`, `BaselineSmoothingPeriod`). Plotted as a dashed line, coloured by rising/falling direction (`PlotRise` / `PlotFall`).
+2. **Kernel bands** — a separate MA (`KernelMAType`, `KernelPeriod`, optional smoothing) anchors a dynamic envelope. Upper and lower thresholds are set at `kernel ± (Sensitivity / 50) × StdDev(KernelPeriod)`. An optional EMA smoothing pass (`Smoothness`) reduces band noise.
+3. **Cloud state machine** — when the baseline crosses above the upper threshold the indicator enters a *bearish cloud* (`cloudState = −1`); when it crosses below the lower threshold, a *bullish cloud* (`cloudState = +1`). A `barCount_Baseline` counter increments each bar the cloud state holds.
+4. **Bar filter** — signals are only eligible between `FilterBarMin` and `FilterBarMax` bars into a cloud run, avoiding early false signals and ignoring stale cloud entries.
+5. **Trade signals:**
+   - **Bullish** — inside a bullish cloud, the low wicks below the lower threshold and the close re-enters above it; prior candle bearish, current candle bullish; within the `SignalSplit` spacing window.
+   - **Bearish** — inside a bearish cloud, the high touches the upper threshold and the close falls back below it; prior candle bullish, current candle bearish.
+6. **Visuals** — signal bars are painted (bias-based optional), text markers drawn at a configurable offset above/below the bar, and a `Draw.Region` cloud is shaded between the baseline and the active band for the full duration of the cloud run.
+
+**Output plots:** `Baseline`, `Signal_Cloud` (±1 = cloud state, 0 = neutral), `Signal_Trade` (±1 = signal bar)
+
+**Key parameters:** `Sensitivity`, `Smoothness`, `BaselineMAType` / `BaselinePeriod` / smoothing options, `KernelMAType` / `KernelPeriod` / smoothing options, `SignalSplit`, `FilterEnabled` / `FilterBarMin` / `FilterBarMax`
+
+---
+
 ## Common Features (all indicators)
 
 | Feature | Details |
@@ -356,6 +377,24 @@ The writer is flushed after every row and closed cleanly when the strategy is re
 
 ---
 
+### GodZilla — Rolling-Consensus ATM Strategy
+
+An **ATM-mode strategy** that loads `gbKingPanaZilla`, `gbSumoPullback`, and `gbSuperJumpBoost` and requires a configurable number of them to agree before submitting an entry. A rolling bar window determines how far back a signal from each indicator remains eligible to contribute to a consensus trigger.
+
+**How it works:**
+
+1. **Rolling consensus** — on each bar, the strategy looks back up to `RollingWindowBars` bars for the most recent `Signal_Trade` from each of the three indicators. The count of indicators currently signalling in the same direction is compared against `RequiredSignalCount`. When the threshold is met, a long or short ATM entry is submitted.
+2. **Indicator signals used:** `gbKingPanaZilla.PanaZilla_Trade`, `gbSumoPullback.Signal_Trade`, `gbSuperJumpBoost.Signal_Trade`.
+3. **ATM order submission** — entries placed via `AtmStrategyCreate`; only one position open at a time.
+4. **Risk management** — daily profit target and daily loss limit checked tick-by-tick. Breach flattens all positions and blocks new entries for the session.
+5. **Session filters** — two independent time windows (TF1, TF2) restrict trading hours, each with optional flatten-at-close.
+6. **News filter** — `NewsSignals`-based pre/post blocking; disabled automatically in Strategy Analyzer, backtest, and Market Replay.
+7. **Button panel** — on-chart WPF panel with arm-long / arm-short / auto-arm / close-all buttons and a live status label.
+
+**Output plots:** `Signal_Cloud`, `Signal_Trade`
+
+---
+
 ### GodZillaKilla — Direct-Signal ATM Strategy by Playr101
 
 An **ATM-mode strategy** (v1.5.2) that reads all five suite indicators directly — `gbKingOrderBlock`, `gbPANAKanal`, `gbThunderZilla`, `gbSuperJumpBoost`, and `gbSumoPullback` — without the `gbKingPanaZilla` intermediary. Two independently-configurable signal **Sets** define which indicators must agree and at what threshold before an entry is submitted.
@@ -444,8 +483,10 @@ KingPanaZilla/
 ├── gbBarStatus.cs              — Bar completion progress display (standalone)
 ├── gbSuperJumpBoost.cs         — ATR-derived multi-level zone indicator (standalone)
 ├── gbSumoPullback.cs           — Multi-MA cloud pullback indicator (standalone)
+├── gbNobleCloud.cs             — Noble Cloud kernel-envelope trend indicator (standalone, adapted from DDNobleCloud)
 ├── NewsSignals.cs              — Economic calendar news filter indicator (Playr101)
 ├── gbKingPanaZillaKillah.cs    — ATM strategy driven by gbKingPanaZilla signals (Playr101)
+├── GodZilla.cs                 — Rolling-consensus ATM strategy (gbKingPanaZilla + gbSumoPullback + gbSuperJumpBoost)
 ├── GodZillaKilla.cs            — Direct-signal ATM strategy using all five indicators (Playr101)
 └── originals/                  — Unmodified vendor source files
     ├── RenkoKings_KingOrderBlock.cs
@@ -456,7 +497,7 @@ KingPanaZilla/
     └── RenkoKings_SumoPullback.cs
 ```
 
-Each indicator is its own file. `gbKingPanaZilla` references the three child indicators and must be compiled after them. `gbSuperJumpBoost` and `gbSumoPullback` are fully standalone. `NewsSignals` is standalone. `gbKingPanaZillaKillah` references both the `gbKingPanaZilla` and `NewsSignals` namespaces. `GodZillaKilla` references all five suite indicators and `NewsSignals` directly — both strategy files must be compiled last.
+Each indicator is its own file. `gbKingPanaZilla` references the three child indicators and must be compiled after them. `gbSuperJumpBoost`, `gbSumoPullback`, and `gbNobleCloud` are fully standalone. `NewsSignals` is standalone. `gbKingPanaZillaKillah` references both the `gbKingPanaZilla` and `NewsSignals` namespaces. `GodZilla` references `gbKingPanaZilla`, `gbSumoPullback`, `gbSuperJumpBoost`, and `NewsSignals`. `GodZillaKilla` references all five suite indicators and `NewsSignals` directly — all strategy files must be compiled last.
 
 ## Installation
 
@@ -466,14 +507,16 @@ Copy the indicator and strategy files into their respective NinjaTrader 8 custom
 Documents\NinjaTrader 8\bin\Custom\Indicators\   ← gbKingOrderBlock.cs, gbPANAKanal.cs,
                                                       gbThunderZilla.cs, gbKingPanaZilla.cs,
                                                       gbBarStatus.cs, gbSuperJumpBoost.cs,
-                                                      gbSumoPullback.cs, NewsSignals.cs
-Documents\NinjaTrader 8\bin\Custom\Strategies\   ← gbKingPanaZillaKillah.cs, GodZillaKilla.cs
+                                                      gbSumoPullback.cs, gbNobleCloud.cs,
+                                                      NewsSignals.cs
+Documents\NinjaTrader 8\bin\Custom\Strategies\   ← gbKingPanaZillaKillah.cs, GodZilla.cs,
+                                                      GodZillaKilla.cs
 ```
 
 Then compile via **NinjaTrader → Tools → Edit NinjaScript → Compile**.
 
-Compile order matters: the three child indicators (`gbKingOrderBlock`, `gbPANAKanal`, `gbThunderZilla`) must compile before `gbKingPanaZilla`. `gbSuperJumpBoost`, `gbSumoPullback`, and `NewsSignals` are standalone and can compile in any order. Both strategy files (`gbKingPanaZillaKillah`, `GodZillaKilla`) must compile after all indicators.
+Compile order matters: the three child indicators (`gbKingOrderBlock`, `gbPANAKanal`, `gbThunderZilla`) must compile before `gbKingPanaZilla`. `gbSuperJumpBoost`, `gbSumoPullback`, `gbNobleCloud`, and `NewsSignals` are standalone and can compile in any order. All strategy files (`gbKingPanaZillaKillah`, `GodZilla`, `GodZillaKilla`) must compile after all indicators.
 
 ---
 
-*GreyBeard — KingPanaZilla indicator suite | gbKingPanaZillaKillah strategy by Playr101*
+*GreyBeard — KingPanaZilla indicator suite | gbKingPanaZillaKillah & GodZillaKilla strategies by Playr101 | gbNobleCloud adapted from DDNobleCloud by DD*
