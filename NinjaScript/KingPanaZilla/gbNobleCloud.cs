@@ -94,9 +94,6 @@ namespace NinjaTrader.NinjaScript.Indicators.GreyBeard
 		[Display(Name = "Author", Order = 5, GroupName = "Developer")]
 		public string Author => "GreyBeard";
 
-		[Display(Name = "Update", Order = 10, GroupName = "Developer")]
-		public new string Update { get { return "11 May 2026"; } }
-
 		// ── General ───────────────────────────────────────────────────────────────
 
 		[Range(99, 500)]
