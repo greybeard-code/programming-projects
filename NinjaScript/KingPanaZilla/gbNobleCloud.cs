@@ -13,12 +13,11 @@ using NinjaTrader.Gui;
 using NinjaTrader.Gui.Chart;
 using NinjaTrader.Gui.Tools;
 using NinjaTrader.NinjaScript.DrawingTools;
+using NinjaTrader.NinjaScript.Indicators.GreyBeard;
 #endregion
 
-namespace NinjaTrader.NinjaScript.Indicators
+namespace NinjaTrader.NinjaScript.Indicators.GreyBeard
 {
-	// Shared MA type enum — defined here so the NinjaScript generated code region
-	// (also in this namespace) can reference it without qualification.
 	public enum gb_MAType
 	{
 		DEMA,
@@ -33,10 +32,7 @@ namespace NinjaTrader.NinjaScript.Indicators
 		WilderMA,
 		ZLEMA
 	}
-}
 
-namespace NinjaTrader.NinjaScript.Indicators.GreyBeard
-{
 	[CategoryOrder("General",    1000010)]
 	[CategoryOrder("Alerts",     1000040)]
 	[CategoryOrder("Graphics",   1000020)]
