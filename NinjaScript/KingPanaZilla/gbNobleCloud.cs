@@ -333,7 +333,7 @@ namespace NinjaTrader.NinjaScript.Indicators.GreyBeard.KingPanaZilla
 					this.CloudBullish          = Brushes.Teal;
 					this.CloudBearish          = Brushes.DarkSlateBlue;
 					this.CloudOpacity          = 100;
-					this.Sensitivity           = 100.0;
+					this.Sensitivity           = 60.0;
 					this.Smoothness            = 1;
 					this.BaselineMAType        = gb_MAType.SMA;
 					this.BaselinePeriod        = 60;

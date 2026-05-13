@@ -694,7 +694,7 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
                 SU_SignalSplitSecond = 30;
 
                     // ── NobleCloud ──────────────────────────────────────────────────────────
-                    NC_Sensitivity                      = 100.0;
+                    NC_Sensitivity                      = 60.0;
                     NC_Smoothness                       = 1;
                     NC_BaselineMAType                   = gb_MAType.SMA;
                     NC_BaselinePeriod                   = 60;
