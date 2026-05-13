@@ -397,7 +397,7 @@ An **ATM-mode strategy** that loads `gbKingPanaZilla`, `gbSumoPullback`, and `gb
 
 ### GodZillaKilla — Direct-Signal ATM Strategy by Playr101
 
-An **ATM-mode strategy** (v1.5.2) that reads all five suite indicators directly — `gbKingOrderBlock`, `gbPANAKanal`, `gbThunderZilla`, `gbSuperJumpBoost`, and `gbSumoPullback` — without the `gbKingPanaZilla` intermediary. Two independently-configurable signal **Sets** define which indicators must agree and at what threshold before an entry is submitted.
+An **ATM-mode strategy** (v1.6.2) that reads all six suite indicators directly — `gbKingOrderBlock`, `gbPANAKanal`, `gbThunderZilla`, `gbSuperJumpBoost`, `gbSumoPullback`, and `gbNobleCloud` — without the `gbKingPanaZilla` intermediary. Two independently-configurable signal **Sets** define which indicators must agree and at what threshold before an entry is submitted.
 
 **How it works:**
 
@@ -410,8 +410,9 @@ An **ATM-mode strategy** (v1.5.2) that reads all five suite indicators directly 
    | `gbThunderZilla` | `Signal_Trade ≥` threshold (1=Trend Start, 2=Slowdown, 3=Pullback, 4=Move Stop) | `Signal_Trade ≤` threshold |
    | `gbSuperJumpBoost` | `Signal_Trade ≥` threshold (1=Return, 2=Zone Start) | `Signal_Trade ≤` threshold |
    | `gbSumoPullback` | `Signal_Trade ≥` threshold (1=Pullback) | `Signal_Trade ≤` threshold |
+   | `gbNobleCloud` | `Signal_Trade = 1` (cloud re-entry bullish) | `Signal_Trade = −1` (cloud re-entry bearish) |
 
-   The trigger label written to the trade log encodes which indicators fired and the Set that triggered (e.g. `SET1-G3:PA+TH+SJ`).
+   The trigger label written to the trade log encodes which indicators fired and the Set that triggered (e.g. `SET1-G3:PA+TH+SJ`, `SET1-G5:PA+TH+SJ+SU+NC`).
 
 2. **EMA filter** — when enabled, longs require the short EMA to be above the long EMA; shorts require it below. Configurable short and long EMA periods.
 
@@ -427,11 +428,13 @@ An **ATM-mode strategy** (v1.5.2) that reads all five suite indicators directly 
 
 8. **Naked-position watchdog** — wall-clock throttled (runs in realtime only). Detects positions that have no active ATM or working protective orders and immediately flattens them.
 
-9. **Signal tracking** — when enabled, per-indicator win/loss counters are displayed in the dashboard HUD after each trade closes, broken out by which indicators contributed to the trigger.
+9. **Signal tracking** — when enabled, per-indicator win/loss counters are displayed in the dashboard HUD after each trade closes, broken out by which indicators contributed to the trigger. The HUD signal list shows all indicators enabled across Set 1 and Set 2.
 
 10. **ATM trade markers** — draws a coloured entry-to-exit line on the price panel for each completed ATM trade. The exit text label (entry price, exit price) appears only after the trade closes, not during the open trade.
 
 11. **Button panel** — on-chart WPF panel with arm-long / arm-short / auto-arm / close-all buttons and a live status label.
+
+12. **Stability hardening** — thread-safe trade map (`ConcurrentDictionary`), stale ATM ID eviction (prevents log flooding and UI thread starvation on dropped ATM callbacks), rolling draw-object pool eviction (prevents "Not Enough Quota" WPF lockup in long sessions), and WPF button handler cleanup on disable (prevents memory leak across enable/disable cycles).
 
 **Key parameters:**
 
@@ -442,7 +445,7 @@ An **ATM-mode strategy** (v1.5.2) that reads all five suite indicators directly 
 | ATM Parameters | `MartingaleAtmStrategy` | *(optional)* |
 | Signals | `EnableSignalTracking` | `false` |
 | Signals | `Set1RequiredCount` | 1 |
-| Signals | `Set1Use{KO/PA/TH/SJ/SU}`, threshold values | per-indicator |
+| Signals | `Set1Use{KO/PA/TH/SJ/SU/NC}`, threshold values | per-indicator |
 | Signals | `Set2EnableGroupTrigger` | `false` |
 | Filters | `EnableNewsFilter` | `false` |
 | Filters | `EnableEmaFilter` / `EmaShortPeriod` / `EmaLongPeriod` | `false` / 9 / 21 |
@@ -468,7 +471,7 @@ OpenTime,Account,Instrument,OpenPrice,Qty,CloseTime,Trigger,Direction,AtmStrateg
 2026-04-29 10:32:03,Playback101,MNQ 06-26,27272.75,4,2026-04-29 10:32:13,SET1-G3:PA+TH+SJ,Long,Godzilla_ATM_MNQ_NR_50-3,47.25
 ```
 
-The trigger field encodes the Set name, group size (number of indicators that fired), and the abbreviated indicator names (`KO`=KingOrderBlock, `PA`=PANAKanal, `TH`=ThunderZilla, `SJ`=SuperJumpBoost, `SU`=SumoPullback).
+The trigger field encodes the Set name, group size (number of indicators that fired), and the abbreviated indicator names (`KO`=KingOrderBlock, `PA`=PANAKanal, `TH`=ThunderZilla, `SJ`=SuperJumpBoost, `SU`=SumoPullback, `NC`=NobleCloud).
 
 ---
 
@@ -487,7 +490,7 @@ KingPanaZilla/
 ├── NewsSignals.cs              — Economic calendar news filter indicator (Playr101)
 ├── gbKingPanaZillaKillah.cs    — ATM strategy driven by gbKingPanaZilla signals (Playr101)
 ├── GodZilla.cs                 — Rolling-consensus ATM strategy (gbKingPanaZilla + gbSumoPullback + gbSuperJumpBoost)
-├── GodZillaKilla.cs            — Direct-signal ATM strategy using all five indicators (Playr101)
+├── GodZillaKilla.cs            — Direct-signal ATM strategy using all six indicators (Playr101)
 └── originals/                  — Unmodified vendor source files
     ├── RenkoKings_KingOrderBlock.cs
     ├── RenkoKings_ThunderZilla.cs
@@ -497,7 +500,7 @@ KingPanaZilla/
     └── RenkoKings_SumoPullback.cs
 ```
 
-Each indicator is its own file. `gbKingPanaZilla` references the three child indicators and must be compiled after them. `gbSuperJumpBoost`, `gbSumoPullback`, and `gbNobleCloud` are fully standalone. `NewsSignals` is standalone. `gbKingPanaZillaKillah` references both the `gbKingPanaZilla` and `NewsSignals` namespaces. `GodZilla` references `gbKingPanaZilla`, `gbSumoPullback`, `gbSuperJumpBoost`, and `NewsSignals`. `GodZillaKilla` references all five suite indicators and `NewsSignals` directly — all strategy files must be compiled last.
+Each indicator is its own file. `gbKingPanaZilla` references the three child indicators and must be compiled after them. `gbSuperJumpBoost`, `gbSumoPullback`, and `gbNobleCloud` are fully standalone. `NewsSignals` is standalone. `gbKingPanaZillaKillah` references both the `gbKingPanaZilla` and `NewsSignals` namespaces. `GodZilla` references `gbKingPanaZilla`, `gbSumoPullback`, `gbSuperJumpBoost`, and `NewsSignals`. `GodZillaKilla` references all six suite indicators and `NewsSignals` directly — all strategy files must be compiled last.
 
 ## Installation
 
