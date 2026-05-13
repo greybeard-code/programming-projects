@@ -89,7 +89,7 @@ namespace NinjaTrader.NinjaScript.Indicators.GreyBeard.KingPanaZilla
 		// Thanks DD!
 
 		[Display(Name = "Version", Order = 0, GroupName = "Developer")]
-		public string Version => "1.01";
+		public string Version => "1.0.2";
 
 		[Display(Name = "Author", Order = 5, GroupName = "Developer")]
 		public string Author => "GreyBeard";
