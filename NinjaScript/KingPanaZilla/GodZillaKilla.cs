@@ -442,7 +442,7 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
                 Description = "GodZillaKilla — strategy using direct KingOrderBlock/PANAKanal/ThunderZilla/SuperJumpBoost/SumoPullback child indicator signals.";
                 Name = "GodZillaKilla";
                 StrategyName = Name;
-                _strategyVersion = "1.6.2";
+                _strategyVersion = "1.6.3";
 
                 Author = "Playr101";
                 Credits = "GreyBeard, ninZa.co, RenkoKings, ES, rbro999";
@@ -1889,8 +1889,25 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
                 {
                     Cbi.MarketPosition atmPos;
 
+                    // Capture the ID before TryGetAtmMarketPositionSafe can clear it (it takes ref).
+                    // Needed so we can write the log record if the ATM was force-closed
+                    // (FlattenEverything → AtmStrategyClose tears down the ID before the normal
+                    // flat-detection path can fire WriteTradeLogRecord).
+                    string savedAtmId = atmStrategyId;
+
                     if (!TryGetAtmMarketPositionSafe (ref atmStrategyId, "Normal", out atmPos))
                     {
+                        // ATM ID gone — salvage the trade log record before discarding it.
+                        // dailyUnrealizedPnL holds the last known unrealized PnL from the previous
+                        // tick (the best estimate of the forced-close PnL we have).
+                        if (_atmPositionConfirmed && !string.IsNullOrEmpty (savedAtmId))
+                        {
+                            double forcedPnl = Instrument.MasterInstrument.RoundToTickSize (dailyUnrealizedPnL);
+                            if (EnableDebug)
+                                Print ($"[{Name}] FORCED-CLOSE LOG | ATM={savedAtmId} | EstPnL={forcedPnl:F2}");
+                            WriteTradeLogRecord (savedAtmId, tickTime, forcedPnl);
+                            _tradeMap.TryRemove (savedAtmId, out _);
+                        }
                         ClearNormalAtmState ("Normal ATM ID no longer exists");
                         dailyUnrealizedPnL = 0.0;
                         return;
@@ -5288,6 +5305,15 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
             }
             catch
             {
+                // ATM ID gone — salvage the trade log record before returning.
+                if (martingalePositionConfirmed && !string.IsNullOrEmpty (martingaleAtmStrategyId))
+                {
+                    double forcedPnl = Instrument.MasterInstrument.RoundToTickSize (dailyUnrealizedPnL);
+                    if (EnableDebug)
+                        Print ($"[{Name}] FORCED-CLOSE MARTINGALE LOG | ATM={martingaleAtmStrategyId} | EstPnL={forcedPnl:F2}");
+                    WriteTradeLogRecord (martingaleAtmStrategyId, tickTime, forcedPnl);
+                    _tradeMap.TryRemove (martingaleAtmStrategyId, out _);
+                }
                 return;
             }
 
