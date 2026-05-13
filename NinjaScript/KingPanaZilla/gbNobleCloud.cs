@@ -401,7 +401,7 @@ namespace NinjaTrader.NinjaScript.Indicators.GreyBeard.KingPanaZilla
 		{
 			try
 			{
-				double stdDev = base.StdDev(base.Input, this.KernelPeriod)[0];
+				double stdDev = StdDev(base.Input, this.KernelPeriod)[0];
 				this.seriesUpperThresholdRaw[0]      = this.kernelSmoothed[0] + this.effectiveSensitivity * stdDev;
 				this.seriesLowerThresholdRaw[0]      = this.kernelSmoothed[0] - this.effectiveSensitivity * stdDev;
 				this.seriesUpperThresholdSmoothed[0] = this.thresholdSmoothingEnabled ? this.ComputeMAValue(this.seriesUpperThresholdRaw, gb_MAType.EMA, this.Smoothness) : this.seriesUpperThresholdRaw[0];
