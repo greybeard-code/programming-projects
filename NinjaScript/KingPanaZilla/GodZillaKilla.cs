@@ -48,6 +48,7 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
     [CategoryOrder ("Indicator: ThunderZilla", 9)]
     [CategoryOrder ("Indicator: SuperJumpBoost", 10)]
     [CategoryOrder ("Indicator: SumoPullback", 11)]
+    [CategoryOrder ("Indicator: NobleCloud",   12)]
     [CategoryOrder ("Display", 12)]
     [CategoryOrder ("Audio Alerts", 13)]
     [CategoryOrder ("Logging", 14)]
@@ -7350,26 +7351,26 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
 
         // ══════════════════════════ Set 1 · NobleCloud ══════════════════════════
         [NinjaScriptProperty]
-        [Display(Name = "NC: Use NobleCloud Signals", Order = 70, GroupName = "Signals",
+        [Display(Name = "Set 1 Use NobleCloud", Order = 70, GroupName = "Signals",
             Description = "Use gbNobleCloud Signal_Trade as a Set 1 entry source. +1 = bullish, -1 = bearish.")]
         [RefreshProperties(RefreshProperties.All)]
         public bool UseNCSignals { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "NC: Long Operator", Order = 71, GroupName = "Signals")]
+        [Display(Name = "Set 1 NobleCloud Long Operator", Order = 71, GroupName = "Signals")]
         public SignalComparisonOperator NC_LongOperator { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "NC: Long Value", Order = 72, GroupName = "Signals",
+        [Display(Name = "Set 1 NobleCloud Long Value", Order = 72, GroupName = "Signals",
             Description = "Bullish threshold. Recommended: 1 (only valid value for NobleCloud).")]
         public int NC_LongValue { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "NC: Short Operator", Order = 73, GroupName = "Signals")]
+        [Display(Name = "Set 1 NobleCloud Short Operator", Order = 73, GroupName = "Signals")]
         public SignalComparisonOperator NC_ShortOperator { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "NC: Short Value", Order = 74, GroupName = "Signals",
+        [Display(Name = "Set 1 NobleCloud Short Value", Order = 74, GroupName = "Signals",
             Description = "Bearish threshold. Recommended: -1 (only valid value for NobleCloud).")]
         public int NC_ShortValue { get; set; }
 
@@ -7579,24 +7580,24 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
 
         // ══════════════════════════ Set 2 · NobleCloud ══════════════════════════
         [NinjaScriptProperty]
-        [Display(Name = "NC: Use NobleCloud Signals (Set 2)", Order = 160, GroupName = "Signals")]
+        [Display(Name = "Set 2 Use NobleCloud", Order = 160, GroupName = "Signals")]
         [RefreshProperties(RefreshProperties.All)]
         public bool G2_UseNCSignals { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "NC: Long Operator (Set 2)", Order = 161, GroupName = "Signals")]
+        [Display(Name = "Set 2 NobleCloud Long Operator", Order = 161, GroupName = "Signals")]
         public SignalComparisonOperator G2_NC_LongOperator { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "NC: Long Value (Set 2)", Order = 162, GroupName = "Signals")]
+        [Display(Name = "Set 2 NobleCloud Long Value", Order = 162, GroupName = "Signals")]
         public int G2_NC_LongValue { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "NC: Short Operator (Set 2)", Order = 163, GroupName = "Signals")]
+        [Display(Name = "Set 2 NobleCloud Short Operator", Order = 163, GroupName = "Signals")]
         public SignalComparisonOperator G2_NC_ShortOperator { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "NC: Short Value (Set 2)", Order = 164, GroupName = "Signals")]
+        [Display(Name = "Set 2 NobleCloud Short Value", Order = 164, GroupName = "Signals")]
         public int G2_NC_ShortValue { get; set; }
 
         // ==================== Filters ====================
@@ -8559,80 +8560,6 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
             get; set;
         }
 
-        // ══════════════════════════ Indicator: NobleCloud ══════════════════════════
-        [NinjaScriptProperty]
-        [Range(0.0, double.MaxValue)]
-        [Display(Name = "Sensitivity", Order = 0, GroupName = "Indicator: NobleCloud")]
-        public double NC_Sensitivity { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(1, int.MaxValue)]
-        [Display(Name = "Smoothness", Order = 1, GroupName = "Indicator: NobleCloud")]
-        public int NC_Smoothness { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "Baseline: MA Type", Order = 10, GroupName = "Indicator: NobleCloud")]
-        public gb_MAType NC_BaselineMAType { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(1, int.MaxValue)]
-        [Display(Name = "Baseline: Period", Order = 11, GroupName = "Indicator: NobleCloud")]
-        public int NC_BaselinePeriod { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "Baseline: Smoothing Enabled", Order = 12, GroupName = "Indicator: NobleCloud")]
-        public bool NC_BaselineSmoothingEnabled { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "Baseline: Smoothing Method", Order = 13, GroupName = "Indicator: NobleCloud")]
-        public gb_MAType NC_BaselineSmoothingMethod { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(1, int.MaxValue)]
-        [Display(Name = "Baseline: Smoothing Period", Order = 14, GroupName = "Indicator: NobleCloud")]
-        public int NC_BaselineSmoothingPeriod { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "Kernel: MA Type", Order = 20, GroupName = "Indicator: NobleCloud")]
-        public gb_MAType NC_KernelMAType { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(1, int.MaxValue)]
-        [Display(Name = "Kernel: Period", Order = 21, GroupName = "Indicator: NobleCloud")]
-        public int NC_KernelPeriod { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "Kernel: Smoothing Enabled", Order = 22, GroupName = "Indicator: NobleCloud")]
-        public bool NC_KernelSmoothingEnabled { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "Kernel: Smoothing Method", Order = 23, GroupName = "Indicator: NobleCloud")]
-        public gb_MAType NC_KernelSmoothingMethod { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(1, int.MaxValue)]
-        [Display(Name = "Kernel: Smoothing Period", Order = 24, GroupName = "Indicator: NobleCloud")]
-        public int NC_KernelSmoothingPeriod { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, int.MaxValue)]
-        [Display(Name = "Signal Split (Bars)", Order = 30, GroupName = "Indicator: NobleCloud")]
-        public int NC_SignalSplit { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "Filter: Enabled", Order = 40, GroupName = "Indicator: NobleCloud")]
-        public bool NC_FilterEnabled { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(1, int.MaxValue)]
-        [Display(Name = "Filter: Bar Min", Order = 41, GroupName = "Indicator: NobleCloud")]
-        public int NC_FilterBarMin { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(1, int.MaxValue)]
-        [Display(Name = "Filter: Bar Max", Order = 42, GroupName = "Indicator: NobleCloud")]
-        public int NC_FilterBarMax { get; set; }
-
         // ==================== SuperJumpBoost ====================
         [NinjaScriptProperty]
         [Display (Name = "Sensitive Mode Enabled", Order = 0, GroupName = "Indicator: SuperJumpBoost")]
@@ -8728,6 +8655,80 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
         {
             get; set;
         }
+
+        // ==================== NobleCloud ====================
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "Sensitivity", Order = 0, GroupName = "Indicator: NobleCloud")]
+        public double NC_Sensitivity { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(1, int.MaxValue)]
+        [Display(Name = "Smoothness", Order = 1, GroupName = "Indicator: NobleCloud")]
+        public int NC_Smoothness { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Baseline: MA Type", Order = 10, GroupName = "Indicator: NobleCloud")]
+        public gb_MAType NC_BaselineMAType { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(1, int.MaxValue)]
+        [Display(Name = "Baseline: Period", Order = 11, GroupName = "Indicator: NobleCloud")]
+        public int NC_BaselinePeriod { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Baseline: Smoothing Enabled", Order = 12, GroupName = "Indicator: NobleCloud")]
+        public bool NC_BaselineSmoothingEnabled { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Baseline: Smoothing Method", Order = 13, GroupName = "Indicator: NobleCloud")]
+        public gb_MAType NC_BaselineSmoothingMethod { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(1, int.MaxValue)]
+        [Display(Name = "Baseline: Smoothing Period", Order = 14, GroupName = "Indicator: NobleCloud")]
+        public int NC_BaselineSmoothingPeriod { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Kernel: MA Type", Order = 20, GroupName = "Indicator: NobleCloud")]
+        public gb_MAType NC_KernelMAType { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(1, int.MaxValue)]
+        [Display(Name = "Kernel: Period", Order = 21, GroupName = "Indicator: NobleCloud")]
+        public int NC_KernelPeriod { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Kernel: Smoothing Enabled", Order = 22, GroupName = "Indicator: NobleCloud")]
+        public bool NC_KernelSmoothingEnabled { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Kernel: Smoothing Method", Order = 23, GroupName = "Indicator: NobleCloud")]
+        public gb_MAType NC_KernelSmoothingMethod { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(1, int.MaxValue)]
+        [Display(Name = "Kernel: Smoothing Period", Order = 24, GroupName = "Indicator: NobleCloud")]
+        public int NC_KernelSmoothingPeriod { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, int.MaxValue)]
+        [Display(Name = "Signal Split (Bars)", Order = 30, GroupName = "Indicator: NobleCloud")]
+        public int NC_SignalSplit { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Filter: Enabled", Order = 40, GroupName = "Indicator: NobleCloud")]
+        public bool NC_FilterEnabled { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(1, int.MaxValue)]
+        [Display(Name = "Filter: Bar Min", Order = 41, GroupName = "Indicator: NobleCloud")]
+        public int NC_FilterBarMin { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(1, int.MaxValue)]
+        [Display(Name = "Filter: Bar Max", Order = 42, GroupName = "Indicator: NobleCloud")]
+        public int NC_FilterBarMax { get; set; }
 
         // ==================== Display ====================
         [NinjaScriptProperty]
