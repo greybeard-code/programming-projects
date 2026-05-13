@@ -442,7 +442,7 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
                 Description = "GodZillaKilla — strategy using direct KingOrderBlock/PANAKanal/ThunderZilla/SuperJumpBoost/SumoPullback child indicator signals.";
                 Name = "GodZillaKilla";
                 StrategyName = Name;
-                _strategyVersion = "1.6.1";
+                _strategyVersion = "1.6.2";
 
                 Author = "Playr101";
                 Credits = "GreyBeard, ninZa.co, RenkoKings, ES, rbro999";
