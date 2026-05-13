@@ -153,6 +153,7 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
         private bool pendingReverseUsesTH = false;
         private bool pendingReverseUsesSJ = false;
         private bool pendingReverseUsesSU = false;
+        private bool pendingReverseUsesNC = false;
         private int pendingReverseGroupSize = 0;
         private string pendingReverseGroupName = string.Empty;
 
@@ -164,6 +165,7 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
         private bool pendingSignalUsesTH = false;
         private bool pendingSignalUsesSJ = false;
         private bool pendingSignalUsesSU = false;
+        private bool pendingSignalUsesNC = false;
         private int pendingSignalGroupSize = 0;
         private string pendingSignalGroupName = string.Empty;
         private string pendingSignalReason = string.Empty;
@@ -271,12 +273,14 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
             public bool UsesTH;
             public bool UsesSJ;
             public bool UsesSU;
+            public bool UsesNC;
         }
 
         private SignalTradeStats koStats = new SignalTradeStats();
         private SignalTradeStats paStats = new SignalTradeStats();
         private SignalTradeStats thStats = new SignalTradeStats();
         private SignalTradeStats suStats = new SignalTradeStats();
+        private SignalTradeStats                ncStats                     = new SignalTradeStats();
         private SignalTradeStats sjStats = new SignalTradeStats();
 
         // Exact confluence combo stats.
@@ -292,6 +296,7 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
         private bool activeTradeUsesPA = false;
         private bool activeTradeUsesTH = false;
         private bool activeTradeUsesSU = false;
+        private bool                            activeTradeUsesNC           = false;
         private bool activeTradeUsesSJ = false;
         private MarketPosition activeTradeDirection = MarketPosition.Flat;
         private string lastTradeClosedSummary = string.Empty;
@@ -306,6 +311,7 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
         private gbPANAKanal _pana;
         private gbThunderZilla _thunder;
         private gbSumoPullback _sumo;
+        private gbNobleCloud                    _nc;
         private gbSuperJumpBoost _sjb;
 
         // Normalized signal series used by entries, tracking, and visuals
@@ -314,6 +320,7 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
         private Series<double> _thSignalSeries;
         private Series<double> _sjSignalSeries;
         private Series<double> _suSignalSeries;
+        private Series<double>                  _ncSignalSeries;
 
         // ---- HUD (SharpDX boxed dashboard, AlightenLite-style) ----
         // Snapshot fields written by data thread (BuildDashboardSnapshot) and
@@ -502,6 +509,11 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
                 UseSUSignals = false;
                 SU_LongValue = 1;
                 SU_ShortValue = -1;
+                    UseNCSignals                        = false;
+                    NC_LongOperator                     = SignalComparisonOperator.Equal;
+                    NC_LongValue                        = 1;
+                    NC_ShortOperator                    = SignalComparisonOperator.Equal;
+                    NC_ShortValue                       = -1;
 
                 KO_LongOperator = SignalComparisonOperator.Equal;
                 KO_ShortOperator = SignalComparisonOperator.Equal;
@@ -532,6 +544,11 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
                 G2_UseSUSignals = false;
                 G2_SU_LongValue = 1;
                 G2_SU_ShortValue = -1;
+                    G2_UseNCSignals                     = false;
+                    G2_NC_LongOperator                  = SignalComparisonOperator.Equal;
+                    G2_NC_LongValue                     = 1;
+                    G2_NC_ShortOperator                 = SignalComparisonOperator.Equal;
+                    G2_NC_ShortValue                    = -1;
 
                 G2_KO_LongOperator = SignalComparisonOperator.Equal;
                 G2_KO_ShortOperator = SignalComparisonOperator.Equal;
@@ -675,6 +692,24 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
                 SU_SignalSplitFirst = 15;
                 SU_SignalSplitSecond = 30;
 
+                    // ── NobleCloud ──────────────────────────────────────────────────────────
+                    NC_Sensitivity                      = 100.0;
+                    NC_Smoothness                       = 1;
+                    NC_BaselineMAType                   = gb_MAType.SMA;
+                    NC_BaselinePeriod                   = 60;
+                    NC_BaselineSmoothingEnabled         = true;
+                    NC_BaselineSmoothingMethod          = gb_MAType.EMA;
+                    NC_BaselineSmoothingPeriod          = 60;
+                    NC_KernelMAType                     = gb_MAType.SMA;
+                    NC_KernelPeriod                     = 20;
+                    NC_KernelSmoothingEnabled           = true;
+                    NC_KernelSmoothingMethod            = gb_MAType.EMA;
+                    NC_KernelSmoothingPeriod            = 5;
+                    NC_SignalSplit                       = 5;
+                    NC_FilterEnabled                    = true;
+                    NC_FilterBarMin                     = 10;
+                    NC_FilterBarMax                     = 300;
+
                 // SuperJumpBoost indicator defaults (mirror gbSuperJumpBoost)
                 SJ_SensitiveModeEnabled = true;
                 SJ_OffsetLevel1 = 1.0;
@@ -728,8 +763,14 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
                 THSignalArrowBrush = Brushes.LimeGreen;
                 SJSignalArrowBrush = Brushes.Orange;
                 SUSignalArrowBrush = Brushes.Magenta;
+                    ShowNCIndicator                     = false;
+                    ShowNCSignalArrows                  = false;
+                    ShowNCSignalArrowLabels             = false;
+                    NCSignalArrowText                   = "NC";
+                    NC_Brush                            = Brushes.Cyan;
+                    NCSignalArrowBrush                  = Brushes.Cyan;
 
-                
+
 
                 // Trade Markers - ATM mode only
                 ShowEntryExitMarkers = true;
@@ -819,6 +860,18 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
                     AddChartIndicator (_sumo);
                 _sumo.Name = "";
 
+                    _nc = gbNobleCloud(
+                        NC_Sensitivity, NC_Smoothness,
+                        NC_BaselineMAType,    NC_BaselinePeriod,
+                        NC_BaselineSmoothingEnabled, NC_BaselineSmoothingMethod, NC_BaselineSmoothingPeriod,
+                        NC_KernelMAType,      NC_KernelPeriod,
+                        NC_KernelSmoothingEnabled,   NC_KernelSmoothingMethod,  NC_KernelSmoothingPeriod,
+                        NC_SignalSplit,
+                        NC_FilterEnabled,     NC_FilterBarMin,  NC_FilterBarMax);
+                    if (UseNCSignals && ShowNCIndicator)
+                        AddChartIndicator(_nc);
+                    _nc.Name = "";
+
                 _sjb = gbSuperJumpBoost (
                     SJ_SensitiveModeEnabled,
                     SJ_OffsetLevel1,
@@ -841,6 +894,7 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
                 _thSignalSeries = new Series<double> (this);
                 _sjSignalSeries = new Series<double> (this);
                 _suSignalSeries = new Series<double> (this);
+                    _ncSignalSeries                     = new Series<double>(this);
 
                 // Optional EMA trade filter
                 if (EnableEmaFilter)
@@ -1062,7 +1116,7 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
         protected override void OnBarUpdate ()
         {
             // 1. Indicator Initialization Check
-            if (_king == null || _pana == null || _thunder == null || _sjb == null || _sumo == null)
+            if (_king == null || _pana == null || _thunder == null || _sjb == null || _sumo == null || _nc == null)
                 return;
 
             // 2. Tick Series Management (BarsInProgress 1)
@@ -1151,12 +1205,14 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
             double thRaw = _thunder.Signal_Trade[0];
             double sjRaw = _sjb.Signal_Trade[0];
             double suRaw = _sumo.Signal_Trade[0];
+                    double ncRaw  = SafeSignalRead(() => _nc.Signal_Trade[0],  "NC");
 
             int ko = ComputeSignal(UseKOSignals, koRaw, KO_LongOperator, KO_LongValue, KO_ShortOperator, KO_ShortValue);
             int pa = ComputeSignal(UsePASignals, paRaw, PA_LongOperator, PA_LongValue, PA_ShortOperator, PA_ShortValue);
             int th = ComputeSignal(UseTHSignals, thRaw, TH_LongOperator, TH_LongValue, TH_ShortOperator, TH_ShortValue);
             int sj = ComputeSignal(UseSJSignals, sjRaw, SJ_LongOperator, SJ_LongValue, SJ_ShortOperator, SJ_ShortValue);
             int su = ComputeSignal(UseSUSignals, suRaw, SU_LongOperator, SU_LongValue, SU_ShortOperator, SU_ShortValue);
+                    int nc  = ComputeSignal(UseNCSignals,  ncRaw,  NC_LongOperator,  NC_LongValue,  NC_ShortOperator,  NC_ShortValue);
 
             // Update Normalized Series for visuals/confluence
             if (_koSignalSeries != null)
@@ -1169,6 +1225,7 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
                 _sjSignalSeries[0] = sj;
             if (_suSignalSeries != null)
                 _suSignalSeries[0] = su;
+                    if (_ncSignalSeries != null) _ncSignalSeries[0] = nc;
 
             // Define Directional Booleans
             bool koLong = ko == 1 && UseKOSignals;
@@ -1176,18 +1233,20 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
             bool thLong = th == 1 && UseTHSignals;
             bool sjLong = sj == 1 && UseSJSignals;
             bool suLong = su == 1 && UseSUSignals;
+                    bool ncLong  = nc ==  1 && UseNCSignals;
 
             bool koShort = ko == -1 && UseKOSignals;
             bool paShort = pa == -1 && UsePASignals;
             bool thShort = th == -1 && UseTHSignals;
             bool sjShort = sj == -1 && UseSJSignals;
             bool suShort = su == -1 && UseSUSignals;
+                    bool ncShort = nc == -1 && UseNCSignals;
 
             // 9. Confluence & Group Trigger Logic
-            GroupTriggerResult primaryGroup = EvaluatePrimaryGroupTriggerSet(koLong, paLong, thLong, sjLong, suLong, koShort, paShort, thShort, sjShort, suShort);
-            GroupTriggerResult secondaryGroup = EvaluateSecondaryGroupTriggerSet(koRaw, paRaw, thRaw, sjRaw, suRaw);
+            GroupTriggerResult primaryGroup = EvaluatePrimaryGroupTriggerSet(koLong, paLong, thLong, sjLong, suLong, ncLong, koShort, paShort, thShort, sjShort, suShort, ncShort);
+            GroupTriggerResult secondaryGroup = EvaluateSecondaryGroupTriggerSet(koRaw, paRaw, thRaw, sjRaw, suRaw, ncRaw);
 
-            ProcessSignalAudioAlerts (ko, pa, th, sj, su, primaryGroup, secondaryGroup);
+            ProcessSignalAudioAlerts (ko, pa, th, sj, su, nc, primaryGroup, secondaryGroup);
 
             bool goLong = (primaryGroup != null && primaryGroup.Long) || (secondaryGroup != null && secondaryGroup.Long);
             bool goShort = (primaryGroup != null && primaryGroup.Short) || (secondaryGroup != null && secondaryGroup.Short);
@@ -1215,14 +1274,14 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
             {
                 if (currentTradePosition == MarketPosition.Long && goShort && _armShort)
                 {
-                    QueuePendingReverse (MarketPosition.Short, false, true, true, true, false, groupTriggeredSize, groupTriggeredName);
+                    QueuePendingReverse (MarketPosition.Short, false, true, true, true, false, false, groupTriggeredSize, groupTriggeredName);
                     FlattenEverything ("Reverse on alternate SHORT signal");
                     return;
                 }
 
                 if (currentTradePosition == MarketPosition.Short && goLong && _armLong)
                 {
-                    QueuePendingReverse (MarketPosition.Long, false, true, true, true, false, groupTriggeredSize, groupTriggeredName);
+                    QueuePendingReverse (MarketPosition.Long, false, true, true, true, false, false, groupTriggeredSize, groupTriggeredName);
                     FlattenEverything ("Reverse on alternate LONG signal");
                     return;
                 }
@@ -1236,11 +1295,11 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
             {
                 if (goLong && _armLong)
                 {
-                    QueuePendingSignalEntry (MarketPosition.Long, koLong, paLong, thLong, sjLong, suLong, groupTriggeredSize, groupTriggeredName, "Normal long entry");
+                    QueuePendingSignalEntry (MarketPosition.Long, koLong, paLong, thLong, sjLong, suLong, ncLong, groupTriggeredSize, groupTriggeredName, "Normal long entry");
                 }
                 else if (goShort && _armShort)
                 {
-                    QueuePendingSignalEntry (MarketPosition.Short, koShort, paShort, thShort, sjShort, suShort, groupTriggeredSize, groupTriggeredName, "Normal short entry");
+                    QueuePendingSignalEntry (MarketPosition.Short, koShort, paShort, thShort, sjShort, suShort, ncShort, groupTriggeredSize, groupTriggeredName, "Normal short entry");
                 }
             }
 
@@ -1536,6 +1595,7 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
             paStats = new SignalTradeStats ();
             thStats = new SignalTradeStats ();
             suStats = new SignalTradeStats ();
+            ncStats = new SignalTradeStats ();
             sjStats = new SignalTradeStats ();
 
             confluenceStatsByKey.Clear ();
@@ -1642,6 +1702,7 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
             activeTradeUsesTH = false;
             activeTradeUsesSJ = false;
             activeTradeUsesSU = false;
+            activeTradeUsesNC = false;
 
             if (EnableDebug)
             {
@@ -2729,12 +2790,14 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
                 double thRaw = _thunder != null ? SafeSignalRead (() => _thunder.Signal_Trade[0], "TH") : 0.0;
                 double sjRaw = _sjb != null ? SafeSignalRead (() => _sjb.Signal_Trade[0], "SJ") : 0.0;
                 double suRaw = _sumo != null ? SafeSignalRead (() => _sumo.Signal_Trade[0], "SU") : 0.0;
+                double ncRaw = _nc != null ? SafeSignalRead (() => _nc.Signal_Trade[0], "NC") : 0.0;
 
                 int ko = ComputeSignal (UseKOSignals, koRaw, KO_LongOperator, KO_LongValue, KO_ShortOperator, KO_ShortValue);
                 int pa = ComputeSignal (UsePASignals, paRaw, PA_LongOperator, PA_LongValue, PA_ShortOperator, PA_ShortValue);
                 int th = ComputeSignal (UseTHSignals, thRaw, TH_LongOperator, TH_LongValue, TH_ShortOperator, TH_ShortValue);
                 int sj = ComputeSignal (UseSJSignals, sjRaw, SJ_LongOperator, SJ_LongValue, SJ_ShortOperator, SJ_ShortValue);
                 int su = ComputeSignal (UseSUSignals, suRaw, SU_LongOperator, SU_LongValue, SU_ShortOperator, SU_ShortValue);
+                int nc = ComputeSignal (UseNCSignals, ncRaw, NC_LongOperator, NC_LongValue, NC_ShortOperator, NC_ShortValue);
 
                 if (_koSignalSeries != null)
                     _koSignalSeries[0] = ko;
@@ -2746,6 +2809,7 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
                     _sjSignalSeries[0] = sj;
                 if (_suSignalSeries != null)
                     _suSignalSeries[0] = su;
+                if (_ncSignalSeries != null) _ncSignalSeries[0] = nc;
 
                 if (!SignalVisualFilterPassed (ko))
                     ko = 0;
@@ -2762,14 +2826,18 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
                 if (!SignalVisualFilterPassed (su))
                     su = 0;
 
+                if (!SignalVisualFilterPassed (nc))
+                    nc = 0;
+
                 DrawSignalArrow ("GZ_KO_SIG_", ko, UseKOSignals && ShowKOSignalArrows, KOSignalArrowBrush, 0, ShowKOSignalArrowLabels, KOSignalArrowText);
                 DrawSignalArrow ("GZ_PA_SIG_", pa, UsePASignals && ShowPASignalArrows, PASignalArrowBrush, 2, ShowPASignalArrowLabels, PASignalArrowText);
                 DrawSignalArrow ("GZ_TH_SIG_", th, UseTHSignals && ShowTHSignalArrows, THSignalArrowBrush, 4, ShowTHSignalArrowLabels, THSignalArrowText);
                 DrawSignalArrow ("GZ_SJ_SIG_", sj, UseSJSignals && ShowSJSignalArrows, SJSignalArrowBrush, 6, ShowSJSignalArrowLabels, SJSignalArrowText);
                 DrawSignalArrow ("GZ_SU_SIG_", su, UseSUSignals && ShowSUSignalArrows, SUSignalArrowBrush, 8, ShowSUSignalArrowLabels, SUSignalArrowText);
+                    DrawSignalArrow("GZ_NC_SIG_", nc, UseNCSignals && ShowNCSignalArrows, NCSignalArrowBrush, 10, ShowNCSignalArrowLabels, NCSignalArrowText);
 
                 int groupSize = 0;
-                int groupSignal = GetSameBarGroupTriggerSignal (koRaw, paRaw, thRaw, sjRaw, suRaw, ko, pa, th, sj, su, out groupSize);
+                int groupSignal = GetSameBarGroupTriggerSignal (koRaw, paRaw, thRaw, sjRaw, suRaw, ncRaw, ko, pa, th, sj, su, nc, out groupSize);
 
                 SetSignalBackBrush (groupSignal);
 
@@ -2908,12 +2976,12 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
             }
         }
 
-        private int GetSameBarGroupTriggerSignal (double koRaw, double paRaw, double thRaw, double sjRaw, double suRaw, double ko, double pa, double th, double sj, double su, out int groupSize)
+        private int GetSameBarGroupTriggerSignal (double koRaw, double paRaw, double thRaw, double sjRaw, double suRaw, double ncRaw, double ko, double pa, double th, double sj, double su, double nc, out int groupSize)
         {
             groupSize = 0;
 
-            GroupTriggerResult primaryGroup = EvaluatePrimaryGroupTriggerSet (ko == 1 && UseKOSignals, pa == 1 && UsePASignals, th == 1 && UseTHSignals, sj == 1 && UseSJSignals, su == 1 && UseSUSignals, ko == -1 && UseKOSignals, pa == -1 && UsePASignals, th == -1 && UseTHSignals, sj == -1 && UseSJSignals, su == -1 && UseSUSignals);
-            GroupTriggerResult secondaryGroup = EvaluateSecondaryGroupTriggerSet (koRaw, paRaw, thRaw, sjRaw, suRaw);
+            GroupTriggerResult primaryGroup = EvaluatePrimaryGroupTriggerSet (ko == 1 && UseKOSignals, pa == 1 && UsePASignals, th == 1 && UseTHSignals, sj == 1 && UseSJSignals, su == 1 && UseSUSignals, nc == 1 && UseNCSignals, ko == -1 && UseKOSignals, pa == -1 && UsePASignals, th == -1 && UseTHSignals, sj == -1 && UseSJSignals, su == -1 && UseSUSignals, nc == -1 && UseNCSignals);
+            GroupTriggerResult secondaryGroup = EvaluateSecondaryGroupTriggerSet (koRaw, paRaw, thRaw, sjRaw, suRaw, ncRaw);
 
             bool goLong = (primaryGroup != null && primaryGroup.Long) || (secondaryGroup != null && secondaryGroup.Long);
             bool goShort = (primaryGroup != null && primaryGroup.Short) || (secondaryGroup != null && secondaryGroup.Short);
@@ -2945,7 +3013,7 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
             return 0;
         }
 
-        private GroupTriggerResult EvaluatePrimaryGroupTriggerSet (bool koLong, bool paLong, bool thLong, bool sjLong, bool suLong, bool koShort, bool paShort, bool thShort, bool sjShort, bool suShort)
+        private GroupTriggerResult EvaluatePrimaryGroupTriggerSet (bool koLong, bool paLong, bool thLong, bool sjLong, bool suLong, bool ncLong, bool koShort, bool paShort, bool thShort, bool sjShort, bool suShort, bool ncShort)
         {
             GroupTriggerResult result = new GroupTriggerResult ();
             result.TriggerName = "SET1";
@@ -2997,6 +3065,9 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
                     shortAgree++;
             }
 
+                    if (UseNCSignals && ncLong)  { longAgree++;  }
+                    if (UseNCSignals && ncShort) { shortAgree++; }
+
             // Conflict safety: do not trigger if both long and short qualify on same bar.
             if (longAgree >= needed && shortAgree >= needed)
                 return result;
@@ -3012,6 +3083,7 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
                 result.UsesTH = UseTHSignals && thLong;
                 result.UsesSJ = UseSJSignals && sjLong;
                 result.UsesSU = UseSUSignals && suLong;
+                result.UsesNC = UseNCSignals && ncLong;
             }
             else if (shortAgree >= needed)
             {
@@ -3024,12 +3096,13 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
                 result.UsesTH = UseTHSignals && thShort;
                 result.UsesSJ = UseSJSignals && sjShort;
                 result.UsesSU = UseSUSignals && suShort;
+                result.UsesNC = UseNCSignals && ncShort;
             }
 
             return result;
         }
 
-        private GroupTriggerResult EvaluateSecondaryGroupTriggerSet (double koRaw, double paRaw, double thRaw, double sjRaw, double suRaw)
+        private GroupTriggerResult EvaluateSecondaryGroupTriggerSet (double koRaw, double paRaw, double thRaw, double sjRaw, double suRaw, double ncRaw)
         {
             GroupTriggerResult result = new GroupTriggerResult ();
             result.TriggerName = "SET2";
@@ -3046,6 +3119,7 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
             int thSignal = 0;
             int sjSignal = 0;
             int suSignal = 0;
+            int ncSignal = 0;
 
             if (G2_UseKOSignals)
             {
@@ -3097,6 +3171,13 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
                     shortAgree++;
             }
 
+                    if (G2_UseNCSignals)
+                    {
+                        ncSignal = ComputeSignal (G2_UseNCSignals, ncRaw, G2_NC_LongOperator, G2_NC_LongValue, G2_NC_ShortOperator, G2_NC_ShortValue);
+                        if (ncSignal ==  1) { longAgree++;  result.UsesNC = true; }
+                        if (ncSignal == -1) { shortAgree++; result.UsesNC = true; }
+                    }
+
             // Conflict safety: do not trigger if both long and short qualify on same bar.
             if (longAgree >= needed && shortAgree >= needed)
                 return result;
@@ -3112,6 +3193,7 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
                 result.UsesTH = G2_UseTHSignals && thSignal > 0;
                 result.UsesSJ = G2_UseSJSignals && sjSignal > 0;
                 result.UsesSU = G2_UseSUSignals && suSignal > 0;
+                result.UsesNC = G2_UseNCSignals && ncSignal > 0;
             }
             else if (shortAgree >= needed)
             {
@@ -3124,6 +3206,7 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
                 result.UsesTH = G2_UseTHSignals && thSignal < 0;
                 result.UsesSJ = G2_UseSJSignals && sjSignal < 0;
                 result.UsesSU = G2_UseSUSignals && suSignal < 0;
+                result.UsesNC = G2_UseNCSignals && ncSignal < 0;
             }
 
             return result;
@@ -3203,13 +3286,14 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
             }
         }
 
-        private void SetActiveTradeSignalSources (bool useKO, bool usePA, bool useTH, bool useSJ, bool useSU, MarketPosition direction, int groupSize = 0, string groupName = "")
+        private void SetActiveTradeSignalSources (bool useKO, bool usePA, bool useTH, bool useSJ, bool useSU, bool useNC, MarketPosition direction, int groupSize = 0, string groupName = "")
         {
             activeTradeUsesKO = useKO;
             activeTradeUsesPA = usePA;
             activeTradeUsesTH = useTH;
             activeTradeUsesSJ = useSJ;
             activeTradeUsesSU = useSU;
+            activeTradeUsesNC = useNC;
             activeTradeDirection = direction;
             activeTradeGroupSize = groupSize;
             activeTradeGroupName = groupName ?? string.Empty;
@@ -3221,6 +3305,7 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
             activeTradeUsesPA = false;
             activeTradeUsesTH = false;
             activeTradeUsesSU = false;
+            activeTradeUsesNC = false;
             activeTradeUsesSJ = false;
             activeTradeDirection = MarketPosition.Flat;
             activeTradeGroupSize = 0;
@@ -3252,6 +3337,9 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
             if (activeTradeUsesSU)
                 IncrementSignalStats (suStats, activeTradeDirection, isWinner, isLoser);
 
+            if (activeTradeUsesNC)
+                IncrementSignalStats (ncStats, activeTradeDirection, isWinner, isLoser);
+
             // Exact confluence-combo tracking.
             // Example: SET1-G3-KO+PA+SU
             string confluenceKey = BuildActiveConfluenceStatsKey ();
@@ -3277,6 +3365,8 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
                 parts.Add ("SJ");
             if (activeTradeUsesSU)
                 parts.Add ("SU");
+            if (activeTradeUsesNC)
+                parts.Add ("NC");
 
             if (parts.Count <= 0)
                 return string.Empty;
@@ -3372,6 +3462,7 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
                 activeTradeUsesTH,
                 activeTradeUsesSJ,
                 activeTradeUsesSU,
+                activeTradeUsesNC,
                 activeTradeGroupSize,
                 activeTradeGroupName);
         }
@@ -3389,6 +3480,7 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
                 activeTradeUsesTH,
                 activeTradeUsesSJ,
                 activeTradeUsesSU,
+                activeTradeUsesNC,
                 activeTradeGroupSize,
                 activeTradeGroupName);
         }
@@ -3421,6 +3513,8 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
                 enabledSignals.Add ("SJ");
             if (UseSUSignals)
                 enabledSignals.Add ("SU");
+            if (UseNCSignals)
+                enabledSignals.Add ("NC");
 
             lines.Add (enabledSignals.Count > 0
                 ? "Enabled Signals: " + string.Join (", ", enabledSignals)
@@ -3439,6 +3533,8 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
                     lines.Add (FormatStatsLine ("SJ", sjStats));
                 if (UseSUSignals)
                     lines.Add (FormatStatsLine ("SU", suStats));
+                if (UseNCSignals)
+                    lines.Add (FormatStatsLine ("NC", ncStats));
             }
 
             // 3. Group/Confluence Stats (Show/Hide Toggle)
@@ -3467,6 +3563,7 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
             int th,
             int sj,
             int su,
+            int nc,
             GroupTriggerResult primaryGroup,
             GroupTriggerResult secondaryGroup)
         {
@@ -3498,6 +3595,8 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
 
                 if (UseSUSignals && su != 0)
                     TriggerSignalAudioAlert ("SU", su, "SumoPullback", IndividualSignalAlertSound);
+
+                if (UseNCSignals && nc != 0) TriggerSignalAudioAlert("NC", nc, "NobleCloud", IndividualSignalAlertSound);
             }
 
             if (EnableGroupSignalAudioAlerts)
@@ -3837,7 +3936,7 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
             return MarketPosition.Flat;
         }
 
-        private string BuildSignalTriggerName (bool useKO, bool usePA, bool useTH, bool useSJ, bool useSU, int groupSize, string groupName = "")
+        private string BuildSignalTriggerName (bool useKO, bool usePA, bool useTH, bool useSJ, bool useSU, bool useNC, int groupSize, string groupName = "")
         {
             string trigger = string.Join("+", new[] {
         useKO ? "KO" : null,
@@ -3845,6 +3944,7 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
         useTH ? "TH" : null,
         useSJ ? "SJ" : null,
         useSU ? "SU" : null,
+        useNC ? "NC" : null,
     }.Where(s => s != null));
 
             if (string.IsNullOrEmpty (trigger))
@@ -3866,6 +3966,7 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
     bool useTH,
     bool useSJ,
     bool useSU,
+    bool useNC,
     int groupSize,
     string groupName,
     string reason)
@@ -3880,6 +3981,7 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
             pendingSignalUsesTH = useTH;
             pendingSignalUsesSJ = useSJ;
             pendingSignalUsesSU = useSU;
+            pendingSignalUsesNC = useNC;
             pendingSignalGroupSize = groupSize;
             pendingSignalGroupName = groupName ?? string.Empty;
             pendingSignalReason = reason ?? "Pending signal entry";
@@ -3905,6 +4007,7 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
             pendingSignalUsesTH = false;
             pendingSignalUsesSJ = false;
             pendingSignalUsesSU = false;
+            pendingSignalUsesNC = false;
             pendingSignalGroupSize = 0;
             pendingSignalGroupName = string.Empty;
             pendingSignalReason = string.Empty;
@@ -3972,6 +4075,7 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
                             pendingReverseUsesTH,
                             pendingReverseUsesSJ,
                             pendingReverseUsesSU,
+                            pendingReverseUsesNC,
                             pendingReverseGroupSize,
                             pendingReverseGroupName,
                             "Pending reverse entry on next tick after signal bar close");
@@ -3989,6 +4093,7 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
                             pendingReverseUsesTH,
                             pendingReverseUsesSJ,
                             pendingReverseUsesSU,
+                            pendingReverseUsesNC,
                             pendingReverseGroupSize,
                             pendingReverseGroupName,
                             "Pending reverse entry on next tick after signal bar close");
@@ -4058,6 +4163,7 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
                         pendingSignalUsesTH,
                         pendingSignalUsesSJ,
                         pendingSignalUsesSU,
+                        pendingSignalUsesNC,
                         pendingSignalGroupSize,
                         pendingSignalGroupName,
                         pendingSignalReason + " - executed on next clean tick");
@@ -4085,6 +4191,7 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
                         pendingSignalUsesTH,
                         pendingSignalUsesSJ,
                         pendingSignalUsesSU,
+                        pendingSignalUsesNC,
                         pendingSignalGroupSize,
                         pendingSignalGroupName,
                         pendingSignalReason + " - executed on next clean tick");
@@ -4097,7 +4204,7 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
             ClearPendingSignalEntry ();
         }
 
-        private void QueuePendingReverse (MarketPosition direction, bool useKO, bool usePA, bool useTH, bool useSJ, bool useSU, int groupSize, string groupName)
+        private void QueuePendingReverse (MarketPosition direction, bool useKO, bool usePA, bool useTH, bool useSJ, bool useSU, bool useNC, int groupSize, string groupName)
         {
             pendingReverseActive = true;
             pendingReverseDirection = direction;
@@ -4106,11 +4213,12 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
             pendingReverseUsesTH = useTH;
             pendingReverseUsesSJ = useSJ;
             pendingReverseUsesSU = useSU;
+            pendingReverseUsesNC = useNC;
             pendingReverseGroupSize = groupSize;
             pendingReverseGroupName = groupName ?? string.Empty;
 
             if (EnableDebug)
-                Print ($"{Time[0]} | REVERSE QUEUED | Direction={direction} | Trigger={BuildSignalTriggerName (useKO, usePA, useTH, useSJ, useSU, groupSize, groupName)}");
+                Print ($"{Time[0]} | REVERSE QUEUED | Direction={direction} | Trigger={BuildSignalTriggerName (useKO, usePA, useTH, useSJ, useSU, useNC, groupSize, groupName)}");
         }
 
         private void ClearPendingReverse ()
@@ -4122,6 +4230,7 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
             pendingReverseUsesTH = false;
             pendingReverseUsesSJ = false;
             pendingReverseUsesSU = false;
+            pendingReverseUsesNC = false;
             pendingReverseGroupSize = 0;
             pendingReverseGroupName = string.Empty;
         }
@@ -4154,12 +4263,12 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
             return orderId.Length > 0 || atmStrategyId.Length > 0;
         }
 
-        private void SubmitTradeEntry (bool isLong, bool useKO, bool usePA, bool useTH, bool useSJ, bool useSU, int groupSize, string groupName, string reason)
+        private void SubmitTradeEntry (bool isLong, bool useKO, bool usePA, bool useTH, bool useSJ, bool useSU, bool useNC, int groupSize, string groupName, string reason)
         {
             if (OrderMode == OrderManagementMode.FixedTicks)
-                SubmitFixedEntry (isLong, useKO, usePA, useTH, useSJ, useSU, groupSize, groupName, reason);
+                SubmitFixedEntry (isLong, useKO, usePA, useTH, useSJ, useSU, useNC, groupSize, groupName, reason);
             else
-                SubmitAtmEntry (isLong, useKO, usePA, useTH, useSJ, useSU, groupSize, groupName, reason);
+                SubmitAtmEntry (isLong, useKO, usePA, useTH, useSJ, useSU, useNC, groupSize, groupName, reason);
         }
 
         private void SanityCheckFixedTicksState ()
@@ -4266,7 +4375,7 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
             ClearActiveTradeSignalSources ();
         }
 
-        private void SubmitFixedEntry (bool isLong, bool useKO, bool usePA, bool useTH, bool useSJ, bool useSU, int groupSize, string groupName, string reason)
+        private void SubmitFixedEntry (bool isLong, bool useKO, bool usePA, bool useTH, bool useSJ, bool useSU, bool useNC, int groupSize, string groupName, string reason)
         {
             if (OrderMode != OrderManagementMode.FixedTicks)
                 return;
@@ -4297,7 +4406,7 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
                 return;
             }
 
-            string trigger = BuildSignalTriggerName (useKO, usePA, useTH, useSJ, useSU, groupSize, groupName);
+            string trigger = BuildSignalTriggerName (useKO, usePA, useTH, useSJ, useSU, useNC, groupSize, groupName);
             string signalName = isLong ? "FixedLongEntry" : "FixedShortEntry";
 
             fixedEntrySignalName = signalName;
@@ -4308,7 +4417,7 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
             fixedTradeCloseProcessed = false;
             fixedBreakevenMoved = false;
 
-            SetActiveTradeSignalSources (useKO, usePA, useTH, useSJ, useSU, fixedEntryDirection, groupSize, groupName);
+            SetActiveTradeSignalSources (useKO, usePA, useTH, useSJ, useSU, useNC, fixedEntryDirection, groupSize, groupName);
 
             _tradeMap[fixedEntrySignalName] = new TradeRecord
             {
@@ -4667,6 +4776,7 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
             activeTradeUsesTH = false;
             activeTradeUsesSJ = false;
             activeTradeUsesSU = false;
+            activeTradeUsesNC = false;
 
             UpdateLastTradeClosedSummary (tradePnl);
             PrintSignalTrackingOnTradeClose (tradePnl);
@@ -4747,7 +4857,7 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
             return true;
         }
 
-        private void SubmitAtmEntry (bool isLong, bool useKO, bool usePA, bool useTH, bool useSJ, bool useSU, int groupSize, string groupName, string reason)
+        private void SubmitAtmEntry (bool isLong, bool useKO, bool usePA, bool useTH, bool useSJ, bool useSU, bool useNC, int groupSize, string groupName, string reason)
         {
             if (OrderMode != OrderManagementMode.AtmStrategy)
                 return;
@@ -4765,10 +4875,10 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
                 return;
             }
 
-            string trigger = BuildSignalTriggerName (useKO, usePA, useTH, useSJ, useSU, groupSize, groupName);
+            string trigger = BuildSignalTriggerName (useKO, usePA, useTH, useSJ, useSU, useNC, groupSize, groupName);
 
             isAtmStrategyCreated = false;
-            SetActiveTradeSignalSources (useKO, usePA, useTH, useSJ, useSU, isLong ? MarketPosition.Long : MarketPosition.Short, groupSize, groupName);
+            SetActiveTradeSignalSources (useKO, usePA, useTH, useSJ, useSU, useNC, isLong ? MarketPosition.Long : MarketPosition.Short, groupSize, groupName);
 
             atmStrategyId = GetAtmStrategyUniqueId ();
             orderId = GetAtmStrategyUniqueId ();
@@ -6484,6 +6594,28 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
                 else if (!ShowSUSignalArrowLabels)
                     RemoveProperties (col, "SUSignalArrowText");
             }
+
+                if (!UseNCSignals)
+                {
+                    RemoveProperties(col,
+                        "NC_LongOperator",
+                        "NC_LongValue",
+                        "NC_ShortOperator",
+                        "NC_ShortValue",
+                        "ShowNCIndicator",
+                        "ShowNCSignalArrows",
+                        "ShowNCSignalArrowLabels",
+                        "NCSignalArrowText",
+                        "NCSignalArrowBrush",
+                        "NC_Brush");
+                }
+                else
+                {
+                    if (!ShowNCSignalArrows)
+                        RemoveProperties(col, "ShowNCSignalArrowLabels", "NCSignalArrowText", "NCSignalArrowBrush");
+                    else if (!ShowNCSignalArrowLabels)
+                        RemoveProperties(col, "NCSignalArrowText");
+                }
         }
 
         private void ModifyIndicatorSettingsProperties (PropertyDescriptorCollection col)
@@ -6563,6 +6695,25 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
                     "SJ_SignalSplit",
                     "SJ_Brush");
 
+            if (!ShowIndicatorSettings || !UseNCSignals)
+                RemoveProperties (col,
+                    "NC_Sensitivity",
+                    "NC_Smoothness",
+                    "NC_BaselineMAType",
+                    "NC_BaselinePeriod",
+                    "NC_BaselineSmoothingEnabled",
+                    "NC_BaselineSmoothingMethod",
+                    "NC_BaselineSmoothingPeriod",
+                    "NC_KernelMAType",
+                    "NC_KernelPeriod",
+                    "NC_KernelSmoothingEnabled",
+                    "NC_KernelSmoothingMethod",
+                    "NC_KernelSmoothingPeriod",
+                    "NC_SignalSplit",
+                    "NC_FilterEnabled",
+                    "NC_FilterBarMin",
+                    "NC_FilterBarMax");
+
             if (!ShowIndicatorSettings)
                 RemoveProperties (col);
         }
@@ -6598,6 +6749,7 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
                 count++;
             if (UseSUSignals)
                 count++;
+            if (UseNCSignals) count++;
 
             return count;
         }
@@ -6616,6 +6768,7 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
                 count++;
             if (G2_UseSUSignals)
                 count++;
+            if (G2_UseNCSignals) count++;
 
             return count;
         }
@@ -6626,7 +6779,8 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
                 || UsePASignals
                 || UseTHSignals
                 || UseSJSignals
-                || UseSUSignals;
+                || UseSUSignals
+                || UseNCSignals;
         }
 
         private bool AnyIndividualSignalArrowEnabled ()
@@ -6635,7 +6789,8 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
                 || (UsePASignals && ShowPASignalArrows)
                 || (UseTHSignals && ShowTHSignalArrows)
                 || (UseSJSignals && ShowSJSignalArrows)
-                || (UseSUSignals && ShowSUSignalArrows);
+                || (UseSUSignals && ShowSUSignalArrows)
+                || (UseNCSignals && ShowNCSignalArrows);
         }
 
         private bool AnySignalArrowEnabled ()
@@ -6689,7 +6844,13 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
                     "G2_SU_LongOperator",
                     "G2_SU_LongValue",
                     "G2_SU_ShortOperator",
-                    "G2_SU_ShortValue");
+                    "G2_SU_ShortValue",
+
+                    "G2_UseNCSignals",
+                    "G2_NC_LongOperator",
+                    "G2_NC_LongValue",
+                    "G2_NC_ShortOperator",
+                    "G2_NC_ShortValue");
             }
             else
             {
@@ -6707,6 +6868,9 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
 
                 if (!G2_UseSUSignals)
                     RemoveProperties (col, "G2_SU_LongOperator", "G2_SU_LongValue", "G2_SU_ShortOperator", "G2_SU_ShortValue");
+
+                if (!G2_UseNCSignals)
+                    RemoveProperties (col, "G2_NC_LongOperator", "G2_NC_LongValue", "G2_NC_ShortOperator", "G2_NC_ShortValue");
             }
 
             bool anyVisibleGroupEnabled = IsPrimaryGroupModeActive () || IsSecondaryGroupModeActive ();
@@ -6966,7 +7130,7 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
 
         // -------------------- Trigger Set 1 --------------------
         [NinjaScriptProperty]
-        [Range (1, 5)]
+        [Range (1, 6)]
         [Display (Name = "Set 1 Required Count", Order = 10, GroupName = "Signals",
             Description = "Number of enabled Set 1 signals that must align on the same bar. Use 1 for a one-signal trigger.")]
         public int GroupTriggerSet1RequiredCount
@@ -7184,6 +7348,31 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
             get; set;
         }
 
+        // ══════════════════════════ Set 1 · NobleCloud ══════════════════════════
+        [NinjaScriptProperty]
+        [Display(Name = "NC: Use NobleCloud Signals", Order = 70, GroupName = "Signals",
+            Description = "Use gbNobleCloud Signal_Trade as a Set 1 entry source. +1 = bullish, -1 = bearish.")]
+        [RefreshProperties(RefreshProperties.All)]
+        public bool UseNCSignals { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "NC: Long Operator", Order = 71, GroupName = "Signals")]
+        public SignalComparisonOperator NC_LongOperator { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "NC: Long Value", Order = 72, GroupName = "Signals",
+            Description = "Bullish threshold. Recommended: 1 (only valid value for NobleCloud).")]
+        public int NC_LongValue { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "NC: Short Operator", Order = 73, GroupName = "Signals")]
+        public SignalComparisonOperator NC_ShortOperator { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "NC: Short Value", Order = 74, GroupName = "Signals",
+            Description = "Bearish threshold. Recommended: -1 (only valid value for NobleCloud).")]
+        public int NC_ShortValue { get; set; }
+
         // -------------------- Trigger Set 2 --------------------
         [NinjaScriptProperty]
         [Display (Name = "Set 2 Enable Group Trigger", Order = 100, GroupName = "Signals",
@@ -7387,6 +7576,28 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
         {
             get; set;
         }
+
+        // ══════════════════════════ Set 2 · NobleCloud ══════════════════════════
+        [NinjaScriptProperty]
+        [Display(Name = "NC: Use NobleCloud Signals (Set 2)", Order = 160, GroupName = "Signals")]
+        [RefreshProperties(RefreshProperties.All)]
+        public bool G2_UseNCSignals { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "NC: Long Operator (Set 2)", Order = 161, GroupName = "Signals")]
+        public SignalComparisonOperator G2_NC_LongOperator { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "NC: Long Value (Set 2)", Order = 162, GroupName = "Signals")]
+        public int G2_NC_LongValue { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "NC: Short Operator (Set 2)", Order = 163, GroupName = "Signals")]
+        public SignalComparisonOperator G2_NC_ShortOperator { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "NC: Short Value (Set 2)", Order = 164, GroupName = "Signals")]
+        public int G2_NC_ShortValue { get; set; }
 
         // ==================== Filters ====================
         [NinjaScriptProperty]
@@ -8348,6 +8559,80 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
             get; set;
         }
 
+        // ══════════════════════════ Indicator: NobleCloud ══════════════════════════
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "Sensitivity", Order = 0, GroupName = "Indicator: NobleCloud")]
+        public double NC_Sensitivity { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(1, int.MaxValue)]
+        [Display(Name = "Smoothness", Order = 1, GroupName = "Indicator: NobleCloud")]
+        public int NC_Smoothness { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Baseline: MA Type", Order = 10, GroupName = "Indicator: NobleCloud")]
+        public gb_MAType NC_BaselineMAType { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(1, int.MaxValue)]
+        [Display(Name = "Baseline: Period", Order = 11, GroupName = "Indicator: NobleCloud")]
+        public int NC_BaselinePeriod { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Baseline: Smoothing Enabled", Order = 12, GroupName = "Indicator: NobleCloud")]
+        public bool NC_BaselineSmoothingEnabled { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Baseline: Smoothing Method", Order = 13, GroupName = "Indicator: NobleCloud")]
+        public gb_MAType NC_BaselineSmoothingMethod { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(1, int.MaxValue)]
+        [Display(Name = "Baseline: Smoothing Period", Order = 14, GroupName = "Indicator: NobleCloud")]
+        public int NC_BaselineSmoothingPeriod { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Kernel: MA Type", Order = 20, GroupName = "Indicator: NobleCloud")]
+        public gb_MAType NC_KernelMAType { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(1, int.MaxValue)]
+        [Display(Name = "Kernel: Period", Order = 21, GroupName = "Indicator: NobleCloud")]
+        public int NC_KernelPeriod { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Kernel: Smoothing Enabled", Order = 22, GroupName = "Indicator: NobleCloud")]
+        public bool NC_KernelSmoothingEnabled { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Kernel: Smoothing Method", Order = 23, GroupName = "Indicator: NobleCloud")]
+        public gb_MAType NC_KernelSmoothingMethod { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(1, int.MaxValue)]
+        [Display(Name = "Kernel: Smoothing Period", Order = 24, GroupName = "Indicator: NobleCloud")]
+        public int NC_KernelSmoothingPeriod { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, int.MaxValue)]
+        [Display(Name = "Signal Split (Bars)", Order = 30, GroupName = "Indicator: NobleCloud")]
+        public int NC_SignalSplit { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Filter: Enabled", Order = 40, GroupName = "Indicator: NobleCloud")]
+        public bool NC_FilterEnabled { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(1, int.MaxValue)]
+        [Display(Name = "Filter: Bar Min", Order = 41, GroupName = "Indicator: NobleCloud")]
+        public int NC_FilterBarMin { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(1, int.MaxValue)]
+        [Display(Name = "Filter: Bar Max", Order = 42, GroupName = "Indicator: NobleCloud")]
+        public int NC_FilterBarMax { get; set; }
+
         // ==================== SuperJumpBoost ====================
         [NinjaScriptProperty]
         [Display (Name = "Sensitive Mode Enabled", Order = 0, GroupName = "Indicator: SuperJumpBoost")]
@@ -8859,6 +9144,46 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
             {
                 SUSignalArrowBrush = Serialize.StringToBrush (value);
             }
+        }
+
+        // ── NobleCloud display ──────────────────────────────────────────────────────────
+        [NinjaScriptProperty]
+        [Display(Name = "NC: Show Indicator", Order = 41, GroupName = "Display")]
+        [RefreshProperties(RefreshProperties.All)]
+        public bool ShowNCIndicator { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "NC: Show Signal Arrows", Order = 42, GroupName = "Display")]
+        [RefreshProperties(RefreshProperties.All)]
+        public bool ShowNCSignalArrows { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "NC: Show Signal Arrow Labels", Order = 43, GroupName = "Display")]
+        [RefreshProperties(RefreshProperties.All)]
+        public bool ShowNCSignalArrowLabels { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "NC: Signal Arrow Text", Order = 44, GroupName = "Display")]
+        public string NCSignalArrowText { get; set; }
+
+        [XmlIgnore]
+        [Display(Name = "NC: Indicator Color", Order = 45, GroupName = "Display")]
+        public Brush NC_Brush { get; set; }
+        [Browsable(false)]
+        public string NC_Brush_Serialize
+        {
+            get { return Serialize.BrushToString(NC_Brush); }
+            set { NC_Brush = Serialize.StringToBrush(value); }
+        }
+
+        [XmlIgnore]
+        [Display(Name = "NC: Signal Arrow Color", Order = 46, GroupName = "Display")]
+        public Brush NCSignalArrowBrush { get; set; }
+        [Browsable(false)]
+        public string NCSignalArrowBrush_Serialize
+        {
+            get { return Serialize.BrushToString(NCSignalArrowBrush); }
+            set { NCSignalArrowBrush = Serialize.StringToBrush(value); }
         }
 
         // -------------------- Display: Group Trigger --------------------
