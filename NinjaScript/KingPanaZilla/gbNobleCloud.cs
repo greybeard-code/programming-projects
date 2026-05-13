@@ -488,6 +488,12 @@ namespace NinjaTrader.NinjaScript.Indicators.GreyBeard.KingPanaZilla
 					string regionTag        = string.Format("gbNobleCloud.{0}.{1}", bullish ? "cloud.bullish" : "cloud.bearish", this.cloudIndex);
 					Brush regionBrush       = bullish ? this.CloudBullish : this.CloudBearish;
 					ISeries<double> band    = bullish ? (ISeries<double>)this.seriesLowerThresholdSmoothed : this.seriesUpperThresholdSmoothed;
+					int oldCloudBar = base.CurrentBar - DRAW_TAG_KEEP;
+					if (oldCloudBar >= 0)
+					{
+						try { base.RemoveDrawObject("gbNobleCloud.cloud.bullish." + oldCloudBar); } catch { }
+						try { base.RemoveDrawObject("gbNobleCloud.cloud.bearish." + oldCloudBar); } catch { }
+					}
 					Draw.Region(this, regionTag, base.CurrentBar - this.cloudIndex, 0, band, this.Baseline, Brushes.Transparent, regionBrush, this.CloudOpacity, 0);
 				}
 
@@ -517,6 +523,11 @@ namespace NinjaTrader.NinjaScript.Indicators.GreyBeard.KingPanaZilla
 			int    height = Convert.ToInt32(this.ComputeTextSize(label, this.MarkerFont, this.ScreenDPI).Height);
 			int    dir    = isBullish ? -1 : 1;
 			int    offset = dir * (this.MarkerOffset + height / 2);
+			int oldBar = base.CurrentBar - DRAW_TAG_KEEP;
+			if (oldBar >= 0)
+			{
+				try { base.RemoveDrawObject("gbNobleCloud.marker." + oldBar); } catch { }
+			}
 			Draw.Text(this, tag, base.IsAutoScale, label, 0, price, offset, brush, this.MarkerFont, TextAlignment.Center, Brushes.Transparent, Brushes.Transparent, 0);
 		}
 
@@ -629,6 +640,8 @@ namespace NinjaTrader.NinjaScript.Indicators.GreyBeard.KingPanaZilla
 		private int              nextAcceptedBar_Bullish;
 		private int              cloudState;
 		private int              cloudIndex;
+		// Defense #4: rolling drawing-tag cleanup — per feedback_nt8_wpf_quota_prevention.md.
+		private const int DRAW_TAG_KEEP = 250;
 		private int              barCount_Baseline;
 		private bool             isRisingBaseline;
 		private bool             thresholdSmoothingEnabled;

@@ -442,7 +442,7 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
                 Description = "GodZillaKilla — strategy using direct KingOrderBlock/PANAKanal/ThunderZilla/SuperJumpBoost/SumoPullback child indicator signals.";
                 Name = "GodZillaKilla";
                 StrategyName = Name;
-                _strategyVersion = "1.6.0";
+                _strategyVersion = "1.6.1";
 
                 Author = "Playr101";
                 Credits = "GreyBeard, ninZa.co, RenkoKings, ES, rbro999";
@@ -2919,6 +2919,17 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
             string tag = tagPrefix + CurrentBar;
             string textTag = tagPrefix + "TXT_" + CurrentBar;
 
+            // Defense #4: rolling cleanup — each new draw evicts the corresponding
+            // tag from DRAW_TAG_KEEP bars ago. One RemoveDrawObject per side,
+            // runs only when we're actually drawing → bounds the chart's
+            // draw-object pool tightly. Per feedback_nt8_wpf_quota_prevention.md.
+            int oldBar = CurrentBar - DRAW_TAG_KEEP;
+            if (oldBar >= 0)
+            {
+                try { RemoveDrawObject (tagPrefix + oldBar); }              catch { }
+                try { RemoveDrawObject (tagPrefix + "TXT_" + oldBar); }     catch { }
+            }
+
             try
             {
                 if (signal > 0)
@@ -4883,6 +4894,7 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
 
             atmStrategyId = GetAtmStrategyUniqueId ();
             orderId = GetAtmStrategyUniqueId ();
+            _atmIdsSetUtc = DateTime.UtcNow;   // defense #3: start registration-timeout clock
 
             _tradeMap[atmStrategyId] = new TradeRecord
             {
@@ -5081,6 +5093,7 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
             orderId = string.Empty;
             isAtmStrategyCreated = false;
             _atmPositionConfirmed = false;
+            _atmIdsSetUtc = DateTime.MinValue;     // defense #3: reset registration-timeout clock
             dailyUnrealizedPnL = 0.0;
 
             ClearActiveTradeSignalSources ();
@@ -5132,6 +5145,7 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
             martingaleOrderId = string.Empty;
             martingaleAtmStrategyCreated = false;
             martingalePositionConfirmed = false;
+            _martingaleIdsSetUtc = DateTime.MinValue;   // defense #3: reset registration-timeout clock
             fixedMartingaleSignalName = string.Empty;
             fixedMartingaleDirection = MarketPosition.Flat;
             fixedMartingaleEntryAvgPrice = 0.0;
@@ -5177,6 +5191,7 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
 
             martingaleAtmStrategyId = GetAtmStrategyUniqueId ();
             martingaleOrderId = GetAtmStrategyUniqueId ();
+            _martingaleIdsSetUtc = DateTime.UtcNow;   // defense #3: start registration-timeout clock
 
             Print ($"[{Name}] MARTINGALE ATM SUBMIT | Direction={direction} | Template={MartingaleAtmStrategy}");
 
@@ -6248,9 +6263,25 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
             {
                 try
                 {
+                    // Defense #5: unsubscribe each Click handler so the WPF dispatcher's
+                    // event table releases its strong refs to this strategy instance.
+                    // Without these `-=` lines, an enable→disable→enable cycle accumulates
+                    // click subscriptions and ghosted strategy instances stay rooted in
+                    // WPF memory. Per feedback_nt8_wpf_quota_prevention.md.
+                    try { if (_armLongBtn  != null) _armLongBtn.Click  -= ArmLongBtn_Click;  } catch { }
+                    try { if (_armShortBtn != null) _armShortBtn.Click -= ArmShortBtn_Click; } catch { }
+                    try { if (_revBtn      != null) _revBtn.Click      -= RevBtn_Click;     } catch { }
+                    try { if (_autoArmBtn  != null) _autoArmBtn.Click  -= AutoArmBtn_Click;  } catch { }
+                    try { if (_closeBtn    != null) _closeBtn.Click    -= CloseBtn_Click;   } catch { }
+
                     if (_controlPanel != null && UserControlCollection.Contains (_controlPanel))
                         UserControlCollection.Remove (_controlPanel);
 
+                    _armLongBtn  = null;
+                    _armShortBtn = null;
+                    _revBtn      = null;
+                    _autoArmBtn  = null;
+                    _closeBtn    = null;
                     _controlPanel = null;
                     _uiInitialized = false;
                 }
