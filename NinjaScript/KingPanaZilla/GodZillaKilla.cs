@@ -49,9 +49,9 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
     [CategoryOrder ("Indicator: SuperJumpBoost", 10)]
     [CategoryOrder ("Indicator: SumoPullback", 11)]
     [CategoryOrder ("Indicator: NobleCloud",   12)]
-    [CategoryOrder ("Display", 12)]
-    [CategoryOrder ("Audio Alerts", 13)]
-    [CategoryOrder ("Logging", 14)]
+    [CategoryOrder ("Display",                 13)]
+    [CategoryOrder ("Audio Alerts",            14)]
+    [CategoryOrder ("Logging",                 15)]
     #endregion
 
     public class GodZillaKilla : Strategy, ICustomTypeDescriptor
@@ -122,6 +122,7 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
         // Fixed PT/SL order mode
         private string fixedEntrySignalName = string.Empty;
         private MarketPosition fixedEntryDirection = MarketPosition.Flat;
+        private int fixedEntrySequence = 0;
         private double fixedEntryAvgPrice = 0.0;
         private int fixedEntryQty = 0;
         private bool fixedPositionConfirmed = false;
@@ -439,10 +440,10 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
         {
             if (State == State.SetDefaults)
             {
-                Description = "GodZillaKilla — strategy using direct KingOrderBlock/PANAKanal/ThunderZilla/SuperJumpBoost/SumoPullback child indicator signals.";
+                Description = "GodZillaKilla — strategy using direct KingOrderBlock/PANAKanal/ThunderZilla/SuperJumpBoost/SumoPullback/NobleCloud child indicator signals.";
                 Name = "GodZillaKilla";
                 StrategyName = Name;
-                _strategyVersion = "1.6.3";
+                _strategyVersion = "1.6.5";
 
                 Author = "Playr101";
                 Credits = "GreyBeard, ninZa.co, RenkoKings, ES, rbro999";
@@ -986,7 +987,7 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
                         "GodZilla_" + safeAccount + "_" + DateTime.Now.ToString("yyyyMMdd_HHmmss") + ".csv");
 
                     _logWriter = new StreamWriter (logPath, append: false, encoding: Encoding.UTF8);
-                    _logWriter.WriteLine ("OpenTime,Account,Instrument,OpenPrice,Qty,CloseTime,Trigger,Direction,AtmStrategy,RealizedPnL");
+                    _logWriter.WriteLine ("OpenTime,Account,Instrument,OpenPrice,Qty,CloseTime,Trigger,Direction,AtmStrategyName,RealizedPnL,SignalCombo,UsedSignals,TradeResult,LastTradeLine");
                     _logWriter.Flush ();
                 }
 
@@ -1273,16 +1274,39 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
             // 11. Reversal Submission
             if (CanUseReverseOnAlternateSignal () && !pendingReverseActive && !HasPendingEntryOrder ())
             {
+                if (activeGroup == null)
+                    return;
+
                 if (currentTradePosition == MarketPosition.Long && goShort && _armShort)
                 {
-                    QueuePendingReverse (MarketPosition.Short, false, true, true, true, false, false, groupTriggeredSize, groupTriggeredName);
+                    QueuePendingReverse (
+                        MarketPosition.Short,
+                        activeGroup.UsesKO,
+                        activeGroup.UsesPA,
+                        activeGroup.UsesTH,
+                        activeGroup.UsesSJ,
+                        activeGroup.UsesSU,
+                        activeGroup.UsesNC,
+                        groupTriggeredSize,
+                        groupTriggeredName);
+
                     FlattenEverything ("Reverse on alternate SHORT signal");
                     return;
                 }
 
                 if (currentTradePosition == MarketPosition.Short && goLong && _armLong)
                 {
-                    QueuePendingReverse (MarketPosition.Long, false, true, true, true, false, false, groupTriggeredSize, groupTriggeredName);
+                    QueuePendingReverse (
+                        MarketPosition.Long,
+                        activeGroup.UsesKO,
+                        activeGroup.UsesPA,
+                        activeGroup.UsesTH,
+                        activeGroup.UsesSJ,
+                        activeGroup.UsesSU,
+                        activeGroup.UsesNC,
+                        groupTriggeredSize,
+                        groupTriggeredName);
+
                     FlattenEverything ("Reverse on alternate LONG signal");
                     return;
                 }
@@ -1294,13 +1318,36 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
             // 12. Standard Entry Submission
             if (!HasActiveEntryState () && !HasPendingEntryOrder ())
             {
+                if (activeGroup == null)
+                    return;
+
                 if (goLong && _armLong)
                 {
-                    QueuePendingSignalEntry (MarketPosition.Long, koLong, paLong, thLong, sjLong, suLong, ncLong, groupTriggeredSize, groupTriggeredName, "Normal long entry");
+                    QueuePendingSignalEntry (
+                        MarketPosition.Long,
+                        activeGroup.UsesKO,
+                        activeGroup.UsesPA,
+                        activeGroup.UsesTH,
+                        activeGroup.UsesSJ,
+                        activeGroup.UsesSU,
+                        activeGroup.UsesNC,
+                        groupTriggeredSize,
+                        groupTriggeredName,
+                        "Normal long entry");
                 }
                 else if (goShort && _armShort)
                 {
-                    QueuePendingSignalEntry (MarketPosition.Short, koShort, paShort, thShort, sjShort, suShort, ncShort, groupTriggeredSize, groupTriggeredName, "Normal short entry");
+                    QueuePendingSignalEntry (
+                        MarketPosition.Short,
+                        activeGroup.UsesKO,
+                        activeGroup.UsesPA,
+                        activeGroup.UsesTH,
+                        activeGroup.UsesSJ,
+                        activeGroup.UsesSU,
+                        activeGroup.UsesNC,
+                        groupTriggeredSize,
+                        groupTriggeredName,
+                        "Normal short entry");
                 }
             }
 
@@ -1379,7 +1426,7 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
                 }
             }
 
-            bool strategyFlat = IsFixedStrategyFlat ();
+            bool strategyFlat = IsFixedStrategyFlat () || IsFixedAccountFlatAndDone ();
 
             if (fixedPositionConfirmed
                 && !fixedTradeCloseProcessed
@@ -1889,25 +1936,8 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
                 {
                     Cbi.MarketPosition atmPos;
 
-                    // Capture the ID before TryGetAtmMarketPositionSafe can clear it (it takes ref).
-                    // Needed so we can write the log record if the ATM was force-closed
-                    // (FlattenEverything → AtmStrategyClose tears down the ID before the normal
-                    // flat-detection path can fire WriteTradeLogRecord).
-                    string savedAtmId = atmStrategyId;
-
                     if (!TryGetAtmMarketPositionSafe (ref atmStrategyId, "Normal", out atmPos))
                     {
-                        // ATM ID gone — salvage the trade log record before discarding it.
-                        // dailyUnrealizedPnL holds the last known unrealized PnL from the previous
-                        // tick (the best estimate of the forced-close PnL we have).
-                        if (_atmPositionConfirmed && !string.IsNullOrEmpty (savedAtmId))
-                        {
-                            double forcedPnl = Instrument.MasterInstrument.RoundToTickSize (dailyUnrealizedPnL);
-                            if (EnableDebug)
-                                Print ($"[{Name}] FORCED-CLOSE LOG | ATM={savedAtmId} | EstPnL={forcedPnl:F2}");
-                            WriteTradeLogRecord (savedAtmId, tickTime, forcedPnl);
-                            _tradeMap.TryRemove (savedAtmId, out _);
-                        }
                         ClearNormalAtmState ("Normal ATM ID no longer exists");
                         dailyUnrealizedPnL = 0.0;
                         return;
@@ -3531,18 +3561,25 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
             List<string> enabledSignals = new List<string> ();
             List<string> lines = new List<string> ();
 
-            // 1. Always show which signals are currently armed in the strategy settings
-            if (UseKOSignals)
+            bool koEnabledAnywhere = UseKOSignals || (EnableGroupTriggerSet2 && G2_UseKOSignals);
+            bool paEnabledAnywhere = UsePASignals || (EnableGroupTriggerSet2 && G2_UsePASignals);
+            bool thEnabledAnywhere = UseTHSignals || (EnableGroupTriggerSet2 && G2_UseTHSignals);
+            bool sjEnabledAnywhere = UseSJSignals || (EnableGroupTriggerSet2 && G2_UseSJSignals);
+            bool suEnabledAnywhere = UseSUSignals || (EnableGroupTriggerSet2 && G2_UseSUSignals);
+            bool ncEnabledAnywhere = UseNCSignals || (EnableGroupTriggerSet2 && G2_UseNCSignals);
+
+            // 1. Always show total unique indicator signals enabled across Set 1 + active Set 2.
+            if (koEnabledAnywhere)
                 enabledSignals.Add ("KO");
-            if (UsePASignals)
+            if (paEnabledAnywhere)
                 enabledSignals.Add ("PA");
-            if (UseTHSignals)
+            if (thEnabledAnywhere)
                 enabledSignals.Add ("TH");
-            if (UseSJSignals)
+            if (sjEnabledAnywhere)
                 enabledSignals.Add ("SJ");
-            if (UseSUSignals)
+            if (suEnabledAnywhere)
                 enabledSignals.Add ("SU");
-            if (UseNCSignals)
+            if (ncEnabledAnywhere)
                 enabledSignals.Add ("NC");
 
             lines.Add (enabledSignals.Count > 0
@@ -3552,17 +3589,17 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
             // 2. Individual Signal Stats (Show/Hide Toggle)
             if (ShowIndividualSignalStats)
             {
-                if (UseKOSignals)
+                if (koEnabledAnywhere)
                     lines.Add (FormatStatsLine ("KO", koStats));
-                if (UsePASignals)
+                if (paEnabledAnywhere)
                     lines.Add (FormatStatsLine ("PA", paStats));
-                if (UseTHSignals)
+                if (thEnabledAnywhere)
                     lines.Add (FormatStatsLine ("TH", thStats));
-                if (UseSJSignals)
+                if (sjEnabledAnywhere)
                     lines.Add (FormatStatsLine ("SJ", sjStats));
-                if (UseSUSignals)
+                if (suEnabledAnywhere)
                     lines.Add (FormatStatsLine ("SU", suStats));
-                if (UseNCSignals)
+                if (ncEnabledAnywhere)
                     lines.Add (FormatStatsLine ("NC", ncStats));
             }
 
@@ -4284,9 +4321,23 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
                 if (State == State.Historical)
                     return Position.MarketPosition != MarketPosition.Flat;
 
+                // Realtime FixedTicks safety:
+                // If the real account is flat and there are no working orders, do NOT let
+                // a stale Strategy Position row block the next trade.
+                if (IsFixedAccountFlatAndDone ()
+                    && string.IsNullOrEmpty (fixedEntrySignalName)
+                    && !fixedPositionConfirmed
+                    && string.IsNullOrEmpty (fixedMartingaleSignalName)
+                    && !fixedMartingalePositionConfirmed
+                    && !martingaleRecoveryActive)
+                    return false;
+
                 return !string.IsNullOrEmpty (fixedEntrySignalName)
                     || fixedPositionConfirmed
-                    || Position.MarketPosition != MarketPosition.Flat;
+                    || !string.IsNullOrEmpty (fixedMartingaleSignalName)
+                    || fixedMartingalePositionConfirmed
+                    || martingaleRecoveryActive
+                    || (!IsFixedAccountFlatAndDone () && Position.MarketPosition != MarketPosition.Flat);
             }
 
             return orderId.Length > 0 || atmStrategyId.Length > 0;
@@ -4315,7 +4366,12 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
 
             lastFixedStateSanityCheckUtc = nowUtc;
 
-            if (!IsFixedStrategyFlat ())
+            bool fixedDone =
+        State == State.Historical
+        ? IsFixedStrategyFlat ()
+        : (IsFixedStrategyFlat () || IsFixedAccountFlatAndDone ());
+
+            if (!fixedDone)
                 return;
 
             bool fixedStateStale =
@@ -4351,7 +4407,13 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
                 && fallbackExitPrice > 0)
             {
                 if (EnableDebug)
-                    Print ($"[{Name}] FIXEDTICKS STALE CLOSE BOOKING | Signal={fixedEntrySignalName} | Direction={fixedEntryDirection} | Entry={fixedEntryAvgPrice:F2} | Exit={fallbackExitPrice:F2}");
+                    Print ($"[{Name}] FIXEDTICKS STALE CLOSE BOOKING | "
+                        + $"Signal={fixedEntrySignalName} | "
+                        + $"Direction={fixedEntryDirection} | "
+                        + $"Entry={fixedEntryAvgPrice:F2} | "
+                        + $"Exit={fallbackExitPrice:F2} | "
+                        + $"StrategyPos={(Position != null ? Position.MarketPosition.ToString () : "NULL")} | "
+                        + $"AccountFlatDone={IsFixedAccountFlatAndDone ()}");
 
                 ProcessFixedTradeClosed (fallbackExitPrice, fallbackExitTime);
             }
@@ -4364,7 +4426,13 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
                 && fallbackExitPrice > 0)
             {
                 if (EnableDebug)
-                    Print ($"[{Name}] FIXEDTICKS STALE MARTINGALE CLOSE BOOKING | Signal={fixedMartingaleSignalName} | Direction={fixedMartingaleDirection} | Entry={fixedMartingaleEntryAvgPrice:F2} | Exit={fallbackExitPrice:F2}");
+                    Print ($"[{Name}] FIXEDTICKS STALE MARTINGALE CLOSE BOOKING | "
+                        + $"Signal={fixedMartingaleSignalName} | "
+                        + $"Direction={fixedMartingaleDirection} | "
+                        + $"Entry={fixedMartingaleEntryAvgPrice:F2} | "
+                        + $"Exit={fallbackExitPrice:F2} | "
+                        + $"StrategyPos={(Position != null ? Position.MarketPosition.ToString () : "NULL")} | "
+                        + $"AccountFlatDone={IsFixedAccountFlatAndDone ()}");
 
                 ProcessFixedMartingaleClosed (fallbackExitPrice, fallbackExitTime);
             }
@@ -4391,6 +4459,8 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
 
             if (EnableDebug)
                 Print ($"[{Name}] FIXEDTICKS STALE STATE CLEARED | "
+                    + $"StrategyPos={(Position != null ? Position.MarketPosition.ToString () : "NULL")} | "
+                    + $"AccountFlatDone={IsFixedAccountFlatAndDone ()} | "
                     + $"FixedSignal={fixedEntrySignalName} | "
                     + $"FixedConfirmed={fixedPositionConfirmed} | "
                     + $"FixedClosedProcessed={fixedTradeCloseProcessed} | "
@@ -4436,7 +4506,10 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
             }
 
             string trigger = BuildSignalTriggerName (useKO, usePA, useTH, useSJ, useSU, useNC, groupSize, groupName);
-            string signalName = isLong ? "FixedLongEntry" : "FixedShortEntry";
+
+            fixedEntrySequence++;
+
+            string signalName = (isLong ? "FixedLongEntry_" : "FixedShortEntry_") + fixedEntrySequence.ToString ();
 
             fixedEntrySignalName = signalName;
             fixedEntryDirection = isLong ? MarketPosition.Long : MarketPosition.Short;
@@ -4834,6 +4907,84 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
             {
                 return true;
             }
+        }
+
+        private NinjaTrader.Cbi.Position GetAccountPositionForCurrentInstrument ()
+        {
+            try
+            {
+                if (Account == null || Instrument == null)
+                    return null;
+
+                foreach (NinjaTrader.Cbi.Position p in Account.Positions)
+                {
+                    if (p == null || p.Instrument == null)
+                        continue;
+
+                    if (p.Instrument.FullName == Instrument.FullName)
+                        return p;
+                }
+            }
+            catch { }
+
+            return null;
+        }
+
+        private bool IsAccountFlatForCurrentInstrument ()
+        {
+            try
+            {
+                NinjaTrader.Cbi.Position accountPos = GetAccountPositionForCurrentInstrument ();
+
+                if (accountPos == null)
+                    return true;
+
+                return accountPos.MarketPosition == MarketPosition.Flat || accountPos.Quantity == 0;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private bool HasWorkingAccountOrdersForCurrentInstrument ()
+        {
+            try
+            {
+                if (Account == null || Instrument == null)
+                    return false;
+
+                lock (Account.Orders)
+                {
+                    foreach (Order o in Account.Orders)
+                    {
+                        if (o == null || o.Instrument == null)
+                            continue;
+
+                        if (o.Instrument.FullName != Instrument.FullName)
+                            continue;
+
+                        string state = o.OrderState.ToString ();
+
+                        if (state == "Working"
+                            || state == "Accepted"
+                            || state == "Submitted"
+                            || state == "PartFilled"
+                            || state == "ChangePending"
+                            || state == "CancelPending"
+                            || state == "TriggerPending")
+                            return true;
+                    }
+                }
+            }
+            catch { }
+
+            return false;
+        }
+
+        private bool IsFixedAccountFlatAndDone ()
+        {
+            return IsAccountFlatForCurrentInstrument () && !HasWorkingAccountOrdersForCurrentInstrument ();
         }
 
         private double GetFixedExitFallbackPrice (double preferredPrice = 0.0)
@@ -5305,15 +5456,6 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
             }
             catch
             {
-                // ATM ID gone — salvage the trade log record before returning.
-                if (martingalePositionConfirmed && !string.IsNullOrEmpty (martingaleAtmStrategyId))
-                {
-                    double forcedPnl = Instrument.MasterInstrument.RoundToTickSize (dailyUnrealizedPnL);
-                    if (EnableDebug)
-                        Print ($"[{Name}] FORCED-CLOSE MARTINGALE LOG | ATM={martingaleAtmStrategyId} | EstPnL={forcedPnl:F2}");
-                    WriteTradeLogRecord (martingaleAtmStrategyId, tickTime, forcedPnl);
-                    _tradeMap.TryRemove (martingaleAtmStrategyId, out _);
-                }
                 return;
             }
 
@@ -5348,12 +5490,7 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
                 totalRealizedPnL += martingaleLastRealizedPnL;
                 UpdateLastTradeClosedSummary (martingaleLastRealizedPnL);
 
-                if (_logWriter != null && _tradeMap.TryGetValue (martingaleAtmStrategyId, out TradeRecord tr))
-                {
-                    string acct = (Account != null && !string.IsNullOrEmpty (Account.Name)) ? Account.Name : "NoAccount";
-                    _logWriter.WriteLine ($"{tr.OpenTime:yyyy-MM-dd HH:mm:ss},{acct},{tr.Instrument},{tr.OpenPrice:F2},{tr.Qty},{tickTime:yyyy-MM-dd HH:mm:ss},{tr.Trigger},{tr.Direction},{tr.AtmStrategyName},{martingaleLastRealizedPnL:F2}");
-                    _logWriter.Flush ();
-                }
+                WriteTradeLogRecord (martingaleAtmStrategyId, tickTime, martingaleLastRealizedPnL);
 
                 Print ($"[{Name}] MARTINGALE CLOSED | PnL={martingaleLastRealizedPnL:F2} | Recovery complete. Normal signal entries resumed.");
 
@@ -5396,6 +5533,16 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
                         + $"atmId={atmStrategyId} was confirmed valid (position was open), "
                         + $"NT8 now reports Flat while Account still holds position. "
                         + $"Likely HDS bounce. Triggering Account-level recovery.");
+
+                    // Salvage trade log BEFORE clearing state — _atmPositionConfirmed
+                    // will be false after this block, making WriteTradeLogRecord unreachable.
+                    string d8SavedId    = atmStrategyId;
+                    double d8ForcedPnl  = Instrument.MasterInstrument.RoundToTickSize (dailyUnrealizedPnL);
+                    if (EnableDebug)
+                        Print ($"[{Name}] DEFENSE #8 FORCED-CLOSE LOG | ATM={d8SavedId} | EstPnL={d8ForcedPnl:F2}");
+                    WriteTradeLogRecord (d8SavedId, nowUtc, d8ForcedPnl);
+                    _tradeMap.TryRemove (d8SavedId, out _);
+
                     FlattenEverything ("Defense #8: mid-trade ATM ID went stale (HDS bounce recovery)");
                     atmStrategyId           = string.Empty;
                     orderId                 = string.Empty;
@@ -5426,8 +5573,16 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
                 {
                     Print ($"[{Name}] MID-TRADE MARTINGALE ATM STALENESS DETECTED — "
                         + $"martingaleAtmId={martingaleAtmStrategyId}. Triggering Account-level recovery.");
+
+                    // Salvage trade log BEFORE clearing state.
+                    string d8MartSavedId   = martingaleAtmStrategyId;
+                    double d8MartForcedPnl = Instrument.MasterInstrument.RoundToTickSize (dailyUnrealizedPnL);
+                    if (EnableDebug)
+                        Print ($"[{Name}] DEFENSE #8 MARTINGALE FORCED-CLOSE LOG | ATM={d8MartSavedId} | EstPnL={d8MartForcedPnl:F2}");
+                    WriteTradeLogRecord (d8MartSavedId, nowUtc, d8MartForcedPnl);
+
                     FlattenEverything ("Defense #8: mid-trade martingale ATM ID went stale");
-                    _tradeMap.TryRemove (martingaleAtmStrategyId, out _);
+                    _tradeMap.TryRemove (d8MartSavedId, out _);
                     ResetMartingaleRecovery ();
                 }
             }
