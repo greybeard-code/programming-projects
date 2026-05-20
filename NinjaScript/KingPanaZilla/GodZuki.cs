@@ -87,6 +87,8 @@ namespace NinjaTrader.NinjaScript.Indicators.GreyBeard.KingPanaZilla
         private const int  DRAW_TAG_KEEP    = 250;
         private SimpleFont _signalArrowFont;
 
+        private bool _indicatorNullWarned = false;
+
         private Dictionary<string, string> _lastAudioAlertStampByKey = new Dictionary<string, string> ();
         private StreamWriter _logWriter;
         private int          _lastLoggedBar = -1;
@@ -119,7 +121,7 @@ namespace NinjaTrader.NinjaScript.Indicators.GreyBeard.KingPanaZilla
             {
                 Description = "GodZuki — pure signal indicator. KO/PA/TH/SJ/SU/NC signals with EMA filter, audio alerts, and CSV logging. No trading.";
                 Name        = "GodZuki";
-                _version    = "1.0.1";
+                _version    = "1.0.3";
 
                 IsOverlay                = true;
                 IsAutoScale              = false;
@@ -275,14 +277,25 @@ namespace NinjaTrader.NinjaScript.Indicators.GreyBeard.KingPanaZilla
         protected override void OnBarUpdate ()
         {
             if (CurrentBar < BarsRequiredToPlot) return;
+
+            if (_king == null || _pana == null || _thunder == null || _sjb == null || _sumo == null || _nc == null)
+            {
+                if (!_indicatorNullWarned && State == State.Realtime)
+                {
+                    _indicatorNullWarned = true;
+                    Print ($"[{Name}] INDICATOR NULL | One or more child indicators failed to load. KO={_king != null} PA={_pana != null} TH={_thunder != null} SJ={_sjb != null} SU={_sumo != null} NC={_nc != null}");
+                }
+                return;
+            }
+
             try
             {
-                double koRaw=_king!=null?SafeSignalRead(()=>_king.Signal_Trade[0],"KO"):0.0;
-                double paRaw=_pana!=null?SafeSignalRead(()=>_pana.Signal_Trade[0],"PA"):0.0;
-                double thRaw=_thunder!=null?SafeSignalRead(()=>_thunder.Signal_Trade[0],"TH"):0.0;
-                double sjRaw=_sjb!=null?SafeSignalRead(()=>_sjb.Signal_Trade[0],"SJ"):0.0;
-                double suRaw=_sumo!=null?SafeSignalRead(()=>_sumo.Signal_Trade[0],"SU"):0.0;
-                double ncRaw=_nc!=null?SafeSignalRead(()=>_nc.Signal_Trade[0],"NC"):0.0;
+                double koRaw = SafeSignalRead (() => _king.Signal_Trade[0], "KO");
+                double paRaw = SafeSignalRead (() => _pana.Signal_Trade[0], "PA");
+                double thRaw = SafeSignalRead (() => _thunder.Signal_Trade[0], "TH");
+                double sjRaw = SafeSignalRead (() => _sjb.Signal_Trade[0], "SJ");
+                double suRaw = SafeSignalRead (() => _sumo.Signal_Trade[0], "SU");
+                double ncRaw = SafeSignalRead (() => _nc.Signal_Trade[0], "NC");
                 int ko=ComputeSignal(UseKOSignals,koRaw,KO_LongOperator,KO_LongValue,KO_ShortOperator,KO_ShortValue);
                 int pa=ComputeSignal(UsePASignals,paRaw,PA_LongOperator,PA_LongValue,PA_ShortOperator,PA_ShortValue);
                 int th=ComputeSignal(UseTHSignals,thRaw,TH_LongOperator,TH_LongValue,TH_ShortOperator,TH_ShortValue);
@@ -1262,11 +1275,15 @@ namespace NinjaTrader.NinjaScript.Indicators.GreyBeard.KingPanaZilla
         public bool EnableSignalAudioAlerts{get;set;}
         [NinjaScriptProperty][Display(Name="Enable Individual Signal Alerts",Order=1,GroupName="Audio Alerts")][RefreshProperties(RefreshProperties.All)]
         public bool EnableIndividualSignalAudioAlerts{get;set;}
-        [NinjaScriptProperty][Display(Name="Individual Signal Alert Sound",Order=2,GroupName="Audio Alerts")]
+        [NinjaScriptProperty]
+        [Display(Name="Individual Signal Alert Sound", Order=2, GroupName="Audio Alerts", Description="Sound file for individual indicator signal alerts. Click the field to browse for a .wav file.")]
+        [PropertyEditor("NinjaTrader.Gui.Tools.FilePathPicker", Filter="WAV files (*.wav)|*.wav|All files (*.*)|*.*")]
         public string IndividualSignalAlertSound{get;set;}
         [NinjaScriptProperty][Display(Name="Enable Group Signal Alerts",Order=3,GroupName="Audio Alerts")][RefreshProperties(RefreshProperties.All)]
         public bool EnableGroupSignalAudioAlerts{get;set;}
-        [NinjaScriptProperty][Display(Name="Group Signal Alert Sound",Order=4,GroupName="Audio Alerts")]
+        [NinjaScriptProperty]
+        [Display(Name="Group Signal Alert Sound", Order=4, GroupName="Audio Alerts", Description="Sound file for group trigger signal alerts. Click the field to browse for a .wav file.")]
+        [PropertyEditor("NinjaTrader.Gui.Tools.FilePathPicker", Filter="WAV files (*.wav)|*.wav|All files (*.*)|*.*")]
         public string GroupSignalAlertSound{get;set;}
 
         // ── Logging ───────────────────────────────────────────────────────────────
