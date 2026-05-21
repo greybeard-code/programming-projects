@@ -1,6 +1,6 @@
 # GodZillaKilla — ATM Trading Strategy
 
-**Version:** 1.6.5
+**Version:** 1.6.9
 **Namespace:** `NinjaTrader.NinjaScript.Strategies.Playr101`
 **Author:** Playr101
 **Credits:** GreyBeard, ninZa.co, RenkoKings, ES, rbro999
@@ -13,7 +13,10 @@ GodZillaKilla is a NinjaTrader 8 strategy that reads signals from the six KingPa
 
 | Version | Summary |
 |---|---|
-| **1.6.5** | Fixed CategoryOrder collision (Display/NobleCloud both at 12). Fixed CSV log header to match 14-column output. Fixed martingale close path to use `WriteTradeLogRecord`. Applied Defense #8 `WriteTradeLogRecord` patches to both normal ATM and martingale ATM stale-ID paths. |
+| **1.6.9** | Playr build. GUI "Display" category split into Dashboard Display / Indicator Display / ATM Marker Display. Added `gbBarStatus` visual indicator (`ShowBarStatusIndicator`, default on). HUD auto-sizes width via `MeasureHudTextWidth()` — fixes confluence label clipping. `IsExitOnSessionCloseStrategy` → `true`. `UseNCSignals` default → `false`. `IsCurrentPositionForInstrument` wrapped in `lock(Account.Positions)`. Fixed-Ticks order filter narrowed to `"Stop loss"` / `"Profit target"` only. `NC_Brush` hidden correctly when `UseNCSignals = false`. Auto-arm OFF now symmetrically clears long + short + reverse. |
+| 1.6.7–1.6.8 | Intermediate Playr builds (not separately committed to this repo). |
+| 1.6.6 | Playr build. GodZuki v1.0.3 companion build. |
+| 1.6.5 | Fixed CategoryOrder collision (Display/NobleCloud both at 12). Fixed CSV log header to match 14-column output. Fixed martingale close path to use `WriteTradeLogRecord`. Applied Defense #8 `WriteTradeLogRecord` patches to both normal ATM and martingale ATM stale-ID paths. |
 | 1.6.4 | Internal bump by Playr101. |
 | 1.6.3 | Added NobleCloud (NC) as sixth signal indicator. Defense #8 mid-trade staleness detection. |
 
@@ -37,6 +40,8 @@ Strategy-managed entries with configurable quantity, stop-loss ticks, and profit
 
 ### Sub-Indicators
 GodZillaKilla instantiates all six KPZ sub-indicators at `State.DataLoaded`. Each exposes a `Signal_Trade` series; the strategy reads `Signal_Trade[0]` every bar close.
+
+An optional **gbBarStatus** indicator can also be added to the chart panel (`ShowBarStatusIndicator`, default on). It is visual-only — not read for signals, entries, exits, filters, or PnL.
 
 ### Signal Configuration
 Each indicator has independent Long and Short threshold values and comparison operators (`Equal`, `GreaterOrEqual`, `GreaterThan`, `LessOrEqual`, `LessThan`, `NotEqual`).
@@ -79,6 +84,7 @@ Integrates with `gbNewsSignals` for real-time economic calendar blocking. Config
 | **Use Unrealized PnL** | Includes open position PnL in the daily limit calculation |
 | **Start Fresh On Enable** | Ignores historical trade PnL when the strategy is enabled in realtime |
 | **Martingale On Stop Loss** | Fires one recovery trade in the opposite direction after a stop-loss event |
+| **Session-Close Exit** | `IsExitOnSessionCloseStrategy = true` — NT8 auto-flattens at session end as a backstop if the strategy's own TF/daily-limit flatten paths are missed (e.g., strategy disabled mid-day, TF3 EndTime3 misaligned) |
 
 ---
 
@@ -117,14 +123,16 @@ The SharpDX overlay panel shows:
 Position: configurable (`TopLeft` / `TopRight` / `BottomLeft` / `BottomRight` / `Center` / `Hidden`).
 Size: `Tiny` / `Small` / `Normal` / `Large` / `Huge`.
 
+The panel auto-sizes its width each render pass using `MeasureHudTextWidth()` (SharpDX `DirectWrite.TextLayout`). Width is the larger of `HudBoxWidth()` (preset floor) and the measured widest row, preventing clipping of long confluence labels (e.g., `SET1-G6-KO+PA+TH+SJ+SU+NC`). The panel position is then clamped to stay within the chart render area.
+
 ---
 
 ## Control Panel
 
 An on-chart WPF button panel (ARM LONG / ARM SHORT / REV / AUTO / CLOSE) allows realtime manual control of:
 - Arming long and/or short entries independently
-- Toggling auto-arm (enables/disables all automated entries)
-- Toggling reverse-on-opposite-signal behaviour
+- Toggling auto-arm — when OFF, disarms long, short, **and** reverse together (symmetric kill-switch); when ON, arms all three
+- Toggling reverse-on-opposite-signal behaviour independently
 - Immediately flattening all positions and cancelling orders
 
 ---
@@ -159,7 +167,9 @@ One row is written per closed trade. Defense #8 forced-close events also write a
 | Filters | `EnableEmaFilter`, `EmaShortPeriod`, `EmaLongPeriod`, `EnableNewsFilter` |
 | Session | `EnableTF1`…`EnableTF3`, `StartTime1`…`EndTime3`, `EnableSkipTimeWindow` |
 | Risk | `EnableDailyProfitTarget`, `DailyProfitTarget`, `EnableDailyLossLimit`, `DailyLossLimit` |
-| Display | `ShowDashboard`, `DashboardPosition`, `DashboardSize`, `ShowEntryExitMarkers` |
+| Dashboard Display | `ShowDashboard`, `DashboardPosition`, `DashboardSize`, `ShowControlPanel`, `ControlPanelPosition` |
+| Indicator Display | `ShowBarStatusIndicator`, per-indicator show/color/arrow toggles (`ShowKOIndicator`…`ShowNCIndicator`) |
+| ATM Marker Display | `ShowEntryExitMarkers`, `LineWidth`, `LongColor`, `ShortColor`, `ShowTextLabels` |
 | Audio | `EnableSignalAudioAlerts`, `IndividualSignalAlertSound`, `GroupSignalAlertSound` |
 | Logging | `LogEnabled`, `EnableDebug` |
 
