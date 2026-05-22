@@ -1,6 +1,6 @@
 # GodZillaKilla — ATM Trading Strategy
 
-**Version:** 1.6.9
+**Version:** 1.7.0
 **Namespace:** `NinjaTrader.NinjaScript.Strategies.Playr101`
 **Author:** Playr101
 **Credits:** GreyBeard, ninZa.co, RenkoKings, ES, rbro999
@@ -13,7 +13,8 @@ GodZillaKilla is a NinjaTrader 8 strategy that reads signals from the six KingPa
 
 | Version | Summary |
 |---|---|
-| **1.6.9** | Playr build. GUI "Display" category split into Dashboard Display / Indicator Display / ATM Marker Display. Added `gbBarStatus` visual indicator (`ShowBarStatusIndicator`, default on). HUD auto-sizes width via `MeasureHudTextWidth()` — fixes confluence label clipping. `IsExitOnSessionCloseStrategy` → `true`. `UseNCSignals` default → `false`. `IsCurrentPositionForInstrument` wrapped in `lock(Account.Positions)`. Fixed-Ticks order filter narrowed to `"Stop loss"` / `"Profit target"` only. `NC_Brush` hidden correctly when `UseNCSignals = false`. Auto-arm OFF now symmetrically clears long + short + reverse. |
+| **1.7.0** | Playr build. `FlattenEverything` reentrancy guard — cross-thread double-checked lock (`_flattenLock` + `volatile _flattenInProgress`) prevents concurrent execution when `CloseBtn_Click` (WPF thread) races a data-thread flatten. Actual close sequence extracted to `FlattenEverythingInternal`. Both skip paths log under `EnableDebug`. |
+| 1.6.9 | Playr build. GUI "Display" category split into Dashboard Display / Indicator Display / ATM Marker Display. Added `gbBarStatus` visual indicator (`ShowBarStatusIndicator`, default on). HUD auto-sizes width via `MeasureHudTextWidth()` — fixes confluence label clipping. `IsExitOnSessionCloseStrategy` → `true`. `UseNCSignals` default → `false`. `IsCurrentPositionForInstrument` wrapped in `lock(Account.Positions)`. Fixed-Ticks order filter narrowed to `"Stop loss"` / `"Profit target"` only. `NC_Brush` hidden correctly when `UseNCSignals = false`. Auto-arm OFF now symmetrically clears long + short + reverse. |
 | 1.6.7–1.6.8 | Intermediate Playr builds (not separately committed to this repo). |
 | 1.6.6 | Playr build. GodZuki v1.0.3 companion build. |
 | 1.6.5 | Fixed CategoryOrder collision (Display/NobleCloud both at 12). Fixed CSV log header to match 14-column output. Fixed martingale close path to use `WriteTradeLogRecord`. Applied Defense #8 `WriteTradeLogRecord` patches to both normal ATM and martingale ATM stale-ID paths. |
@@ -102,6 +103,8 @@ GodZillaKilla includes eight layered defenses against NT8 lifecycle edge cases:
 | #6 | Position inherited from prior session | Captured as baseline; PnL calculated from delta |
 | #7 | `TryGetAtmMarketPositionSafe` failure | Falls back to account-level position check |
 | #8 | Mid-trade ATM ID goes stale (HDS bounce) | Writes trade log, flattens at account level, resets all ATM state |
+
+**FlattenEverything thread safety:** All flatten paths funnel through a single `FlattenEverything(reason)` gate that uses a double-checked lock (`_flattenLock` + `volatile _flattenInProgress`) to prevent concurrent execution when the WPF-thread CLOSE ALL button races a data-thread trigger. The actual close sequence runs in `FlattenEverythingInternal`.
 
 **Defense #8 detail:** Fires inside `EvictStaleAtmIdsIfTimedOut` on every tick. Detects a mismatch between the ATM reporting Flat and the account still holding a position. `WriteTradeLogRecord` is called **before** clearing `_atmPositionConfirmed` — both the normal ATM path and the martingale ATM path are protected. The estimated PnL from `dailyUnrealizedPnL` is used for the forced-close log record.
 
