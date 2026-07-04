@@ -79,6 +79,15 @@ touching the floor.
 The console summary reports either the breach timestamp or the minimum
 headroom that survived; the tearsheet plots the floor under the equity curve.
 
+## Monte Carlo
+
+Every run (unless `--mc 0`) resamples the closed-trade P&L 2,000× to separate
+skill from ordering luck: 5/50/95th-percentile final P&L, max-drawdown
+distribution, **P(breaching the Apex trailing threshold)** across orderings,
+and with `--mc-target 3000` the eval race — P(hitting the target before a
+breach). Block bootstrap is used automatically when trade returns are
+serially correlated (|r| > 0.2, per Davey).
+
 ## CLI
 
 ```

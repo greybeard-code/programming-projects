@@ -13,7 +13,7 @@ import sys
 from pathlib import Path
 
 from backtester import ApexConfig, Backtest, Strategy
-from backtester import metrics, report
+from backtester import metrics, montecarlo, report
 
 
 def load_strategy(path: str) -> Strategy:
@@ -47,6 +47,11 @@ def main() -> None:
                     help="stop the backtest when the threshold is breached")
     ap.add_argument("--slippage", type=float, default=0.0,
                     help="extra slippage in ticks on market/stop fills")
+    ap.add_argument("--mc", type=int, default=2000, metavar="N",
+                    help="Monte Carlo simulations (default 2000; 0 disables)")
+    ap.add_argument("--mc-target", type=float, default=None, metavar="$",
+                    help="eval profit target for P(pass before breach), "
+                         "e.g. 3000 for a 50K Apex eval")
     ap.add_argument("--out", default=None,
                     help="tearsheet path (default reports\\<strategy>_<symbol>.html)")
     ap.add_argument("--no-report", action="store_true", help="console output only")
@@ -67,10 +72,19 @@ def main() -> None:
     stats = metrics.compute(result)
     print(metrics.format_console(result, stats))
 
+    mc = None
+    if args.mc > 0 and len(result.trades) >= 2:
+        mc = montecarlo.run(
+            result.trades, start_balance=args.balance, n_sims=args.mc,
+            apex_threshold=args.apex_threshold if args.apex_threshold > 0 else None,
+            profit_target=args.mc_target)
+        print()
+        print(montecarlo.format_console(mc))
+
     if not args.no_report:
         out = Path(args.out or (Path("reports")
                                 / f"{result.strategy_name}_{result.symbol}.html"))
-        path = report.render(result, stats, out)
+        path = report.render(result, stats, out, mc=mc)
         csv_path = report.write_trades_csv(
             result, out.with_name(out.stem + "_trades.csv"))
         print(f"\nTearsheet: {path.resolve()}")

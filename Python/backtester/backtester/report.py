@@ -45,7 +45,7 @@ def write_trades_csv(result, out_path: str | Path) -> Path:
     return out_path
 
 
-def render(result, stats: dict, out_path: str | Path) -> Path:
+def render(result, stats: dict, out_path: str | Path, mc=None) -> Path:
     out_path = Path(out_path)
 
     fig = make_subplots(
@@ -119,6 +119,21 @@ def render(result, stats: dict, out_path: str | Path) -> Path:
         else:
             apex_txt = f"survived (min headroom {_fmt(stats['apex_min_headroom'])})"
         stat_rows.append((f"Apex trailing ({_fmt(stats['apex_threshold'])})", apex_txt))
+
+    if mc is not None:
+        stat_rows.append((f"MC ({mc.n_sims} sims, {mc.method})",
+                          f"P&L 5/50/95%: {_fmt(mc.pnl_p5)} / "
+                          f"{_fmt(mc.pnl_median)} / {_fmt(mc.pnl_p95)}"))
+        stat_rows.append(("MC max drawdown",
+                          f"median {_fmt(mc.dd_median)}, "
+                          f"5%-worst {_fmt(mc.dd_p95)}"))
+        if mc.prob_breach is not None:
+            stat_rows.append(("MC P(Apex breach)",
+                              f"{mc.prob_breach * 100:.1f}%"))
+        if mc.prob_pass is not None:
+            stat_rows.append((f"MC P(pass {_fmt(mc.profit_target)} eval)",
+                              f"{mc.prob_pass * 100:.1f}% "
+                              f"(fail {mc.prob_fail * 100:.1f}%)"))
 
     stats_html = "".join(
         f"<tr><td>{html.escape(k)}</td><td class='v'>{html.escape(v)}</td></tr>"
