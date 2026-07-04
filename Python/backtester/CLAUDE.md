@@ -53,13 +53,16 @@ plotly, tzdata, pytest — no pandas/polars, keep it that way unless needed).
   on_finish; buy_bracket, move_stop, move_stop_to_breakeven, ...);
   indicators.py has incremental NT8-style indicators (EMA, SMA, ATR, RSI,
   EfficiencyRatio, Highest, Lowest). Bar types via `period` / BarSpec:
-  time ("1m"), tick ("500t"), renko ("r8" = 8-tick brick, 2-brick reversal;
-  "r8x3"). Renko closes snap to the brick grid, opens are synthetic
-  (prev close), H/L include the synthetic open (ninZaRenko/NT8-indicator
-  parity — deliberate, see test_renko_reversal_needs_two_bricks). Gap moves
-  emit extra bricks with zero-length spans. Fills always resolve on real
-  ticks regardless of bar type, so NT8's Renko fantasy-fill problem does
-  not apply here.
+  time ("1m"), tick ("500t"), renko ("r8-4" = brick 8 ticks / trend 4;
+  "r8" defaults trend to brick/2). Renko follows the published ninZaRenko
+  manual (Scribd doc 392092944): body always = brick B; with-trend close at
+  prev_close ± T; open = close ∓ B (open offset B−T, overlapping bars);
+  reversal closes at prev_close ∓ (2B−T). H/L include the synthetic open
+  (NT8-indicator parity — deliberate). Gap moves emit extra bars with
+  zero-length spans. Fills always resolve on real ticks regardless of bar
+  type, so NT8's Renko fantasy-fill problem does not apply here. Do NOT
+  accept decompiled ninZa source into this repo; validate bar parity via
+  chart export / compare_nt8 instead.
 
 ## Conventions & gotchas
 

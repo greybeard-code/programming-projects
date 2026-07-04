@@ -56,10 +56,13 @@ Indicators (incremental, NT8-style): `EMA, SMA, ATR, RSI, Highest, Lowest`.
 - **Time** — `30s`, `1m`, `5m`, `1h` (bar timestamp = close time, NT8-style;
   empty bars omitted).
 - **Tick** — `500t`: fixed trade-count bars.
-- **Renko (ninZaRenko-style)** — `r8`: 8-tick bricks, 2-brick reversal
-  (`r8x3` for 3-brick). Closes snap to the brick grid, opens are synthetic
-  (previous close), high/low include both the synthetic open and the real
-  tick extremes — matching what NT8 indicators see on ninZaRenko bars.
+- **Renko (ninZaRenko)** — `r8-4`: brick size 8 ticks (every bar's body
+  height), trend threshold 4 ticks (with-trend close distance from the
+  previous close). `r8` defaults trend to brick/2. Implements the published
+  ninZaRenko manual: open offset = brick − trend (bars overlap), reversal
+  threshold = 2·brick − trend, equal bodies both directions. Manual's
+  recommended configs: 8-4, 15-5, 12-4, 20-5, 30-10. High/low include the
+  synthetic open — matching what NT8 indicators see on ninZaRenko bars.
 
 Bar type only changes *when the strategy is asked to decide*. Orders always
 fill against the real tick stream, so none of NT8's Renko fantasy-fill

@@ -226,8 +226,8 @@ class BarSpec:
     kind: str
     seconds: int = 0          # time bars
     ticks: int = 0            # tick-count bars: trades per bar
-    brick_ticks: int = 0      # renko: brick size in ticks
-    reversal_mult: int = 2    # renko: bricks needed to reverse
+    brick_ticks: int = 0      # renko: bar body height in ticks
+    trend_ticks: int = 0      # renko: with-trend close distance from prev close
 
     @property
     def key(self) -> str:
@@ -235,18 +235,23 @@ class BarSpec:
             return f"{self.seconds}s"
         if self.kind == "tick":
             return f"{self.ticks}t"
-        rev = f"x{self.reversal_mult}" if self.reversal_mult != 2 else ""
-        return f"r{self.brick_ticks}{rev}"
+        return f"r{self.brick_ticks}-{self.trend_ticks}"
 
 
 def parse_barspec(period: str) -> BarSpec:
-    """'30s'/'1m'/'5m'/'1h' time bars; '500t' tick bars; 'r8' renko with
-    8-tick bricks (ninZaRenko-style, 2-brick reversal; 'r8x3' = 3-brick)."""
+    """'30s'/'1m'/'5m'/'1h' time bars; '500t' tick bars; 'r8-4' ninZaRenko
+    (brick 8 ticks, trend threshold 4; 'r8' defaults trend to brick/2)."""
     p = period.strip().lower()
-    m = re.fullmatch(r"r(\d+)(?:x(\d+))?", p)
+    m = re.fullmatch(r"r(\d+)(?:-(\d+))?", p)
     if m:
-        return BarSpec("renko", brick_ticks=int(m.group(1)),
-                       reversal_mult=int(m.group(2) or 2))
+        brick = int(m.group(1))
+        trend = int(m.group(2)) if m.group(2) else max(1, brick // 2)
+        if trend > brick:
+            raise ValueError(
+                f"renko trend threshold ({trend}) must not exceed brick "
+                f"size ({brick}) — manual best practice is brick a multiple "
+                "of trend, e.g. r8-4, r15-5, r20-5")
+        return BarSpec("renko", brick_ticks=brick, trend_ticks=trend)
     m = re.fullmatch(r"(\d+)t", p)
     if m:
         return BarSpec("tick", ticks=int(m.group(1)))

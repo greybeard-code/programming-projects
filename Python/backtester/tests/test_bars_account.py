@@ -20,11 +20,13 @@ def test_parse_barspec():
     assert parse_barspec("1m") == parse_barspec("60s")
     t = parse_barspec("500t")
     assert t.kind == "tick" and t.ticks == 500 and t.key == "500t"
-    r = parse_barspec("r8")
-    assert r.kind == "renko" and r.brick_ticks == 8 and r.reversal_mult == 2
-    assert r.key == "r8"
-    r3 = parse_barspec("r8x3")
-    assert r3.reversal_mult == 3 and r3.key == "r8x3"
+    r = parse_barspec("r8")                     # trend defaults to brick/2
+    assert r.kind == "renko" and r.brick_ticks == 8 and r.trend_ticks == 4
+    assert r.key == "r8-4"
+    r155 = parse_barspec("r15-5")
+    assert r155.brick_ticks == 15 and r155.trend_ticks == 5
+    with pytest.raises(ValueError):
+        parse_barspec("r4-8")                   # trend > brick
     with pytest.raises(ValueError):
         parse_barspec("8 renko")
 
@@ -68,46 +70,65 @@ def test_tick_bars():
     assert bars.ts_end[0] == day.ts[2]         # close time = last trade's ts
 
 
-def test_renko_uptrend_bricks():
-    # brick = 1.0; prices walk up 0.25 at a time to 103
-    prices = [100 + 0.25 * i for i in range(13)]   # 100.00 .. 103.00
+def test_renko_uptrend_closes_spaced_by_trend():
+    # ninZaRenko B=1.0, T=0.5: first bar closes T from start, then closes
+    # every T with-trend; every body is exactly B (open = close - B)
+    prices = [100 + 0.25 * i for i in range(9)]    # 100.00 .. 102.00
     day = make_day(prices)
-    bars = build_renko_bars(day, brick=1.0, reversal_mult=2)
-    assert list(bars.close) == [101.0, 102.0, 103.0]
-    assert list(bars.open) == [100.0, 101.0, 102.0]
+    bars = build_renko_bars(day, brick=1.0, trend=0.5)
+    assert list(bars.close) == [100.5, 101.0, 101.5, 102.0]
+    assert list(bars.open) == [99.5, 100.0, 100.5, 101.0]
+    # open offset: each open sits B-T = 0.5 below the previous close
+    assert bars.open[1] == bars.close[0] - 0.5
     # spans partition the tick stream up to each closing tick
-    assert bars.i0[0] == 0 and bars.i1[0] == 5     # 100.00..101.00 incl
-    assert bars.i0[1] == 5 and bars.i1[1] == 9
+    assert bars.i0[0] == 0 and bars.i1[0] == 3     # 100.00..100.50 incl
+    assert bars.i0[1] == 3 and bars.i1[1] == 5
 
 
-def test_renko_reversal_needs_two_bricks():
-    # up to 101 (brick), then pull back: 1 brick down (100.0) must NOT
-    # reverse; 2 bricks down from anchor (99.0) closes a reversal bar
-    prices = [100.0, 100.5, 101.0, 100.5, 100.0, 99.5, 99.0]
+def test_renko_reversal_at_2b_minus_t():
+    # B=1.0, T=0.5 -> reversal threshold 2B-T = 1.5 below prev close.
+    # Up bar closes 100.5; pullback to 99.25 (1.25 down) must NOT reverse;
+    # 99.0 (1.5 down) closes a down bar at exactly 99.0 with body B.
+    prices = [100.0, 100.5, 99.75, 99.25, 99.0]
     day = make_day(prices)
-    bars = build_renko_bars(day, brick=1.0, reversal_mult=2)
-    assert list(bars.close) == [101.0, 99.0]
-    assert bars.open[1] == 101.0                   # synthetic open = prev close
-    # high includes the synthetic open (ninZaRenko/NT8-indicator behavior);
-    # real ticks in the span only reached 100.5
-    assert bars.high[1] == pytest.approx(101.0)
+    bars = build_renko_bars(day, brick=1.0, trend=0.5)
+    assert list(bars.close) == [100.5, 99.0]
+    assert bars.open[1] == pytest.approx(100.0)    # close + B
+    assert bars.high[1] == pytest.approx(100.0)    # synthetic open counts
     assert bars.low[1] == pytest.approx(99.0)
 
 
-def test_renko_gap_emits_multiple_bricks():
-    prices = [100.0, 103.2]                        # gap through 3 bricks
+def test_renko_no_reversal_before_threshold():
+    prices = [100.0, 100.5, 99.05]                 # -1.45 < 1.5 threshold
     day = make_day(prices)
-    bars = build_renko_bars(day, brick=1.0, reversal_mult=2)
-    assert list(bars.close) == [101.0, 102.0, 103.0]
-    assert bars.i1[0] == 2                         # first brick owns the span
-    assert bars.i0[1] == bars.i1[1] == 2           # synthetic gap bricks
+    bars = build_renko_bars(day, brick=1.0, trend=0.5)
+    assert list(bars.close) == [100.5]
+
+
+def test_renko_gap_emits_multiple_bars():
+    prices = [100.0, 102.1]                        # gap: 0.5, 1.0, 1.5, 2.0
+    day = make_day(prices)
+    bars = build_renko_bars(day, brick=1.0, trend=0.5)
+    assert list(bars.close) == [100.5, 101.0, 101.5, 102.0]
+    assert bars.i1[0] == 2                         # first bar owns the span
+    assert bars.i0[1] == bars.i1[1] == 2           # synthetic gap bars
 
 
 def test_renko_first_bar_can_form_downward():
-    prices = [100.0, 99.5, 99.0]
+    prices = [100.0, 99.75, 99.5]
     day = make_day(prices)
-    bars = build_renko_bars(day, brick=1.0, reversal_mult=2)
-    assert list(bars.close) == [99.0]
+    bars = build_renko_bars(day, brick=1.0, trend=0.5)
+    assert list(bars.close) == [99.5]
+    assert bars.open[0] == pytest.approx(100.5)    # close + B (down bar)
+
+
+def test_renko_down_then_reversal_up():
+    # downtrend at T steps, then reversal up at 2B-T above last close
+    prices = [100.0, 99.5, 99.0, 100.5]
+    day = make_day(prices)
+    bars = build_renko_bars(day, brick=1.0, trend=0.5)
+    assert list(bars.close) == [99.5, 99.0, 100.5]
+    assert bars.open[2] == pytest.approx(99.5)     # 100.5 - B
 
 
 def test_account_scale_in_out(spec):

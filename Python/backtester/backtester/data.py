@@ -194,7 +194,7 @@ def build_bars(day: DayL1, spec, tick_size: float) -> BarDay:
         return build_tick_bars(day, spec.ticks)
     if spec.kind == "renko":
         return build_renko_bars(day, spec.brick_ticks * tick_size,
-                                spec.reversal_mult)
+                                spec.trend_ticks * tick_size)
     raise ValueError(f"Unknown bar kind {spec.kind!r}")
 
 
@@ -255,18 +255,25 @@ def build_tick_bars(day: DayL1, ticks_per_bar: int) -> BarDay:
                   c.astype("float64"), v.astype("int64"), i0, i1)
 
 
-def build_renko_bars(day: DayL1, brick: float, reversal_mult: int = 2) -> BarDay:
-    """ninZaRenko-style Renko bars from trade prices.
+def build_renko_bars(day: DayL1, brick: float, trend: float) -> BarDay:
+    """ninZaRenko bars, per the published trader manual.
 
-    - A with-trend bar closes when price reaches `open + brick` (up) or
-      `open - brick` (down); its close snaps to the brick grid.
-    - A reversal requires `reversal_mult` bricks against the trend; the
-      reversal bar's close is `reversal_mult * brick` away.
-    - Bar opens are synthetic (previous close), as in ninZaRenko. High/low
-      span the synthetic open/close AND the real trade extremes — matching
-      what NT8 indicators (e.g. ATR) see on ninZaRenko bars, for port
-      fidelity. Price gaps can emit several bricks on one tick — the extra
-      bricks get zero-length spans (purely synthetic bars).
+    Parameters (price units here; ticks at the BarSpec level):
+    - `brick` B — every bar's body height, both directions.
+    - `trend` T — with-trend close: price reaching `prev_close + T` (up
+      trend) closes an up bar at exactly that level.
+    Derived, as the manual specifies:
+    - open offset = B - T: each bar's synthetic open sits B-T *inside* the
+      prior bar (open = close -/+ B), producing the overlapping look.
+    - reversal threshold = 2B - T from the previous close: price reaching
+      `prev_close - (2B - T)` in an uptrend closes a down reversal bar
+      there, whose body is then exactly B as well.
+
+    The very first bar (no trend yet) closes T away in either direction.
+    High/low span the synthetic open/close AND the real trade extremes —
+    matching what NT8 indicators (e.g. ATR) see on ninZaRenko bars. Price
+    gaps can emit several bars on one tick; the extra bars get zero-length
+    spans (purely synthetic).
 
     NOTE: signal timing on these bars is realistic; the engine still fills
     orders on real ticks, so none of NT8's Renko fantasy-fill problem applies.
@@ -275,7 +282,7 @@ def build_renko_bars(day: DayL1, brick: float, reversal_mult: int = 2) -> BarDay
     if n == 0:
         return _empty_bars()
     prices = day.price
-    rev = reversal_mult * brick
+    rev = 2 * brick - trend
 
     ts_end, opens, highs, lows, closes, vols = [], [], [], [], [], []
     i0s, i1s = [], []
@@ -284,44 +291,46 @@ def build_renko_bars(day: DayL1, brick: float, reversal_mult: int = 2) -> BarDay
     chg = np.flatnonzero(np.diff(prices) != 0) + 1
     walk = np.concatenate([[0], chg])
 
-    anchor = prices[0]      # close of the last emitted brick
+    anchor = prices[0]      # close of the last emitted bar
     d = 0                   # current trend: +1 / -1 / 0 (no bar yet)
     span_start = 0          # first tick index of the bar being built
 
-    def emit(close: float, k: int, span_end: int) -> None:
-        nonlocal anchor, span_start
-        i0, i1 = span_start, span_end
+    def emit(close: float, direction: int, k: int) -> None:
+        nonlocal anchor, span_start, d
+        i0, i1 = span_start, k + 1
         seg = prices[i0:i1] if i1 > i0 else None
-        opens.append(anchor)
+        o = close - direction * brick               # body is exactly B
+        opens.append(o)
         closes.append(close)
-        highs.append(max(seg.max() if seg is not None else close,
-                         anchor, close))
-        lows.append(min(seg.min() if seg is not None else close,
-                        anchor, close))
+        highs.append(max(seg.max() if seg is not None else close, o, close))
+        lows.append(min(seg.min() if seg is not None else close, o, close))
         vols.append(int(day.volume[i0:i1].sum()) if i1 > i0 else 0)
         ts_end.append(int(day.ts[k]))
         i0s.append(i0)
         i1s.append(i1)
         anchor = close
         span_start = i1
+        d = direction
 
     for k in walk:
         p = prices[k]
-        if d >= 0:                                   # uptrend or undecided
-            while p >= anchor + brick:
-                emit(anchor + brick, k, k + 1)
-                d = 1
-            if d >= 0 and p <= anchor - (rev if d == 1 else brick):
-                emit(anchor - (rev if d == 1 else brick), k, k + 1)
-                d = -1
-        if d < 0:                                    # downtrend
-            while p <= anchor - brick:
-                emit(anchor - brick, k, k + 1)
-            if p >= anchor + rev:
-                emit(anchor + rev, k, k + 1)
-                d = 1
-                while p >= anchor + brick:
-                    emit(anchor + brick, k, k + 1)
+        if d == 0:                                   # no trend yet: T either way
+            if p >= anchor + trend:
+                emit(anchor + trend, 1, k)
+            elif p <= anchor - trend:
+                emit(anchor - trend, -1, k)
+        while d > 0 and (p >= anchor + trend or p <= anchor - rev):
+            if p >= anchor + trend:
+                emit(anchor + trend, 1, k)
+            else:
+                emit(anchor - rev, -1, k)
+        while d < 0 and (p <= anchor - trend or p >= anchor + rev):
+            if p <= anchor - trend:
+                emit(anchor - trend, -1, k)
+            else:
+                emit(anchor + rev, 1, k)             # exits loop (d flipped)
+        while d > 0 and p >= anchor + trend:         # ups after an up-reversal
+            emit(anchor + trend, 1, k)
 
     return BarDay(
         np.asarray(ts_end, dtype="int64"),
