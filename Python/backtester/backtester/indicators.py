@@ -126,6 +126,31 @@ class RSI:
         return self.value
 
 
+class EfficiencyRatio:
+    """Kaufman's Efficiency Ratio: |net change| / sum of |bar changes|.
+
+    0 = pure chop, 1 = perfect trend. TSM guidance: < 0.12 suppress entries
+    (chop), > 0.4 trending (tighten trails). update(close) once per bar.
+    """
+
+    def __init__(self, period: int = 20):
+        self.period = period
+        self._win: deque[float] = deque(maxlen=period + 1)
+        self.value = math.nan
+
+    @property
+    def ready(self) -> bool:
+        return len(self._win) == self.period + 1
+
+    def update(self, close: float) -> float:
+        self._win.append(close)
+        if self.ready:
+            w = list(self._win)
+            noise = sum(abs(w[i] - w[i - 1]) for i in range(1, len(w)))
+            self.value = abs(w[-1] - w[0]) / noise if noise > 0 else 0.0
+        return self.value
+
+
 class Highest:
     def __init__(self, period: int):
         self.period = period

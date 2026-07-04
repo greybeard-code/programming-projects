@@ -38,8 +38,17 @@ def compute(result) -> dict:
     gross_win = float(wins.sum()) if len(wins) else 0.0
     gross_loss = float(-losses.sum()) if len(losses) else 0.0
 
+    # Calmar: annualized return / max drawdown (both as fractions of start
+    # balance). Chan (Machine Trading): preferred metric for directional
+    # strategies; target > 1, quality > 2.
+    calmar = float("nan")
+    if len(daily_ret) > 1 and max_dd < 0:
+        ann_ret = float(daily_ret.mean()) * TRADING_DAYS
+        calmar = ann_ret / (abs(max_dd) / result.start_balance)
+
     stats = {
         "net_pnl": total_pnl,
+        "gross_pnl": total_pnl + result.total_commission,
         "total_trades": len(trades),
         "win_rate": float(len(wins) / len(pnl) * 100) if len(pnl) else float("nan"),
         "profit_factor": gross_win / gross_loss if gross_loss > 0 else float("inf") if gross_win > 0 else float("nan"),
@@ -51,6 +60,7 @@ def compute(result) -> dict:
         "expectancy": float(pnl.mean()) if len(pnl) else float("nan"),
         "sharpe": sharpe,
         "sortino": sortino,
+        "calmar": calmar,
         "max_drawdown": max_dd,
         "max_drawdown_pct": dd_pct,
         "commission": result.total_commission,
@@ -86,12 +96,14 @@ def format_console(result, stats: dict) -> str:
         "",
         f"=== {result.strategy_name} | {result.symbol} {result.period_s}s bars | "
         f"{result.days[0]}..{result.days[-1]} ({stats['trading_days']} days) ===",
-        f"Net P&L:        {d(stats['net_pnl'])}   (commission {d(stats['commission'])})",
+        f"Net P&L:        {d(stats['net_pnl'])}   (gross {d(stats['gross_pnl'])}, "
+        f"commission {d(stats['commission'])})",
         f"Trades:         {stats['total_trades']}   win rate {stats['win_rate']:.1f}%   "
         f"profit factor {stats['profit_factor']:.2f}",
         f"Avg trade:      {d(stats['avg_trade'])}   avg win {d(stats['avg_win'])}   "
         f"avg loss {d(stats['avg_loss'])}",
-        f"Sharpe:         {stats['sharpe']:.2f}   Sortino: {stats['sortino']:.2f}",
+        f"Sharpe:         {stats['sharpe']:.2f}   Sortino: {stats['sortino']:.2f}   "
+        f"Calmar: {stats['calmar']:.2f}",
         f"Max drawdown:   {d(stats['max_drawdown'])} ({stats['max_drawdown_pct']:.2f}%)",
         f"Days:           +{stats['winning_days']} / -{stats['losing_days']}   "
         f"best {d(stats['best_day'])}   worst {d(stats['worst_day'])}",
