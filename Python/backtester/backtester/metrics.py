@@ -119,6 +119,10 @@ def format_console(result, stats: dict) -> str:
             lines.append(
                 f"APEX:           survived; min headroom to threshold "
                 f"{d(stats['apex_min_headroom'])} (threshold {d(stats['apex_threshold'])})")
+    if result.dll_days:
+        lines.append(f"Daily loss limit hit on {len(result.dll_days)} day(s): "
+                     + ", ".join(result.dll_days[:5])
+                     + ("..." if len(result.dll_days) > 5 else ""))
     if result.halted_on:
         lines.append(f"HALTED on {result.halted_on} (apex breach, halt_on_breach=True)")
     lines.append(f"Runtime:        {result.runtime_s:.1f}s")

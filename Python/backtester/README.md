@@ -68,6 +68,47 @@ Bar type only changes *when the strategy is asked to decide*. Orders always
 fill against the real tick stream, so none of NT8's Renko fantasy-fill
 problem applies — a Renko strategy backtested here gets honest fills.
 
+## Order flow (what NT8 backtests can't see)
+
+Every trade in the reduced cache is classified by aggressor side (at/above
+ask = buy, at/below bid = sell), and every bar — any type — carries
+`bar.buy_volume`, `bar.sell_volume`, and `bar.delta`. `bars.delta` /
+`bars.cum_delta` (session-cumulative) are available as history arrays for
+delta-divergence and order-flow filters. Prevailing bid/ask queue sizes are
+also cached per trade for order-imbalance (OIB) research.
+
+## Position sizing & risk
+
+- `self.vol_target_contracts(daily_atr_points)` — Carver volatility
+  targeting (15% annual default). Pass a *daily* ATR.
+- `--daily-loss-limit 600` — flatten and stand down for the rest of the day
+  when the day's loss touches the limit; hit days are listed in the summary.
+
+## Parameter sweeps
+
+```
+python sweep.py strategies\ema_cross.py --param fast_period=6,9,12 ^
+    --param slow_period=18,21,27 --start 2026-03-01 --end 2026-06-17
+```
+
+Runs the full grid in parallel, ranks by `--metric` (sharpe default), writes
+`reports\sweep_*.csv`, and prints a per-parameter **sensitivity plateau**
+around the best combo — a spike at one value with collapse next door is
+flagged FRAGILE (data-snooping, per Chan). Combos with fewer than
+`--min-trades` rank last.
+
+## Walk-forward analysis
+
+```
+python walkforward.py strategies\ema_cross.py --param fast_period=6,9,12 ^
+    --param slow_period=18,21,27 --windows 5 --ratio 5
+```
+
+Rolling IS/OOS windows (5:1 default): optimize the grid in-sample, run the
+best combo out-of-sample, roll forward. Reports per-window IS vs OOS, the
+stitched OOS net/Sharpe (the only numbers that haven't seen their own data),
+and walk-forward efficiency with Davey's verdict (< 0.5 = likely curve-fit).
+
 ## Fill model
 
 - Strategy logic runs on bar closes; orders resolve against the underlying

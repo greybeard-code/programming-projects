@@ -49,6 +49,15 @@ plotly, tzdata, pytest — no pandas/polars, keep it that way unless needed).
   test_montecarlo.py). Eval race: P(hit target before breach), tie = breach.
 - **metrics.py / report.py** — stats dict + console formatter; self-contained
   HTML tearsheet (plotly CDN) + trades CSV per run.
+- **sweep.py / walkforward.py** (module + root CLI each) — parameter grid
+  via ProcessPoolExecutor (Windows spawn-safe: worker `_run_one` is
+  module-level, strategies re-loaded by file path in workers, cache tmp
+  files are pid-unique). Sensitivity report flags FRAGILE params (neighbor
+  metric < 50% of best). Walk-forward: rolling windows, OOS = days //
+  (ratio + n_windows), stitched-OOS stats + WFE verdict.
+- **sizing.py** — Carver vol targeting; `Strategy.vol_target_contracts`
+  (expects a DAILY ATR). Engine `daily_loss_limit` flattens + stands down
+  for the day (exit tag "dll", days listed in Result.dll_days).
 - **strategy.py** — Strategy base (on_start/on_bar/on_fill/on_session_end/
   on_finish; buy_bracket, move_stop, move_stop_to_breakeven, ...);
   indicators.py has incremental NT8-style indicators (EMA, SMA, ATR, RSI,
@@ -68,9 +77,11 @@ plotly, tzdata, pytest — no pandas/polars, keep it that way unless needed).
 
 - Timestamps are int64 ns UTC everywhere; convert to CT only at the session
   boundary. Day files are UTC calendar days and include Globex overnight.
-- Data has L1 *and* L2 (depth) with bid/ask sizes — the reduced cache
-  currently drops sizes. Adding prevailing bid/ask sizes would enable OIB
-  (order imbalance) research, which NT8 backtests structurally cannot do.
+- Order flow: reduced cache stores prevailing bid/ask sizes and per-trade
+  aggressor side (+1 at/above ask, -1 at/below bid); bars carry
+  buy_volume/sell_volume, `bar.delta`, `bars.cum_delta` (reset per session).
+  NT8 backtests structurally cannot do this — it's this repo's data edge.
+  Cache schema is column-checked on read; old files rebuild transparently.
 - Tests build synthetic DayL1 streams via tests/conftest.py `make_day`
   (quotes straddle each trade by 1 tick). Fill assertions are hand-computed —
   keep that style; it caught real bugs.
@@ -82,19 +93,21 @@ plotly, tzdata, pytest — no pandas/polars, keep it that way unless needed).
 
 ## State / roadmap (updated 2026-07-04)
 
-Done: engine + fills + brackets + order modification, Apex tracker, metrics
-(Sharpe/Sortino/Calmar/gross-vs-net), tearsheet + trades CSV, NT8 comparison
-tool (tools/compare_nt8.py — awaiting a real NT8 export to validate against),
-Monte Carlo with Apex breach / eval-pass probability, 35 unit tests.
+Done: engine + fills + brackets + order modification, Apex tracker + daily
+loss limit, metrics (Sharpe/Sortino/Calmar/gross-vs-net), tearsheet + trades
+CSV, NT8 comparison tool (tools/compare_nt8.py — awaiting a real NT8 export
+to validate against), Monte Carlo with Apex breach / eval-pass probability,
+bar types (time/tick/ninZaRenko per the published manual), order-flow data
+(aggressor delta, cum_delta, quote sizes), parameter sweep + sensitivity,
+walk-forward runner, Carver sizing, 53 unit tests.
 
 Next (order per research/22_Books_Summary.md, distilled from the 22-book
 docx in research/):
-1. Walk-forward runner (IS/OOS 5:1, ≥5 windows).
-2. Parameter sweep with ±20% sensitivity plateaus (multiprocessing).
-3. Bid/ask sizes in reduced cache → OIB features.
-4. Carver vol-target sizing helper.
-5. Port a real user strategy (GodZillaKilla-style) — expect gaps:
-   multi-timeframe bars, possibly on_tick.
+1. Port a real user strategy (GodZillaKilla-style) — expect gaps:
+   multi-timeframe bars (secondary series), possibly on_tick.
+2. Per-day trade chart (candles + entry/exit markers) for visual debugging.
+3. Validate ninZaRenko bar parity against an NT8 chart export.
+4. OIB/delta example strategy using bars.cum_delta.
 
 Validation reference run (EmaCross, MNQ 1m, 156 days, defaults): net ~$1,780,
 1457 trades, WR 33%, Sharpe 1.53, maxDD −$1,838, MC P(breach $2.5k) ~1.8%.

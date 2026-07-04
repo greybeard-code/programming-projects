@@ -7,29 +7,11 @@ Usage:
 from __future__ import annotations
 
 import argparse
-import importlib.util
-import inspect
-import sys
 from pathlib import Path
 
-from backtester import ApexConfig, Backtest, Strategy
+from backtester import ApexConfig, Backtest
 from backtester import metrics, montecarlo, report
-
-
-def load_strategy(path: str) -> Strategy:
-    p = Path(path).resolve()
-    spec = importlib.util.spec_from_file_location(p.stem, p)
-    mod = importlib.util.module_from_spec(spec)
-    sys.modules[p.stem] = mod
-    spec.loader.exec_module(mod)
-    classes = [c for _, c in inspect.getmembers(mod, inspect.isclass)
-               if issubclass(c, Strategy) and c is not Strategy
-               and c.__module__ == mod.__name__]
-    if not classes:
-        raise SystemExit(f"No Strategy subclass found in {p}")
-    if len(classes) > 1:
-        print(f"Multiple strategies in {p.name}; using {classes[0].__name__}")
-    return classes[0]()
+from backtester.loader import load_strategy
 
 
 def main() -> None:
@@ -48,6 +30,8 @@ def main() -> None:
                     help="stop the backtest when the threshold is breached")
     ap.add_argument("--slippage", type=float, default=0.0,
                     help="extra slippage in ticks on market/stop fills")
+    ap.add_argument("--daily-loss-limit", type=float, default=None, metavar="$",
+                    help="flatten and stop trading for the day at this loss")
     ap.add_argument("--mc", type=int, default=2000, metavar="N",
                     help="Monte Carlo simulations (default 2000; 0 disables)")
     ap.add_argument("--mc-target", type=float, default=None, metavar="$",
@@ -67,7 +51,9 @@ def main() -> None:
 
     bt = Backtest(strat, start=args.start, end=args.end, symbol=args.symbol,
                   period=args.period, start_balance=args.balance, apex=apex,
-                  slippage_ticks=args.slippage, data_root=args.data_root)
+                  slippage_ticks=args.slippage,
+                  daily_loss_limit=args.daily_loss_limit,
+                  data_root=args.data_root)
     print(f"Running {type(strat).__name__} on {bt.symbol}, "
           f"{bt.barspec.key} bars ...")
     result = bt.run()

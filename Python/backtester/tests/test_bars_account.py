@@ -131,6 +131,24 @@ def test_renko_down_then_reversal_up():
     assert bars.open[2] == pytest.approx(99.5)     # 100.5 - B
 
 
+def test_aggressor_classification_and_bar_delta():
+    import numpy as np
+    from backtester.data import classify_aggressor
+
+    price = np.array([100.25, 100.0, 100.10, 100.25])
+    ask = np.array([100.25, 100.25, 100.25, 100.25])
+    bid = np.array([100.0, 100.0, 100.0, 100.0])
+    aggr = classify_aggressor(price, ask, bid)
+    assert list(aggr) == [1, -1, 0, 1]     # lift, hit, mid, lift
+
+    day = make_day([100.25, 100.0, 100.10, 100.25],
+                   ask=[100.25] * 4, bid=[100.0] * 4)
+    bars = build_time_bars(day, 60)         # all in one bar
+    assert bars.buy_volume[0] == 2
+    assert bars.sell_volume[0] == 1
+    assert bars.volume[0] == 4
+
+
 def test_account_scale_in_out(spec):
     a = Account(spec, 10_000)
     a.apply_fill(1, 2, 100.0)      # long 2 @ 100

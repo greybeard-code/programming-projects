@@ -30,6 +30,12 @@ MDT_ASK, MDT_BID, MDT_LAST = 0, 1, 2
 _DIR_RE = re.compile(r"^(?P<sym>[A-Z0-9]+)-(?P<year>\d{4})_L1$")
 
 
+REDUCED_COLS = ("ts", "price", "volume", "ask", "bid",
+                "ask_size", "bid_size", "aggr")
+BAR_COLS = ("ts_end", "open", "high", "low", "close", "volume",
+            "buy_volume", "sell_volume", "i0", "i1")
+
+
 @dataclass
 class DayL1:
     """One trading day's trade events with prevailing quotes (all same length)."""
@@ -39,6 +45,9 @@ class DayL1:
     volume: np.ndarray   # int64 trade size
     ask: np.ndarray      # float64 prevailing ask (nan before first quote)
     bid: np.ndarray      # float64 prevailing bid
+    ask_size: np.ndarray # int64 prevailing ask queue size (0 before first quote)
+    bid_size: np.ndarray # int64 prevailing bid queue size
+    aggr: np.ndarray     # int8 aggressor: +1 buy (at/above ask), -1 sell, 0 mid
 
     def __len__(self) -> int:
         return len(self.ts)
@@ -47,17 +56,33 @@ class DayL1:
 @dataclass
 class BarDay:
     """Bars for one day, with each bar's span into the DayL1 arrays."""
-    ts_end: np.ndarray   # int64 ns UTC, bar close time (right edge)
+    ts_end: np.ndarray       # int64 ns UTC, bar close time (right edge)
     open: np.ndarray
     high: np.ndarray
     low: np.ndarray
     close: np.ndarray
     volume: np.ndarray
-    i0: np.ndarray       # int64, first DayL1 index of the bar
-    i1: np.ndarray       # int64, one past the last DayL1 index
+    buy_volume: np.ndarray   # aggressor-buy volume (trades at/above the ask)
+    sell_volume: np.ndarray  # aggressor-sell volume (trades at/below the bid)
+    i0: np.ndarray           # int64, first DayL1 index of the bar
+    i1: np.ndarray           # int64, one past the last DayL1 index
 
     def __len__(self) -> int:
         return len(self.ts_end)
+
+
+def classify_aggressor(price: np.ndarray, ask: np.ndarray,
+                       bid: np.ndarray) -> np.ndarray:
+    """+1 where the trade lifted the offer, -1 where it hit the bid, 0 mid.
+
+    This is what NT8 backtests structurally cannot see — it enables volume
+    delta / order-imbalance research on historical data.
+    """
+    aggr = np.zeros(len(price), dtype="int8")
+    with np.errstate(invalid="ignore"):
+        aggr[price >= ask] = 1
+        aggr[price <= bid] = -1
+    return aggr
 
 
 class Catalog:
@@ -99,24 +124,21 @@ class Catalog:
         return self.cache_root / "reduced" / symbol.upper() / f"{date}.parquet"
 
     def load_day(self, symbol: str, date: str) -> DayL1:
-        """Load reduced trade events for one day, building the cache on first use."""
+        """Load reduced trade events for one day, building the cache on first
+        use. Files from an older schema are rebuilt transparently."""
         rp = self._reduced_path(symbol, date)
         if rp.exists():
             t = pq.read_table(rp)
-            return DayL1(
-                date=date,
-                ts=t.column("ts").to_numpy(),
-                price=t.column("price").to_numpy(),
-                volume=t.column("volume").to_numpy(),
-                ask=t.column("ask").to_numpy(),
-                bid=t.column("bid").to_numpy(),
-            )
+            if set(REDUCED_COLS).issubset(t.column_names):
+                return DayL1(date, *(t.column(c).to_numpy()
+                                     for c in REDUCED_COLS))
         day = self._reduce_raw(symbol, date)
         rp.parent.mkdir(parents=True, exist_ok=True)
-        tmp = rp.with_suffix(".tmp")
+        tmp = rp.with_suffix(f".{os.getpid()}.tmp")   # unique per process
         pq.write_table(pa.table({
             "ts": day.ts, "price": day.price, "volume": day.volume,
-            "ask": day.ask, "bid": day.bid,
+            "ask": day.ask, "bid": day.bid, "ask_size": day.ask_size,
+            "bid_size": day.bid_size, "aggr": day.aggr,
         }), tmp, compression="zstd")
         os.replace(tmp, rp)
         return day
@@ -134,22 +156,29 @@ class Catalog:
 
         last_idx = np.flatnonzero(mdt == MDT_LAST)
 
-        def prevailing(quote_type: int) -> np.ndarray:
+        def prevailing(quote_type: int) -> tuple[np.ndarray, np.ndarray]:
             qidx = np.flatnonzero(mdt == quote_type)
-            qprice = price[qidx]
             pos = np.searchsorted(qidx, last_idx, side="right") - 1
-            out = np.full(len(last_idx), np.nan)
             ok = pos >= 0
-            out[ok] = qprice[pos[ok]]
-            return out
+            out_p = np.full(len(last_idx), np.nan)
+            out_p[ok] = price[qidx][pos[ok]]
+            out_s = np.zeros(len(last_idx), dtype="int64")
+            out_s[ok] = vol[qidx][pos[ok]]
+            return out_p, out_s
 
+        ask_p, ask_s = prevailing(MDT_ASK)
+        bid_p, bid_s = prevailing(MDT_BID)
+        lp = price[last_idx]
         return DayL1(
             date=date,
             ts=ts[last_idx],
-            price=price[last_idx],
+            price=lp,
             volume=vol[last_idx],
-            ask=prevailing(MDT_ASK),
-            bid=prevailing(MDT_BID),
+            ask=ask_p,
+            bid=bid_p,
+            ask_size=ask_s,
+            bid_size=bid_s,
+            aggr=classify_aggressor(lp, ask_p, bid_p),
         )
 
     # ---------------- bars ----------------
@@ -163,19 +192,15 @@ class Catalog:
         bp = self._bars_path(symbol, date, spec.key)
         if bp.exists():
             t = pq.read_table(bp)
-            return BarDay(*(t.column(c).to_numpy() for c in
-                            ("ts_end", "open", "high", "low", "close",
-                             "volume", "i0", "i1")))
+            if set(BAR_COLS).issubset(t.column_names):
+                return BarDay(*(t.column(c).to_numpy() for c in BAR_COLS))
         if day is None:
             day = self.load_day(symbol, date)
         bars = build_bars(day, spec, tick_size)
         bp.parent.mkdir(parents=True, exist_ok=True)
-        tmp = bp.with_suffix(".tmp")
-        pq.write_table(pa.table({
-            "ts_end": bars.ts_end, "open": bars.open, "high": bars.high,
-            "low": bars.low, "close": bars.close, "volume": bars.volume,
-            "i0": bars.i0, "i1": bars.i1,
-        }), tmp, compression="zstd")
+        tmp = bp.with_suffix(f".{os.getpid()}.tmp")
+        pq.write_table(pa.table({c: getattr(bars, c) for c in BAR_COLS}),
+                       tmp, compression="zstd")
         os.replace(tmp, bp)
         return bars
 
@@ -183,7 +208,14 @@ class Catalog:
 def _empty_bars() -> BarDay:
     z = np.array([], dtype="int64")
     zf = np.array([], dtype="float64")
-    return BarDay(z, zf, zf, zf, zf, z.copy(), z.copy(), z.copy())
+    return BarDay(z, zf, zf, zf, zf, z.copy(), z.copy(), z.copy(),
+                  z.copy(), z.copy())
+
+
+def _flow_volumes(day: DayL1) -> tuple[np.ndarray, np.ndarray]:
+    buy = np.where(day.aggr == 1, day.volume, 0)
+    sell = np.where(day.aggr == -1, day.volume, 0)
+    return buy, sell
 
 
 def build_bars(day: DayL1, spec, tick_size: float) -> BarDay:
@@ -216,26 +248,21 @@ def build_time_bars(day: DayL1, period_s: int) -> BarDay:
     i0, i1 = i0[nonempty], i1[nonempty]
     ts_end = edges[1:][nonempty]
 
-    n = len(i0)
+    if len(i0) == 0:
+        return _empty_bars()
+    # Note: removed empty bars have no events, so i0[k+1] == i1[k] always;
+    # segments are contiguous and reduceat over i0 aggregates exactly per bar.
+    buy, sell = _flow_volumes(day)
     o = day.price[i0]
     c = day.price[i1 - 1]
-    h = np.maximum.reduceat(day.price, i0) if n else np.array([])
-    l = np.minimum.reduceat(day.price, i0) if n else np.array([])
-    v = np.add.reduceat(day.volume, i0) if n else np.array([], dtype="int64")
-    # reduceat with increasing i0 reduces [i0[k], i0[k+1]) — but consecutive
-    # bars may have gaps (empty bars removed), so segments [i0[k], i0[k+1])
-    # can span more events than the bar. Recompute segment ends correctly:
-    if n and not np.array_equal(i0[1:], i1[:-1]):
-        h = np.empty(n)
-        l = np.empty(n)
-        v = np.empty(n, dtype="int64")
-        for k in range(n):
-            seg_p = day.price[i0[k]:i1[k]]
-            h[k] = seg_p.max()
-            l[k] = seg_p.min()
-            v[k] = int(day.volume[i0[k]:i1[k]].sum())
+    h = np.maximum.reduceat(day.price, i0)
+    l = np.minimum.reduceat(day.price, i0)
+    v = np.add.reduceat(day.volume, i0)
+    bv = np.add.reduceat(buy, i0)
+    sv = np.add.reduceat(sell, i0)
     return BarDay(ts_end.astype("int64"), o.astype("float64"), h, l,
                   c.astype("float64"), v.astype("int64"),
+                  bv.astype("int64"), sv.astype("int64"),
                   i0.astype("int64"), i1.astype("int64"))
 
 
@@ -244,6 +271,7 @@ def build_tick_bars(day: DayL1, ticks_per_bar: int) -> BarDay:
     n = len(day)
     if n == 0:
         return _empty_bars()
+    buy, sell = _flow_volumes(day)
     i0 = np.arange(0, n, ticks_per_bar, dtype="int64")
     i1 = np.minimum(i0 + ticks_per_bar, n)
     o = day.price[i0]
@@ -251,8 +279,11 @@ def build_tick_bars(day: DayL1, ticks_per_bar: int) -> BarDay:
     h = np.maximum.reduceat(day.price, i0)
     l = np.minimum.reduceat(day.price, i0)
     v = np.add.reduceat(day.volume, i0)
+    bv = np.add.reduceat(buy, i0)
+    sv = np.add.reduceat(sell, i0)
     return BarDay(day.ts[i1 - 1].astype("int64"), o.astype("float64"), h, l,
-                  c.astype("float64"), v.astype("int64"), i0, i1)
+                  c.astype("float64"), v.astype("int64"),
+                  bv.astype("int64"), sv.astype("int64"), i0, i1)
 
 
 def build_renko_bars(day: DayL1, brick: float, trend: float) -> BarDay:
@@ -284,8 +315,9 @@ def build_renko_bars(day: DayL1, brick: float, trend: float) -> BarDay:
     prices = day.price
     rev = 2 * brick - trend
 
+    buy, sell = _flow_volumes(day)
     ts_end, opens, highs, lows, closes, vols = [], [], [], [], [], []
-    i0s, i1s = [], []
+    bvols, svols, i0s, i1s = [], [], [], []
 
     # consider only ticks where price changed (big speedup, same bars)
     chg = np.flatnonzero(np.diff(prices) != 0) + 1
@@ -305,6 +337,8 @@ def build_renko_bars(day: DayL1, brick: float, trend: float) -> BarDay:
         highs.append(max(seg.max() if seg is not None else close, o, close))
         lows.append(min(seg.min() if seg is not None else close, o, close))
         vols.append(int(day.volume[i0:i1].sum()) if i1 > i0 else 0)
+        bvols.append(int(buy[i0:i1].sum()) if i1 > i0 else 0)
+        svols.append(int(sell[i0:i1].sum()) if i1 > i0 else 0)
         ts_end.append(int(day.ts[k]))
         i0s.append(i0)
         i1s.append(i1)
@@ -339,6 +373,8 @@ def build_renko_bars(day: DayL1, brick: float, trend: float) -> BarDay:
         np.asarray(lows, dtype="float64"),
         np.asarray(closes, dtype="float64"),
         np.asarray(vols, dtype="int64"),
+        np.asarray(bvols, dtype="int64"),
+        np.asarray(svols, dtype="int64"),
         np.asarray(i0s, dtype="int64"),
         np.asarray(i1s, dtype="int64"),
     )

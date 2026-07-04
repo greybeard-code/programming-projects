@@ -36,6 +36,7 @@ class Result:
     runtime_s: float = 0.0
     strategy_name: str = ""
     halted_on: str | None = None
+    dll_days: list[str] = field(default_factory=list)
 
 
 def _session_bounds_utc(date: str, session: tuple[str, str]) -> tuple[int, int]:
@@ -59,6 +60,7 @@ class Backtest:
                  period: str | None = None, start_balance: float = 50_000.0,
                  apex: ApexConfig | None = ApexConfig(),
                  slippage_ticks: float = 0.0,
+                 daily_loss_limit: float | None = None,
                  data_root=None, cache_root=None,
                  progress: bool = True):
         self.strategy = strategy
@@ -74,6 +76,7 @@ class Backtest:
         self.broker = SimBroker(self.spec, self.account, self.recorder,
                                 self.apex, slippage_ticks,
                                 on_fill=self._notify_fill)
+        self.daily_loss_limit = daily_loss_limit
         self.progress = progress
         self._in_bar_cb = False
 
@@ -94,6 +97,7 @@ class Backtest:
         hist = BarHistory()
         eq_ts, eq, floor = [], [], []
         daily: dict[str, float] = {}
+        dll_days: list[str] = []
         bar_index = 0
         halted_on = None
 
@@ -117,6 +121,7 @@ class Backtest:
             sess_idx = np.flatnonzero(in_sess)
             if len(sess_idx) == 0:
                 continue
+            hist.reset_cum_delta()
 
             for j in sess_idx:
                 self.broker.resolve_span(int(bars.i0[j]), int(bars.i1[j]))
@@ -125,13 +130,25 @@ class Backtest:
                 bar = Bar(ts=int(bars.ts_end[j]), open=float(bars.open[j]),
                           high=float(bars.high[j]), low=float(bars.low[j]),
                           close=float(bars.close[j]),
-                          volume=int(bars.volume[j]), index=bar_index)
+                          volume=int(bars.volume[j]), index=bar_index,
+                          buy_volume=int(bars.buy_volume[j]),
+                          sell_volume=int(bars.sell_volume[j]))
                 hist.append(bar)
                 bar_index += 1
                 strat.on_bar(bar, hist)
                 eq_ts.append(bar.ts)
                 eq.append(self.account.equity(bar.close))
                 floor.append(self.apex.floor if self.apex else float("nan"))
+
+                # daily loss limit: flatten and stand down for the day
+                if (self.daily_loss_limit is not None
+                        and self.account.equity(bar.close) - day_start_balance
+                        <= -self.daily_loss_limit):
+                    self.broker.cancel_all()
+                    self.broker.flatten(int(bars.i1[j]) - 1, tag="dll")
+                    eq[-1] = self.account.equity(bar.close)
+                    dll_days.append(date)
+                    break
 
             # session end: cancel working orders, flatten if configured
             last_j = int(sess_idx[-1])
@@ -164,4 +181,5 @@ class Backtest:
             runtime_s=time.perf_counter() - t_start,
             strategy_name=type(self.strategy).__name__,
             halted_on=halted_on,
+            dll_days=dll_days,
         )

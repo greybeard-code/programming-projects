@@ -18,18 +18,26 @@ def spec():
     return ContractSpec("TEST", 0.25, 2.0, 1.00)
 
 
-def make_day(prices, spread_ticks=1, tick=0.25, start_ts=1_000_000_000_000):
-    """Synthetic DayL1: each trade price with bid/ask straddling it."""
+def make_day(prices, tick=0.25, start_ts=1_000_000_000_000,
+             ask=None, bid=None):
+    """Synthetic DayL1: each trade price with bid/ask straddling it by 1 tick
+    (aggressor 0), unless explicit ask/bid arrays are given."""
+    from backtester.data import classify_aggressor
+
     p = np.asarray(prices, dtype="float64")
     n = len(p)
-    half = spread_ticks * tick / 2 * 0  # quotes: bid = p - tick, ask = p + tick
+    ask = np.asarray(ask, dtype="float64") if ask is not None else p + tick
+    bid = np.asarray(bid, dtype="float64") if bid is not None else p - tick
     return DayL1(
         date="20260101",
         ts=start_ts + np.arange(n, dtype="int64") * 1_000_000_000,
         price=p,
         volume=np.ones(n, dtype="int64"),
-        ask=p + tick,
-        bid=p - tick,
+        ask=ask,
+        bid=bid,
+        ask_size=np.ones(n, dtype="int64"),
+        bid_size=np.ones(n, dtype="int64"),
+        aggr=classify_aggressor(p, ask, bid),
     )
 
 

@@ -11,13 +11,20 @@ from .orders import BUY, SELL, BracketSpec, Fill, Order, OrderType
 
 @dataclass
 class Bar:
-    ts: int          # close time, ns UTC
+    ts: int              # close time, ns UTC
     open: float
     high: float
     low: float
     close: float
     volume: int
-    index: int       # global bar index across the run
+    index: int           # global bar index across the run
+    buy_volume: int = 0  # aggressor buys (trades at/above the ask)
+    sell_volume: int = 0 # aggressor sells (trades at/below the bid)
+
+    @property
+    def delta(self) -> int:
+        """Order-flow delta: aggressor buy volume minus sell volume."""
+        return self.buy_volume - self.sell_volume
 
 
 class _GrowArray:
@@ -46,6 +53,9 @@ class BarHistory:
         self.low = _GrowArray("float64")
         self.close = _GrowArray("float64")
         self.volume = _GrowArray("int64")
+        self.delta = _GrowArray("int64")
+        self.cum_delta = _GrowArray("int64")   # session-cumulative delta
+        self._cum = 0
 
     def append(self, bar: Bar) -> None:
         self.ts.append(bar.ts)
@@ -54,6 +64,13 @@ class BarHistory:
         self.low.append(bar.low)
         self.close.append(bar.close)
         self.volume.append(bar.volume)
+        self.delta.append(bar.delta)
+        self._cum += bar.delta
+        self.cum_delta.append(self._cum)
+
+    def reset_cum_delta(self) -> None:
+        """Called by the engine at each session start."""
+        self._cum = 0
 
     def __len__(self) -> int:
         return self.ts.n
@@ -200,6 +217,17 @@ class Strategy:
         tick = self._broker.spec.tick_size
         price = self._account.avg_price + (1 if pos > 0 else -1) * offset_ticks * tick
         return self.move_stop(price)
+
+    def vol_target_contracts(self, daily_atr_points: float,
+                             annual_vol_target: float = 0.15,
+                             max_contracts: int | None = None) -> int:
+        """Carver vol-target size from current balance (see sizing.py).
+        Pass a DAILY ATR in points, not an intraday one."""
+        from .sizing import carver_contracts
+        return carver_contracts(self._account.balance, daily_atr_points,
+                                self._broker.spec.point_value,
+                                annual_vol_target,
+                                max_contracts=max_contracts)
 
     def close_position(self, tag: str = "exit") -> Order | None:
         """Flatten with a market order (fills next tick)."""
