@@ -36,7 +36,8 @@ def main() -> None:
     ap = argparse.ArgumentParser(description="Tick-level futures backtester")
     ap.add_argument("strategy", help="path to a .py file with a Strategy subclass")
     ap.add_argument("--symbol", help="override strategy symbol (e.g. MNQ)")
-    ap.add_argument("--period", help="override bar period (e.g. 30s, 1m, 5m)")
+    ap.add_argument("--period", help="override bar type: time (30s, 1m, 5m), "
+                                     "tick (500t), renko (r8, r8x3)")
     ap.add_argument("--start", help="first day, YYYY-MM-DD or YYYYMMDD")
     ap.add_argument("--end", help="last day, YYYY-MM-DD or YYYYMMDD")
     ap.add_argument("--balance", type=float, default=50_000.0,
@@ -67,7 +68,8 @@ def main() -> None:
     bt = Backtest(strat, start=args.start, end=args.end, symbol=args.symbol,
                   period=args.period, start_balance=args.balance, apex=apex,
                   slippage_ticks=args.slippage, data_root=args.data_root)
-    print(f"Running {type(strat).__name__} on {bt.symbol}, {bt.period_s}s bars ...")
+    print(f"Running {type(strat).__name__} on {bt.symbol}, "
+          f"{bt.barspec.key} bars ...")
     result = bt.run()
     stats = metrics.compute(result)
     print(metrics.format_console(result, stats))

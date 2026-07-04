@@ -26,7 +26,7 @@ from backtester import EMA, Strategy
 
 class MyStrat(Strategy):
     symbol = "MNQ"
-    period = "1m"                    # 30s / 1m / 5m / ...
+    period = "1m"                    # time: 30s/1m/5m; tick: 500t; renko: r8
     session = ("08:30", "15:00")     # US/Central; None = full day
     flat_at_session_end = True
     qty = 2
@@ -50,6 +50,20 @@ Order management (ATM-style): `move_stop(price)`, `move_target(price)`,
 `working_orders` for direct inspection — call from `on_bar` to trail stops.
 State: `self.position`, `self.flat`, `self.avg_price`, `self.balance`.
 Indicators (incremental, NT8-style): `EMA, SMA, ATR, RSI, Highest, Lowest`.
+
+## Bar types
+
+- **Time** — `30s`, `1m`, `5m`, `1h` (bar timestamp = close time, NT8-style;
+  empty bars omitted).
+- **Tick** — `500t`: fixed trade-count bars.
+- **Renko (ninZaRenko-style)** — `r8`: 8-tick bricks, 2-brick reversal
+  (`r8x3` for 3-brick). Closes snap to the brick grid, opens are synthetic
+  (previous close), high/low include both the synthetic open and the real
+  tick extremes — matching what NT8 indicators see on ninZaRenko bars.
+
+Bar type only changes *when the strategy is asked to decide*. Orders always
+fill against the real tick stream, so none of NT8's Renko fantasy-fill
+problem applies — a Renko strategy backtested here gets honest fills.
 
 ## Fill model
 

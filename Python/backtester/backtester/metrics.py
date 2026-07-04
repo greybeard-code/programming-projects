@@ -94,7 +94,7 @@ def format_console(result, stats: dict) -> str:
 
     lines = [
         "",
-        f"=== {result.strategy_name} | {result.symbol} {result.period_s}s bars | "
+        f"=== {result.strategy_name} | {result.symbol} {result.period} bars | "
         f"{result.days[0]}..{result.days[-1]} ({stats['trading_days']} days) ===",
         f"Net P&L:        {d(stats['net_pnl'])}   (gross {d(stats['gross_pnl'])}, "
         f"commission {d(stats['commission'])})",

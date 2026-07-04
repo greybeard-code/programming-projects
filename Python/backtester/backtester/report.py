@@ -169,7 +169,7 @@ def render(result, stats: dict, out_path: str | Path, mc=None) -> Path:
  .trades th {{ position: sticky; top: 0; background: #fafafa; }}
 </style></head><body>
 <h1>{html.escape(result.strategy_name)} — {html.escape(result.symbol)},
-{result.period_s}s bars, {result.days[0]}&ndash;{result.days[-1]}</h1>
+{result.period} bars, {result.days[0]}&ndash;{result.days[-1]}</h1>
 <div class="cols">
 <table>{stats_html}</table>
 </div>

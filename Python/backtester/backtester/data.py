@@ -154,13 +154,13 @@ class Catalog:
 
     # ---------------- bars ----------------
 
-    def _bars_path(self, symbol: str, date: str, period_s: int) -> Path:
-        return (self.cache_root / "bars" / symbol.upper() / f"{period_s}s"
+    def _bars_path(self, symbol: str, date: str, key: str) -> Path:
+        return (self.cache_root / "bars" / symbol.upper() / key
                 / f"{date}.parquet")
 
-    def load_bars(self, symbol: str, date: str, period_s: int,
+    def load_bars(self, symbol: str, date: str, spec, tick_size: float,
                   day: DayL1 | None = None) -> BarDay:
-        bp = self._bars_path(symbol, date, period_s)
+        bp = self._bars_path(symbol, date, spec.key)
         if bp.exists():
             t = pq.read_table(bp)
             return BarDay(*(t.column(c).to_numpy() for c in
@@ -168,7 +168,7 @@ class Catalog:
                              "volume", "i0", "i1")))
         if day is None:
             day = self.load_day(symbol, date)
-        bars = build_bars(day, period_s)
+        bars = build_bars(day, spec, tick_size)
         bp.parent.mkdir(parents=True, exist_ok=True)
         tmp = bp.with_suffix(".tmp")
         pq.write_table(pa.table({
@@ -180,15 +180,31 @@ class Catalog:
         return bars
 
 
-def build_bars(day: DayL1, period_s: int) -> BarDay:
+def _empty_bars() -> BarDay:
+    z = np.array([], dtype="int64")
+    zf = np.array([], dtype="float64")
+    return BarDay(z, zf, zf, zf, zf, z.copy(), z.copy(), z.copy())
+
+
+def build_bars(day: DayL1, spec, tick_size: float) -> BarDay:
+    """Dispatch on BarSpec.kind: time / tick / renko."""
+    if spec.kind == "time":
+        return build_time_bars(day, spec.seconds)
+    if spec.kind == "tick":
+        return build_tick_bars(day, spec.ticks)
+    if spec.kind == "renko":
+        return build_renko_bars(day, spec.brick_ticks * tick_size,
+                                spec.reversal_mult)
+    raise ValueError(f"Unknown bar kind {spec.kind!r}")
+
+
+def build_time_bars(day: DayL1, period_s: int) -> BarDay:
     """Time bars from trade events. Bars with no trades are omitted (NT8-style).
 
     Bar timestamp is the close (right edge) of the interval, matching NT8.
     """
     if len(day) == 0:
-        z = np.array([], dtype="int64")
-        zf = np.array([], dtype="float64")
-        return BarDay(z, zf, zf, zf, zf, z.copy(), z.copy(), z.copy())
+        return _empty_bars()
     period_ns = int(period_s) * 1_000_000_000
     first_edge = (day.ts[0] // period_ns) * period_ns
     last_edge = (day.ts[-1] // period_ns + 1) * period_ns
@@ -221,3 +237,99 @@ def build_bars(day: DayL1, period_s: int) -> BarDay:
     return BarDay(ts_end.astype("int64"), o.astype("float64"), h, l,
                   c.astype("float64"), v.astype("int64"),
                   i0.astype("int64"), i1.astype("int64"))
+
+
+def build_tick_bars(day: DayL1, ticks_per_bar: int) -> BarDay:
+    """Fixed trade-count bars (NT8 tick bars). Last partial bar is kept."""
+    n = len(day)
+    if n == 0:
+        return _empty_bars()
+    i0 = np.arange(0, n, ticks_per_bar, dtype="int64")
+    i1 = np.minimum(i0 + ticks_per_bar, n)
+    o = day.price[i0]
+    c = day.price[i1 - 1]
+    h = np.maximum.reduceat(day.price, i0)
+    l = np.minimum.reduceat(day.price, i0)
+    v = np.add.reduceat(day.volume, i0)
+    return BarDay(day.ts[i1 - 1].astype("int64"), o.astype("float64"), h, l,
+                  c.astype("float64"), v.astype("int64"), i0, i1)
+
+
+def build_renko_bars(day: DayL1, brick: float, reversal_mult: int = 2) -> BarDay:
+    """ninZaRenko-style Renko bars from trade prices.
+
+    - A with-trend bar closes when price reaches `open + brick` (up) or
+      `open - brick` (down); its close snaps to the brick grid.
+    - A reversal requires `reversal_mult` bricks against the trend; the
+      reversal bar's close is `reversal_mult * brick` away.
+    - Bar opens are synthetic (previous close), as in ninZaRenko. High/low
+      span the synthetic open/close AND the real trade extremes — matching
+      what NT8 indicators (e.g. ATR) see on ninZaRenko bars, for port
+      fidelity. Price gaps can emit several bricks on one tick — the extra
+      bricks get zero-length spans (purely synthetic bars).
+
+    NOTE: signal timing on these bars is realistic; the engine still fills
+    orders on real ticks, so none of NT8's Renko fantasy-fill problem applies.
+    """
+    n = len(day)
+    if n == 0:
+        return _empty_bars()
+    prices = day.price
+    rev = reversal_mult * brick
+
+    ts_end, opens, highs, lows, closes, vols = [], [], [], [], [], []
+    i0s, i1s = [], []
+
+    # consider only ticks where price changed (big speedup, same bars)
+    chg = np.flatnonzero(np.diff(prices) != 0) + 1
+    walk = np.concatenate([[0], chg])
+
+    anchor = prices[0]      # close of the last emitted brick
+    d = 0                   # current trend: +1 / -1 / 0 (no bar yet)
+    span_start = 0          # first tick index of the bar being built
+
+    def emit(close: float, k: int, span_end: int) -> None:
+        nonlocal anchor, span_start
+        i0, i1 = span_start, span_end
+        seg = prices[i0:i1] if i1 > i0 else None
+        opens.append(anchor)
+        closes.append(close)
+        highs.append(max(seg.max() if seg is not None else close,
+                         anchor, close))
+        lows.append(min(seg.min() if seg is not None else close,
+                        anchor, close))
+        vols.append(int(day.volume[i0:i1].sum()) if i1 > i0 else 0)
+        ts_end.append(int(day.ts[k]))
+        i0s.append(i0)
+        i1s.append(i1)
+        anchor = close
+        span_start = i1
+
+    for k in walk:
+        p = prices[k]
+        if d >= 0:                                   # uptrend or undecided
+            while p >= anchor + brick:
+                emit(anchor + brick, k, k + 1)
+                d = 1
+            if d >= 0 and p <= anchor - (rev if d == 1 else brick):
+                emit(anchor - (rev if d == 1 else brick), k, k + 1)
+                d = -1
+        if d < 0:                                    # downtrend
+            while p <= anchor - brick:
+                emit(anchor - brick, k, k + 1)
+            if p >= anchor + rev:
+                emit(anchor + rev, k, k + 1)
+                d = 1
+                while p >= anchor + brick:
+                    emit(anchor + brick, k, k + 1)
+
+    return BarDay(
+        np.asarray(ts_end, dtype="int64"),
+        np.asarray(opens, dtype="float64"),
+        np.asarray(highs, dtype="float64"),
+        np.asarray(lows, dtype="float64"),
+        np.asarray(closes, dtype="float64"),
+        np.asarray(vols, dtype="int64"),
+        np.asarray(i0s, dtype="int64"),
+        np.asarray(i1s, dtype="int64"),
+    )

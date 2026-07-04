@@ -52,7 +52,14 @@ plotly, tzdata, pytest — no pandas/polars, keep it that way unless needed).
 - **strategy.py** — Strategy base (on_start/on_bar/on_fill/on_session_end/
   on_finish; buy_bracket, move_stop, move_stop_to_breakeven, ...);
   indicators.py has incremental NT8-style indicators (EMA, SMA, ATR, RSI,
-  EfficiencyRatio, Highest, Lowest).
+  EfficiencyRatio, Highest, Lowest). Bar types via `period` / BarSpec:
+  time ("1m"), tick ("500t"), renko ("r8" = 8-tick brick, 2-brick reversal;
+  "r8x3"). Renko closes snap to the brick grid, opens are synthetic
+  (prev close), H/L include the synthetic open (ninZaRenko/NT8-indicator
+  parity — deliberate, see test_renko_reversal_needs_two_bricks). Gap moves
+  emit extra bricks with zero-length spans. Fills always resolve on real
+  ticks regardless of bar type, so NT8's Renko fantasy-fill problem does
+  not apply here.
 
 ## Conventions & gotchas
 

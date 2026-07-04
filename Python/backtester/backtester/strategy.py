@@ -1,6 +1,7 @@
 """Strategy base class and bar history container."""
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 
 import numpy as np
@@ -219,10 +220,49 @@ class Strategy:
         return self._broker.submit(o, bracket)
 
 
+@dataclass(frozen=True)
+class BarSpec:
+    """Parsed bar type. kind: 'time' | 'tick' | 'renko'."""
+    kind: str
+    seconds: int = 0          # time bars
+    ticks: int = 0            # tick-count bars: trades per bar
+    brick_ticks: int = 0      # renko: brick size in ticks
+    reversal_mult: int = 2    # renko: bricks needed to reverse
+
+    @property
+    def key(self) -> str:
+        if self.kind == "time":
+            return f"{self.seconds}s"
+        if self.kind == "tick":
+            return f"{self.ticks}t"
+        rev = f"x{self.reversal_mult}" if self.reversal_mult != 2 else ""
+        return f"r{self.brick_ticks}{rev}"
+
+
+def parse_barspec(period: str) -> BarSpec:
+    """'30s'/'1m'/'5m'/'1h' time bars; '500t' tick bars; 'r8' renko with
+    8-tick bricks (ninZaRenko-style, 2-brick reversal; 'r8x3' = 3-brick)."""
+    p = period.strip().lower()
+    m = re.fullmatch(r"r(\d+)(?:x(\d+))?", p)
+    if m:
+        return BarSpec("renko", brick_ticks=int(m.group(1)),
+                       reversal_mult=int(m.group(2) or 2))
+    m = re.fullmatch(r"(\d+)t", p)
+    if m:
+        return BarSpec("tick", ticks=int(m.group(1)))
+    m = re.fullmatch(r"(\d+(?:\.\d+)?)([smh])", p)
+    if m:
+        units = {"s": 1, "m": 60, "h": 3600}
+        return BarSpec("time", seconds=int(float(m.group(1)) * units[m.group(2)]))
+    if p.isdigit():
+        return BarSpec("time", seconds=int(p))
+    raise ValueError(f"Unrecognized bar period {period!r} "
+                     "(examples: 30s, 1m, 5m, 500t, r8, r8x3)")
+
+
 def parse_period(period: str) -> int:
-    """'30s' -> 30, '1m' -> 60, '5m' -> 300, '1h' -> 3600."""
-    period = period.strip().lower()
-    units = {"s": 1, "m": 60, "h": 3600}
-    if period and period[-1] in units:
-        return int(float(period[:-1]) * units[period[-1]])
-    return int(period)  # plain seconds
+    """Back-compat: seconds of a time-bar spec."""
+    spec = parse_barspec(period)
+    if spec.kind != "time":
+        raise ValueError(f"{period!r} is not a time-bar period")
+    return spec.seconds

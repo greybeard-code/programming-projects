@@ -12,7 +12,7 @@ from .account import Account, ApexConfig, ApexTracker, Trade, TradeRecorder
 from .broker import SimBroker
 from .contracts import ContractSpec, get_spec
 from .data import Catalog
-from .strategy import Bar, BarHistory, Strategy, parse_period
+from .strategy import Bar, BarHistory, Strategy, parse_barspec
 
 CT = ZoneInfo("America/Chicago")
 
@@ -22,7 +22,7 @@ class Result:
     symbol: str
     spec: ContractSpec
     start_balance: float
-    period_s: int
+    period: str
     days: list[str]
     trades: list[Trade]
     fills: int
@@ -63,7 +63,7 @@ class Backtest:
                  progress: bool = True):
         self.strategy = strategy
         self.symbol = (symbol or strategy.symbol).upper()
-        self.period_s = parse_period(period or strategy.period)
+        self.barspec = parse_barspec(period or strategy.period)
         self.start, self.end = start, end
         self.start_balance = start_balance
         self.spec = get_spec(self.symbol)
@@ -102,7 +102,8 @@ class Backtest:
             day = self.catalog.load_day(self.symbol, date)
             if len(day) == 0:
                 continue
-            bars = self.catalog.load_bars(self.symbol, date, self.period_s, day)
+            bars = self.catalog.load_bars(self.symbol, date, self.barspec,
+                                          self.spec.tick_size, day)
             if len(bars) == 0:
                 continue
             self.broker.begin_day(day)
@@ -152,7 +153,7 @@ class Backtest:
         strat.on_finish()
         return Result(
             symbol=self.symbol, spec=self.spec,
-            start_balance=self.start_balance, period_s=self.period_s,
+            start_balance=self.start_balance, period=self.barspec.key,
             days=days, trades=self.recorder.trades,
             fills=len(self.broker.fills),
             equity_ts=np.asarray(eq_ts, dtype="int64"),
