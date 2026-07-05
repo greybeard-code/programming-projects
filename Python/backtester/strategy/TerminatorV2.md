@@ -15,6 +15,23 @@
 > parameter-robustness conclusions below (period plateau, mult band,
 > stop benefit, cost insensitivity) all re-verified on corrected data.
 
+> **REVISED (2) 2026-07-05 — bar-fidelity re-validation.** ninZaRenko bars
+> are now bit-identical OHLC to NT8 fresh-load charts after two builder
+> corrections: strict breakout (`>`/`<`) and the breakout tick belonging to
+> the next bar (bars cache v6; see
+> [research/ninZaRenko_spec.md](../research/ninZaRenko_spec.md) rules 8–9).
+> Re-ran the recommended config (session 14:00–20:55 ET, ATR 20×4, 200-tick
+> stop, 1 contract) on the corrected bars — the edge **holds, marginally
+> stronger**: net **$7,677** (was $7,142), Sharpe **2.92** (2.87),
+> maxDD −$1,286 (−$1,282), MC P(breach) **5.0%** (6.2%), P(pass $3K eval)
+> **93.2%** (92.1%), 320 trades. The +$535 is cleanly attributable to the bar
+> corrections (the timestamp fix was already in place when $7,142 was
+> computed). NOTE: the §3 default-session baseline below ($7,060 / 346
+> trades) is a **pre-timestamp-fix artifact** — the true default session
+> (09:30–16:55 ET) loses **−$8,172** on corrected bars, exactly as the first
+> revision note predicted; the edge lives only in the afternoon+evening
+> window.
+
 **Source:** `Terminator_v2.4.2\Strategies\Terminator_V2.cs` (NT8, v2.4.2, 2026-07-03)
 **Tested as:** MNQ, ninZaRenko 100/4 (`r100-4`), RTH 08:30–15:55 CT, 1 contract,
 flat at session end, $50K account, Apex $2,500 trailing threshold.

@@ -83,10 +83,11 @@ def test_renko_uptrend_closes_spaced_by_trend():
     # thereafter open sits B - T = 0.5 below the previous close
     assert list(bars.open) == [100.0, 100.0, 100.5, 101.0]
     assert bars.open[1] == bars.close[0] - 0.5
-    # spans partition the tick stream up to each closing tick; the 100.50
-    # tick (exactly +T) does NOT close bar 0 — the 100.75 tick does
-    assert bars.i0[0] == 0 and bars.i1[0] == 4     # 100.00..100.75 incl
-    assert bars.i0[1] == 4 and bars.i1[1] == 6
+    # spans partition the tick stream; the 100.50 tick (exactly +T) does NOT
+    # close bar 0, and the 100.75 breakout tick belongs to bar 1 (it opens
+    # bar 1 in NT8), so bar 0 owns only 100.00..100.50
+    assert bars.i0[0] == 0 and bars.i1[0] == 3     # 100.00..100.50
+    assert bars.i0[1] == 3 and bars.i1[1] == 5     # 100.75..101.00
 
 
 def test_renko_reversal_at_2b_minus_t():
@@ -99,8 +100,11 @@ def test_renko_reversal_at_2b_minus_t():
     bars = build_renko_bars(day, brick=1.0, trend=0.5)
     assert list(bars.close) == [100.5, 99.0]
     assert bars.open[1] == pytest.approx(100.0)    # close + B
-    assert bars.high[1] == pytest.approx(100.0)    # synthetic open counts
-    assert bars.low[1] == pytest.approx(98.75)     # breaking tick overshoots
+    # the up-break tick (100.75) that closed bar 0 opens bar 1, so it is
+    # bar 1's high; the low is clamped to the reversal threshold (99.0) and
+    # the 98.75 overshoot tick is handed to the (unformed) next bar
+    assert bars.high[1] == pytest.approx(100.75)
+    assert bars.low[1] == pytest.approx(99.0)
 
 
 def test_renko_no_reversal_before_threshold():
@@ -125,8 +129,8 @@ def test_renko_gap_emits_multiple_bars():
     day = make_day(prices)
     bars = build_renko_bars(day, brick=1.0, trend=0.5)
     assert list(bars.close) == [100.5, 101.0, 101.5, 102.0]
-    assert bars.i1[0] == 2                         # first bar owns the span
-    assert bars.i0[1] == bars.i1[1] == 2           # synthetic gap bars
+    assert bars.i1[0] == 1                         # first bar owns tick 0 only
+    assert bars.i0[1] == bars.i1[1] == 1           # synthetic gap bars (empty)
 
 
 def test_renko_first_bar_can_form_downward():

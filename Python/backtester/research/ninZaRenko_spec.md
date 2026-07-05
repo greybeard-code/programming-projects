@@ -43,11 +43,15 @@ post-hoc confirmation, not a source. No decompiled ninZa code is in the repo.
    forming bar but does NOT emit — price must EXCEED the level. Our builder
    originally used inclusive `>=`, which printed a spurious brick on a
    touch-and-reverse and offset the grid by ±T; correcting it lifted
-   fresh-load close-parity to 100% (see Validation). One consequence: the
-   breakout tick necessarily overshoots, so our completing bar's breakout-side
-   extreme (up-bar high / down-bar low) runs 1 tick past NT8's, which clamps
-   that bar to the threshold and starts the overshoot tick in the next bar.
-   Open and close are exact; only that one extreme differs, by 1 tick.
+   fresh-load close-parity to 100% (see Validation).
+9. **The breakout tick belongs to the next bar.** The tick that exceeds a
+   threshold closes the completing bar *at the threshold* (clamped, volume on
+   that final step = 0) and is the tick that OPENS the next bar — it becomes
+   the new bar's first high/low, exactly as ninZaRenko.cs does. So the
+   completing bar's H/L, volume and fill span all stop *before* that tick.
+   This is what makes OHLC — not just close — bit-identical to NT8's
+   fresh-load bars. A `partial` session-halt close has no breakout tick, so it
+   keeps its last real trade as the close.
 
 ## Validation results
 
@@ -60,22 +64,24 @@ trading day (10/10 and 12/12), confirming re-anchor happens **only at the
 real 18:00 ET session open**, never on mere quiet spells.
 
 **Path parity vs our builder** (one-to-one matcher, 10 s tolerance — the two
-tick feeds skew by up to ~6 s). "→ strict" = after the rule-8 correction
-(bars cache v5):
+tick feeds skew by up to ~6 s). Numbers are the current builder with rules 8
+and 9 (bars cache v6); the arrow on close shows the jump from the earlier
+inclusive-`>=` builder:
 
-| setting | chart type | matched | identical close (`>=` → strict) |
-|---|---|---|---|
-| 40/10 | fresh load, 1 day | 100% | 95.8% → **100.0%** |
-| 36/2 | fresh load, 1 day | 100% | 68.4% → **100.0%** |
-| 10/3 | fresh load, 1 day | 90.4% | 93.0% → **96.7%** |
-| 100/4 | live-accumulated, 10 days | 97.3% | aggregate 66.5% (reconnect-dominated) |
-| 64/16 | live-accumulated, 12 days | 88.3% | aggregate 31.3% (reconnect-dominated) |
+| setting | chart type | matched | identical close (`>=` → now) | identical OHLC |
+|---|---|---|---|---|
+| 40/10 | fresh load, 1 day | 100% | 95.8% → **100.0%** | **100.0%** (1193/1193) |
+| 36/2 | fresh load, 1 day | 100% | 68.4% → **100.0%** | **100.0%** (4653/4654) |
+| 10/3 | fresh load, 1 day | 90.4% | 93.0% → **96.7%** | 96.4% |
+| 100/4 | live-accumulated, 10 days | 97.3% | aggregate 66.5% (reconnect-dominated) | — |
+| 64/16 | live-accumulated, 12 days | 88.3% | aggregate 31.3% (reconnect-dominated) | — |
 
-Identical *OHLC* is ~0% by construction after the strict fix — every bar's
-breakout-side extreme differs by exactly 1 tick (rule 8); open and close are
-exact. The live-accumulated rows are all-sessions aggregates and read low
-because reconnect re-anchors corrupt whole sessions (mechanism 2 below); the
-earlier "clean sessions 93–99%" per-session slices are unchanged by this fix.
+With rule 9 the *whole bar* is bit-identical wherever the close matches: 40/10
+matches on every bar, 36/2 on all but one, and 10/3's OHLC parity (96.4%)
+tracks its close parity (96.7%) — i.e. the residual is entirely the T=3 feed
+noise, not the builder. The live-accumulated rows are all-sessions aggregates
+and read low because reconnect re-anchors corrupt whole sessions (mechanism 2
+below); the earlier "clean sessions 93–99%" per-session slices still hold.
 
 The strict-breakout correction reassigned most of what an earlier draft
 blamed on "feed differences" to our own inclusive `>=`. What genuinely
@@ -115,11 +121,10 @@ timestamps were **ET wall clock, not UTC** (fixed in reduction, cache v2).
   — two traders running the same live chart config can hold different bars.
   Renko-signal strategies inherit that nondeterminism in live trading;
   expect occasional live signals that a rebuilt chart wouldn't show.
-- Close-driven signals (renko is a close-driven bar type) get exact parity on
-  fresh-load charts. A strategy keying off a renko bar's HIGH/LOW instead sees
-  our breakout-side extreme 1 tick beyond NT8's (rule 8). Matching NT8's
-  clamped extreme would mean assigning the breakout tick to the *next* bar's
-  span — which also shifts that tick's volume and fill resolution, so it would
-  move r100-4 strategy numbers. Deferred, not yet applied.
+- Full OHLC is bit-identical to a fresh-load chart (rules 8 + 9), so a
+  strategy keying off a renko bar's HIGH/LOW sees exactly the values NT8 does,
+  not just the close. Assigning the breakout tick to the next bar (rule 9)
+  also moved that tick's volume and fill span by one tick per bar, which
+  re-validated the r100-4 Terminator numbers (see strategy/TerminatorV2.md).
 - Fills in this backtester never depend on renko prices (they resolve on
   real ticks), so none of this affects fill fidelity — only signal timing.

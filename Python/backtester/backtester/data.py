@@ -52,7 +52,7 @@ def _eastern_offset_ns(date: str) -> int:
 
 
 CACHE_VERSION = b"3"   # reduced: v3 = trust replay_importer UTC tag, else ET->UTC
-BARS_VERSION = b"5"    # bars: v5 = renko strict breakout (`>`/`<`) per ninZaRenko.cs
+BARS_VERSION = b"6"    # bars: v6 = renko breakout tick belongs to next bar (H/L parity)
 
 # The replay_importer (v>=2) stamps output Parquet with these keys and stores
 # true UTC. Files carrying timestamps=UTC skip the _eastern_offset_ns
@@ -381,9 +381,17 @@ def build_renko_bars(day: DayL1, brick: float, trend: float) -> BarDay:
     span_start = 0          # first tick index of the bar being built
 
     def emit(close: float, direction: int, k: int,
-             body: float | None = None) -> None:
+             body: float | None = None, partial: bool = False) -> None:
+        # A threshold breakout EXCLUDES its triggering tick k: that tick
+        # overshoots the level and belongs to the NEXT bar — ninZaRenko.cs
+        # clamps the completing bar to the threshold and opens the new bar ON
+        # the breakout tick (which becomes the new bar's first high/low). So
+        # the completing bar's H/L, volume and fill span all stop before k.
+        # A `partial` close (session halt / EOD) has no breakout tick: its k
+        # IS the last real trade and its close price, so include it.
         nonlocal anchor, span_start, d
-        i0, i1 = span_start, k + 1
+        i0 = span_start
+        i1 = k + 1 if partial else k
         seg = prices[i0:i1] if i1 > i0 else None
         o = close - direction * (brick if body is None else body)
         opens.append(o)
@@ -413,7 +421,7 @@ def build_renko_bars(day: DayL1, brick: float, trend: float) -> BarDay:
                 form_open = anchor - d * (brick - trend)
                 direction = 1 if last_p >= form_open else -1
                 emit(last_p, direction, k - 1,
-                     body=abs(last_p - form_open))
+                     body=abs(last_p - form_open), partial=True)
             anchor = p
             d = 0
             span_start = k

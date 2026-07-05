@@ -17,6 +17,10 @@
 >   MC P(breach) **6.2%**, P(pass $3K eval) **92.1%**, with 200-tick stop,
 >   ATR 20×4, 1 contract. Sensitivity re-verified: all 9 grid combos
 >   profitable, period plateau clean.
+>   *(Re-validated 2026-07-05 on bit-identical NT8-parity bars — strict
+>   breakout + breakout-tick-to-next-bar, cache v6: net $7,677, Sharpe 2.92,
+>   maxDD −$1,286, breach 5.0%, eval-pass 93.2%. Edge holds, marginally
+>   stronger. See [TerminatorV2.md](TerminatorV2.md) revision (2).)*
 > - **Walk-forward on the corrected window (9-combo grid, 5 windows,
 >   IS/OOS 5:1): 5/5 OOS windows profitable, stitched OOS net $5,938 over
 >   77 unseen days, OOS Sharpe 4.63, WFE 1.96.** Re-optimized params stay
