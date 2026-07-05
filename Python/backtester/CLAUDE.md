@@ -43,12 +43,15 @@ plotly, tzdata, pytest — no pandas/polars, keep it that way unless needed).
   recorder sees clean round trips.
 - **account.py** — Account (signed position, avg price, realized net of
   commission), TradeRecorder (round trips with MAE/MFE in dollars),
-  ApexTracker (floor trails intratrade equity peak by `threshold`, locks at
-  start+`lock_buffer`; breach = equity touches floor; optional halt).
+  PropFirmTracker (floor trails intratrade equity peak by `threshold`, locks
+  at start+`lock_buffer`; breach = equity touches floor; optional halt).
+  Naming: generic "prop firm" everywhere (user preference) — Apex is the
+  modeled rule set, mention it only as provenance. CLI keeps
+  --apex-threshold/--apex-halt as hidden aliases of --prop-*.
 - **montecarlo.py** — trade-P&L resampling (iid, or circular block bootstrap
   auto-selected when trade autocorr |r|>0.2 per Davey). Vectorized
-  (sims × trades) equity matrices. Apex breach model: trade's MAE tested vs
-  floor from *prior* trades; close tested vs floor including own MFE (MFE
+  (sims × trades) equity matrices. Prop-firm breach model: trade's MAE tested
+  vs floor from *prior* trades; close tested vs floor including own MFE (MFE
   applied to own trough fabricates breaches — learned the hard way, see
   test_montecarlo.py). Eval race: P(hit target before breach), tie = breach.
 - **metrics.py / report.py** — stats dict + console formatter; self-contained

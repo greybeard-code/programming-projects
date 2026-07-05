@@ -44,7 +44,7 @@ def main() -> None:
     ap.add_argument("--start")
     ap.add_argument("--end")
     ap.add_argument("--balance", type=float, default=50_000.0)
-    ap.add_argument("--apex-threshold", type=float, default=2500.0)
+    ap.add_argument("--prop-threshold", type=float, default=2500.0)
     ap.add_argument("--slippage", type=float, default=0.0)
     ap.add_argument("--daily-loss-limit", type=float, default=None)
     ap.add_argument("--metric", default="sharpe",
@@ -63,7 +63,7 @@ def main() -> None:
     rows = sw.run_sweep(
         args.strategy, grid, start=args.start, end=args.end,
         symbol=args.symbol, period=args.period, start_balance=args.balance,
-        apex_threshold=args.apex_threshold if args.apex_threshold > 0 else None,
+        prop_threshold=args.prop_threshold if args.prop_threshold > 0 else None,
         slippage_ticks=args.slippage, daily_loss_limit=args.daily_loss_limit,
         workers=args.workers)
 
@@ -71,15 +71,15 @@ def main() -> None:
     params = list(grid)
     print(f"\n{'rank':<5}" + "".join(f"{p:<14}" for p in params)
           + f"{'net_pnl':>10}{'sharpe':>8}{'calmar':>8}{'pf':>6}"
-          + f"{'win%':>6}{'maxDD':>10}{'trades':>8}{'apexHR':>9}")
+          + f"{'win%':>6}{'maxDD':>10}{'trades':>8}{'propHR':>9}")
     for i, r in enumerate(ranked[:25], 1):
         print(f"{i:<5}" + "".join(f"{r[p]!s:<14}" for p in params)
               + f"{r['net_pnl']:>10,.0f}{r['sharpe']:>8.2f}"
               + f"{r['calmar']:>8.2f}{r['profit_factor']:>6.2f}"
               + f"{r['win_rate']:>6.1f}{r['max_drawdown']:>10,.0f}"
               + f"{r['total_trades']:>8}"
-              + (f"{r['apex_min_headroom']:>9,.0f}"
-                 if r['apex_min_headroom'] == r['apex_min_headroom']
+              + (f"{r['prop_min_headroom']:>9,.0f}"
+                 if r['prop_min_headroom'] == r['prop_min_headroom']
                  else f"{'n/a':>9}"))
 
     best = ranked[0]

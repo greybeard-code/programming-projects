@@ -48,7 +48,7 @@ def test_daily_loss_limit_flattens_and_stands_down():
     prices = [100.0] * 60 + [100.0 - 0.25 * i for i in range(1, 241)]
     day = make_day(prices)
     strat = BuyOnce()
-    bt = Backtest(strat, apex=None, daily_loss_limit=30.0, progress=False)
+    bt = Backtest(strat, prop=None, daily_loss_limit=30.0, progress=False)
     bt.catalog = _StubCatalog(day)
     res = bt.run()
     assert res.dll_days == [day.date]
@@ -65,7 +65,7 @@ def test_no_dll_when_not_hit():
     prices = [100.0] * 60 + [100.0 + 0.25 * (i % 4) for i in range(240)]
     day = make_day(prices)
     strat = BuyOnce()
-    bt = Backtest(strat, apex=None, daily_loss_limit=500.0, progress=False)
+    bt = Backtest(strat, prop=None, daily_loss_limit=500.0, progress=False)
     bt.catalog = _StubCatalog(day)
     res = bt.run()
     assert res.dll_days == []

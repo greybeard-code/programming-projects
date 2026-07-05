@@ -8,7 +8,7 @@ from zoneinfo import ZoneInfo
 
 import numpy as np
 
-from .account import Account, ApexConfig, ApexTracker, Trade, TradeRecorder
+from .account import Account, PropFirmConfig, PropFirmTracker, Trade, TradeRecorder
 from .broker import SimBroker
 from .contracts import ContractSpec, get_spec
 from .data import Catalog
@@ -29,9 +29,9 @@ class Result:
     # sampled at bar closes:
     equity_ts: np.ndarray = field(default_factory=lambda: np.array([], "int64"))
     equity: np.ndarray = field(default_factory=lambda: np.array([]))
-    apex_floor: np.ndarray = field(default_factory=lambda: np.array([]))
+    prop_floor: np.ndarray = field(default_factory=lambda: np.array([]))
     daily_pnl: dict[str, float] = field(default_factory=dict)
-    apex: ApexTracker | None = None
+    prop: PropFirmTracker | None = None
     total_commission: float = 0.0
     runtime_s: float = 0.0
     strategy_name: str = ""
@@ -91,7 +91,7 @@ class Backtest:
     def __init__(self, strategy: Strategy, start: str | None = None,
                  end: str | None = None, symbol: str | None = None,
                  period: str | None = None, start_balance: float = 50_000.0,
-                 apex: ApexConfig | None = ApexConfig(),
+                 prop: PropFirmConfig | None = PropFirmConfig(),
                  slippage_ticks: float = 0.0,
                  daily_loss_limit: float | None = None,
                  data_root=None, cache_root=None,
@@ -105,9 +105,9 @@ class Backtest:
         self.catalog = Catalog(data_root, cache_root)
         self.account = Account(self.spec, start_balance)
         self.recorder = TradeRecorder(self.spec)
-        self.apex = ApexTracker(apex, start_balance) if apex else None
+        self.prop = PropFirmTracker(prop, start_balance) if prop else None
         self.broker = SimBroker(self.spec, self.account, self.recorder,
-                                self.apex, slippage_ticks,
+                                self.prop, slippage_ticks,
                                 on_fill=self._notify_fill)
         self.daily_loss_limit = daily_loss_limit
         self.progress = progress
@@ -175,7 +175,7 @@ class Backtest:
                         strat.on_bar(bar, hist)
                         eq_ts.append(bar.ts)
                         eq.append(self.account.equity(bar.close))
-                        floor.append(self.apex.floor if self.apex
+                        floor.append(self.prop.floor if self.prop
                                      else float("nan"))
                         last_bar_ref = (day, int(bars.i1[j]) - 1)
 
@@ -232,8 +232,8 @@ class Backtest:
             fills=len(self.broker.fills),
             equity_ts=np.asarray(eq_ts, dtype="int64"),
             equity=np.asarray(eq, dtype="float64"),
-            apex_floor=np.asarray(floor, dtype="float64"),
-            daily_pnl=daily, apex=self.apex,
+            prop_floor=np.asarray(floor, dtype="float64"),
+            daily_pnl=daily, prop=self.prop,
             total_commission=self.account.total_commission,
             runtime_s=time.perf_counter() - t_start,
             strategy_name=type(self.strategy).__name__,

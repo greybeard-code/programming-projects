@@ -17,7 +17,7 @@ def mk_trades(pnls, mae=None, mfe=None):
 
 def test_all_winners_never_breach():
     trades = mk_trades([50.0] * 40)
-    r = montecarlo.run(trades, 50_000, n_sims=500, apex_threshold=2500,
+    r = montecarlo.run(trades, 50_000, n_sims=500, prop_threshold=2500,
                        profit_target=1000)
     assert r.prob_breach == 0.0
     assert r.prob_pass == 1.0
@@ -36,7 +36,7 @@ def test_guaranteed_breach_from_single_huge_mae():
     # every sequence contains the killer trade eventually? No — resampling
     # may omit it. Use all trades breaching on their own MAE from start.
     trades = mk_trades([-100.0] * 20, mae=[-3000.0] * 20)
-    r = montecarlo.run(trades, 50_000, n_sims=300, apex_threshold=2500)
+    r = montecarlo.run(trades, 50_000, n_sims=300, prop_threshold=2500)
     assert r.prob_breach == 1.0
 
 
@@ -50,7 +50,7 @@ def test_breach_via_trailing_peak_not_just_start():
     # With threshold 1000: floor locks at 100 too. Test lock behavior instead:
     trades = mk_trades([2000.0, -600.0] * 10, mfe=[2600.0, 0.0] * 10,
                        mae=[0.0, -700.0] * 10)
-    r = montecarlo.run(trades, 50_000, n_sims=200, apex_threshold=1000)
+    r = montecarlo.run(trades, 50_000, n_sims=200, prop_threshold=1000)
     # once locked at +100, equity stays well above -> should rarely breach;
     # but a sim starting with several -600/-700 trades breaches near start.
     assert 0.0 <= r.prob_breach < 1.0
@@ -76,7 +76,7 @@ def test_iid_when_uncorrelated():
 def test_eval_race_pass_and_fail_sum_sane():
     rng = np.random.default_rng(2)
     trades = mk_trades(rng.normal(5, 80, size=150))
-    r = montecarlo.run(trades, 50_000, n_sims=500, apex_threshold=1500,
+    r = montecarlo.run(trades, 50_000, n_sims=500, prop_threshold=1500,
                        profit_target=1500)
     assert r.prob_pass is not None
     assert 0.0 <= r.prob_pass <= 1.0

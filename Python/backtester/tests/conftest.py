@@ -6,7 +6,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import numpy as np
 import pytest
 
-from backtester.account import Account, ApexConfig, ApexTracker, TradeRecorder
+from backtester.account import Account, PropFirmConfig, PropFirmTracker, TradeRecorder
 from backtester.broker import SimBroker
 from backtester.contracts import ContractSpec
 from backtester.data import DayL1
@@ -47,7 +47,7 @@ def rig(spec):
     def build(start_balance=50_000.0, apex_cfg=None, slippage=0.0):
         account = Account(spec, start_balance)
         recorder = TradeRecorder(spec)
-        apex = ApexTracker(apex_cfg, start_balance) if apex_cfg else None
-        broker = SimBroker(spec, account, recorder, apex, slippage)
-        return broker, account, recorder, apex
+        prop = PropFirmTracker(apex_cfg, start_balance) if apex_cfg else None
+        broker = SimBroker(spec, account, recorder, prop, slippage)
+        return broker, account, recorder, prop
     return build

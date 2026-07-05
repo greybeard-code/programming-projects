@@ -3,10 +3,10 @@
 Resamples the closed-trade P&L sequence with replacement and rebuilds equity
 paths to answer: how much of the backtest outcome is the luck of trade
 ordering? Outputs the distribution of final P&L and max drawdown, and — the
-prop-firm question — the probability of breaching an Apex-style trailing
+prop-firm question — the probability of breaching a prop-firm (Apex-style) trailing
 threshold across orderings, optionally racing a profit target (eval pass).
 
-Apex breach detection uses each trade's recorded MFE/MAE (dollars), so
+Prop-firm breach detection uses each trade's recorded MFE/MAE (dollars), so
 intratrade excursions count, matching how the threshold trails live. The true
 intra-trade ordering of MFE vs MAE is unknowable after resampling, so the
 model assumes the adverse excursion comes first (the usual shape): a trade's
@@ -40,8 +40,8 @@ class MonteCarloResult:
     # max drawdown distribution ($, negative):
     dd_median: float
     dd_p95: float                    # 95th percentile *worst* drawdown
-    # Apex trailing threshold:
-    apex_threshold: float | None = None
+    # prop-firm trailing threshold:
+    prop_threshold: float | None = None
     prob_breach: float | None = None
     # eval race (profit target vs breach), if a target was given:
     profit_target: float | None = None
@@ -82,8 +82,8 @@ def _resample_block(rng, n_trades: int, n_sims: int,
 
 
 def run(trades, start_balance: float, n_sims: int = 2000,
-        apex_threshold: float | None = None, apex_lock_buffer: float = 100.0,
-        apex_lock: bool = True, profit_target: float | None = None,
+        prop_threshold: float | None = None, prop_lock_buffer: float = 100.0,
+        prop_lock: bool = True, profit_target: float | None = None,
         method: str = "auto", seed: int | None = 7,
         block_size: int | None = None) -> MonteCarloResult:
     """trades: list of account.Trade (needs .pnl, .mae, .mfe)."""
@@ -132,17 +132,17 @@ def run(trades, start_balance: float, n_sims: int = 2000,
         dd_p95=float(np.percentile(dd, 5)),   # 5th pct of negatives = worst tail
     )
 
-    if apex_threshold and apex_threshold > 0:
+    if prop_threshold and prop_threshold > 0:
         # trailing floor in net-P&L-from-zero terms: MAE vs prior-trade floor,
         # close vs floor including the trade's own MFE (see module docstring)
-        floor_prior = peak_prior - apex_threshold
-        floor_incl = peak_run - apex_threshold
-        if apex_lock:
-            floor_prior = np.minimum(floor_prior, apex_lock_buffer)
-            floor_incl = np.minimum(floor_incl, apex_lock_buffer)
+        floor_prior = peak_prior - prop_threshold
+        floor_incl = peak_run - prop_threshold
+        if prop_lock:
+            floor_prior = np.minimum(floor_prior, prop_lock_buffer)
+            floor_incl = np.minimum(floor_incl, prop_lock_buffer)
         breach_m = (trough <= floor_prior) | (equity_after <= floor_incl)
         breached = breach_m.any(axis=1)
-        r.apex_threshold = apex_threshold
+        r.prop_threshold = prop_threshold
         r.prob_breach = float(breached.mean())
 
         if profit_target and profit_target > 0:
@@ -170,7 +170,7 @@ def format_console(r: MonteCarloResult) -> str:
     ]
     if r.prob_breach is not None:
         lines.append(
-            f"  APEX:         P(breach ${r.apex_threshold:,.0f} trailing) = "
+            f"  PROP:         P(breach ${r.prop_threshold:,.0f} trailing) = "
             f"{r.prob_breach * 100:.1f}%")
     if r.prob_pass is not None:
         unresolved = 1.0 - r.prob_pass - r.prob_fail

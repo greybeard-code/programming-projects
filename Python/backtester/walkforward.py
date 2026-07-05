@@ -26,7 +26,7 @@ def main() -> None:
     ap.add_argument("--start")
     ap.add_argument("--end")
     ap.add_argument("--balance", type=float, default=50_000.0)
-    ap.add_argument("--apex-threshold", type=float, default=2500.0)
+    ap.add_argument("--prop-threshold", type=float, default=2500.0)
     ap.add_argument("--slippage", type=float, default=0.0)
     ap.add_argument("--daily-loss-limit", type=float, default=None)
     ap.add_argument("--metric", default="sharpe",
@@ -40,7 +40,7 @@ def main() -> None:
         n_windows=args.windows, ratio=args.ratio, metric=args.metric,
         min_trades=args.min_trades, start=args.start, end=args.end,
         symbol=args.symbol, period=args.period, start_balance=args.balance,
-        apex_threshold=args.apex_threshold if args.apex_threshold > 0 else None,
+        prop_threshold=args.prop_threshold if args.prop_threshold > 0 else None,
         slippage_ticks=args.slippage, daily_loss_limit=args.daily_loss_limit,
         workers=args.workers)
     print(wf.summarize(windows, args.metric, args.balance))

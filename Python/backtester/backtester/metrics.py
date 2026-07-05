@@ -78,13 +78,13 @@ def compute(result) -> dict:
     else:
         stats["consistency_pct"] = float("nan")
 
-    if result.apex is not None:
-        a = result.apex
-        stats["apex_breached"] = a.breached
-        stats["apex_breach_ts"] = a.breach_ts
-        stats["apex_min_headroom"] = (
+    if result.prop is not None:
+        a = result.prop
+        stats["prop_breached"] = a.breached
+        stats["prop_breach_ts"] = a.breach_ts
+        stats["prop_min_headroom"] = (
             float(a.min_headroom) if np.isfinite(a.min_headroom) else float("nan"))
-        stats["apex_threshold"] = a.cfg.threshold
+        stats["prop_threshold"] = a.cfg.threshold
     return stats
 
 
@@ -111,19 +111,19 @@ def format_console(result, stats: dict) -> str:
         if stats["consistency_pct"] == stats["consistency_pct"] else
         "Consistency:    n/a",
     ]
-    if "apex_breached" in stats:
-        if stats["apex_breached"]:
-            ts = np.datetime64(stats["apex_breach_ts"], "ns")
-            lines.append(f"APEX:           *** BREACHED trailing threshold at {ts} UTC ***")
+    if "prop_breached" in stats:
+        if stats["prop_breached"]:
+            ts = np.datetime64(stats["prop_breach_ts"], "ns")
+            lines.append(f"PROP:           *** BREACHED trailing threshold at {ts} UTC ***")
         else:
             lines.append(
-                f"APEX:           survived; min headroom to threshold "
-                f"{d(stats['apex_min_headroom'])} (threshold {d(stats['apex_threshold'])})")
+                f"PROP:           survived; min headroom to threshold "
+                f"{d(stats['prop_min_headroom'])} (threshold {d(stats['prop_threshold'])})")
     if result.dll_days:
         lines.append(f"Daily loss limit hit on {len(result.dll_days)} day(s): "
                      + ", ".join(result.dll_days[:5])
                      + ("..." if len(result.dll_days) > 5 else ""))
     if result.halted_on:
-        lines.append(f"HALTED on {result.halted_on} (apex breach, halt_on_breach=True)")
+        lines.append(f"HALTED on {result.halted_on} (prop breach, halt_on_breach=True)")
     lines.append(f"Runtime:        {result.runtime_s:.1f}s")
     return "\n".join(lines)

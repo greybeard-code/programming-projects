@@ -20,7 +20,7 @@ from typing import Callable
 
 import numpy as np
 
-from .account import Account, ApexTracker, TradeRecorder
+from .account import Account, PropFirmTracker, TradeRecorder
 from .contracts import ContractSpec
 from .data import DayL1
 from .orders import BUY, SELL, BracketSpec, Fill, Order, OrderState, OrderType
@@ -28,13 +28,13 @@ from .orders import BUY, SELL, BracketSpec, Fill, Order, OrderState, OrderType
 
 class SimBroker:
     def __init__(self, spec: ContractSpec, account: Account,
-                 recorder: TradeRecorder, apex: ApexTracker | None = None,
+                 recorder: TradeRecorder, prop: PropFirmTracker | None = None,
                  slippage_ticks: float = 0.0,
                  on_fill: Callable[[Fill], None] | None = None):
         self.spec = spec
         self.account = account
         self.recorder = recorder
-        self.apex = apex
+        self.prop = prop
         self.slippage = slippage_ticks * spec.tick_size
         self.on_fill = on_fill
         self.working: list[Order] = []
@@ -202,28 +202,28 @@ class SimBroker:
     # ---------------- equity marking ----------------
 
     def _mark(self, i: int, k: int) -> None:
-        """Mark equity/apex/trade-extremes over events [i, k) with constant position."""
+        """Mark equity/prop/trade-extremes over events [i, k) with constant position."""
         if i >= k or self._day is None:
             return
         d = self._day
         pos = self.account.position
         if pos == 0:
-            if self.apex is not None:
-                breach = self.apex.update_scalar(self.account.balance,
+            if self.prop is not None:
+                breach = self.prop.update_scalar(self.account.balance,
                                                  int(d.ts[i]))
-                if breach and self.apex.cfg.halt_on_breach:
+                if breach and self.prop.cfg.halt_on_breach:
                     self.halted = True
             return
         seg = d.price[i:k]
         unreal = pos * (seg - self.account.avg_price) * self.spec.point_value
         self.recorder.mark(float(unreal.min()), float(unreal.max()))
-        if self.apex is not None:
+        if self.prop is not None:
             eq = self.account.balance + unreal
-            breach = self.apex.update_series(eq, d.ts[i:k])
-            if breach and self.apex.cfg.halt_on_breach:
+            breach = self.prop.update_series(eq, d.ts[i:k])
+            if breach and self.prop.cfg.halt_on_breach:
                 # flatten at the breach event; engine sees halted and stops
                 self.halted = True
-                floor = self.apex.floor
+                floor = self.prop.floor
                 hit = eq <= floor
                 idx = i + (int(np.argmax(hit)) if hit.any() else k - 1 - i)
-                self.flatten(idx, tag="apex-halt")
+                self.flatten(idx, tag="prop-halt")

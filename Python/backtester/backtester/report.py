@@ -63,16 +63,16 @@ def render(result, stats: dict, out_path: str | Path, mc=None) -> Path:
     eq = result.equity
     fig.add_trace(go.Scatter(x=t, y=eq, name="Equity", mode="lines",
                              line=dict(width=1.2, color="#1f77b4")), 1, 1)
-    if result.apex is not None and len(result.apex_floor):
-        fig.add_trace(go.Scatter(x=t, y=result.apex_floor, name="Apex floor",
+    if result.prop is not None and len(result.prop_floor):
+        fig.add_trace(go.Scatter(x=t, y=result.prop_floor, name="Prop floor",
                                  mode="lines",
                                  line=dict(width=1, color="#d62728", dash="dot")), 1, 1)
-        if result.apex.breached and result.apex.breach_ts:
-            bt = _dt([result.apex.breach_ts])[0]
+        if result.prop.breached and result.prop.breach_ts:
+            bt = _dt([result.prop.breach_ts])[0]
             fig.add_trace(go.Scatter(
-                x=[bt], y=[result.apex.breach_equity], mode="markers+text",
+                x=[bt], y=[result.prop.breach_equity], mode="markers+text",
                 marker=dict(size=11, color="#d62728", symbol="x"),
-                text=["BREACH"], textposition="top center", name="Apex breach"), 1, 1)
+                text=["BREACH"], textposition="top center", name="Prop breach"), 1, 1)
 
     if len(eq):
         peak = np.maximum.accumulate(eq)
@@ -113,12 +113,12 @@ def render(result, stats: dict, out_path: str | Path, mc=None) -> Path:
         ("Largest day % of profit", f"{stats['consistency_pct']:.1f}%"
          if stats["consistency_pct"] == stats["consistency_pct"] else "n/a"),
     ]
-    if "apex_breached" in stats:
-        if stats["apex_breached"]:
-            apex_txt = f"BREACHED at {np.datetime64(stats['apex_breach_ts'], 'ns')} UTC"
+    if "prop_breached" in stats:
+        if stats["prop_breached"]:
+            prop_txt = f"BREACHED at {np.datetime64(stats['prop_breach_ts'], 'ns')} UTC"
         else:
-            apex_txt = f"survived (min headroom {_fmt(stats['apex_min_headroom'])})"
-        stat_rows.append((f"Apex trailing ({_fmt(stats['apex_threshold'])})", apex_txt))
+            prop_txt = f"survived (min headroom {_fmt(stats['prop_min_headroom'])})"
+        stat_rows.append((f"Prop trailing ({_fmt(stats['prop_threshold'])})", prop_txt))
 
     if mc is not None:
         stat_rows.append((f"MC ({mc.n_sims} sims, {mc.method})",
@@ -128,7 +128,7 @@ def render(result, stats: dict, out_path: str | Path, mc=None) -> Path:
                           f"median {_fmt(mc.dd_median)}, "
                           f"5%-worst {_fmt(mc.dd_p95)}"))
         if mc.prob_breach is not None:
-            stat_rows.append(("MC P(Apex breach)",
+            stat_rows.append(("MC P(prop breach)",
                               f"{mc.prob_breach * 100:.1f}%"))
         if mc.prob_pass is not None:
             stat_rows.append((f"MC P(pass {_fmt(mc.profit_target)} eval)",

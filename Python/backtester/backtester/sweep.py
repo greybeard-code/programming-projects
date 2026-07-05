@@ -15,23 +15,23 @@ from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 
 from . import metrics
-from .account import ApexConfig
+from .account import PropFirmConfig
 from .engine import Backtest
 from .loader import load_strategy
 
 RESULT_FIELDS = ("net_pnl", "sharpe", "calmar", "profit_factor", "win_rate",
-                 "max_drawdown", "total_trades", "apex_min_headroom")
+                 "max_drawdown", "total_trades", "prop_min_headroom")
 
 
 def _run_one(payload: dict) -> dict:
     """Worker: one backtest for one parameter combo (module-level for spawn)."""
     strat = load_strategy(payload["strategy_path"], payload["overrides"])
-    apex = (ApexConfig(threshold=payload["apex_threshold"])
-            if payload["apex_threshold"] else None)
+    prop = (PropFirmConfig(threshold=payload["prop_threshold"])
+            if payload["prop_threshold"] else None)
     bt = Backtest(strat,
                   start=payload["start"], end=payload["end"],
                   symbol=payload["symbol"], period=payload["period"],
-                  start_balance=payload["start_balance"], apex=apex,
+                  start_balance=payload["start_balance"], prop=prop,
                   slippage_ticks=payload["slippage_ticks"],
                   daily_loss_limit=payload["daily_loss_limit"],
                   progress=False)
@@ -52,7 +52,7 @@ def run_sweep(strategy_path: str, param_grid: dict[str, list],
               start: str | None = None, end: str | None = None,
               symbol: str | None = None, period: str | None = None,
               start_balance: float = 50_000.0,
-              apex_threshold: float | None = 2500.0,
+              prop_threshold: float | None = 2500.0,
               slippage_ticks: float = 0.0,
               daily_loss_limit: float | None = None,
               workers: int | None = None,
@@ -64,7 +64,7 @@ def run_sweep(strategy_path: str, param_grid: dict[str, list],
         "strategy_path": str(Path(strategy_path).resolve()),
         "overrides": c, "start": start, "end": end, "symbol": symbol,
         "period": period, "start_balance": start_balance,
-        "apex_threshold": apex_threshold, "slippage_ticks": slippage_ticks,
+        "prop_threshold": prop_threshold, "slippage_ticks": slippage_ticks,
         "daily_loss_limit": daily_loss_limit,
     } for c in combos]
 

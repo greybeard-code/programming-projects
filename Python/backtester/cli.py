@@ -9,7 +9,7 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from backtester import ApexConfig, Backtest
+from backtester import PropFirmConfig, Backtest
 from backtester import metrics, montecarlo, report
 from backtester.loader import load_strategy
 
@@ -24,9 +24,12 @@ def main() -> None:
     ap.add_argument("--end", help="last day, YYYY-MM-DD or YYYYMMDD")
     ap.add_argument("--balance", type=float, default=50_000.0,
                     help="starting balance (default 50000)")
-    ap.add_argument("--apex-threshold", type=float, default=2500.0,
-                    help="Apex trailing threshold in $ (default 2500; 0 disables)")
-    ap.add_argument("--apex-halt", action="store_true",
+    ap.add_argument("--prop-threshold", "--apex-threshold", dest="prop_threshold",
+                    type=float, default=2500.0,
+                    help="prop-firm trailing threshold in $, Apex-style "
+                         "(default 2500; 0 disables)")
+    ap.add_argument("--prop-halt", "--apex-halt", dest="prop_halt",
+                    action="store_true",
                     help="stop the backtest when the threshold is breached")
     ap.add_argument("--slippage", type=float, default=0.0,
                     help="extra slippage in ticks on market/stop fills")
@@ -44,13 +47,13 @@ def main() -> None:
     args = ap.parse_args()
 
     strat = load_strategy(args.strategy)
-    apex = None
-    if args.apex_threshold > 0:
-        apex = ApexConfig(threshold=args.apex_threshold,
-                          halt_on_breach=args.apex_halt)
+    prop = None
+    if args.prop_threshold > 0:
+        prop = PropFirmConfig(threshold=args.prop_threshold,
+                              halt_on_breach=args.prop_halt)
 
     bt = Backtest(strat, start=args.start, end=args.end, symbol=args.symbol,
-                  period=args.period, start_balance=args.balance, apex=apex,
+                  period=args.period, start_balance=args.balance, prop=prop,
                   slippage_ticks=args.slippage,
                   daily_loss_limit=args.daily_loss_limit,
                   data_root=args.data_root)
@@ -64,7 +67,7 @@ def main() -> None:
     if args.mc > 0 and len(result.trades) >= 2:
         mc = montecarlo.run(
             result.trades, start_balance=args.balance, n_sims=args.mc,
-            apex_threshold=args.apex_threshold if args.apex_threshold > 0 else None,
+            prop_threshold=args.prop_threshold if args.prop_threshold > 0 else None,
             profit_target=args.mc_target)
         print()
         print(montecarlo.format_console(mc))

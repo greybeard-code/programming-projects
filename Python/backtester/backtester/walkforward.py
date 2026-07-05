@@ -20,7 +20,7 @@ import numpy as np
 
 from . import metrics as metrics_mod
 from . import sweep as sweep_mod
-from .account import ApexConfig
+from .account import PropFirmConfig
 from .data import Catalog
 from .engine import Backtest
 from .loader import load_strategy
@@ -60,7 +60,7 @@ def run_walkforward(strategy_path: str, param_grid: dict[str, list],
                     start: str | None = None, end: str | None = None,
                     symbol: str | None = None, period: str | None = None,
                     start_balance: float = 50_000.0,
-                    apex_threshold: float | None = 2500.0,
+                    prop_threshold: float | None = 2500.0,
                     slippage_ticks: float = 0.0,
                     daily_loss_limit: float | None = None,
                     workers: int | None = None,
@@ -80,7 +80,7 @@ def run_walkforward(strategy_path: str, param_grid: dict[str, list],
         rows = sweep_mod.run_sweep(
             strategy_path, param_grid,
             start=w.is_days[0], end=w.is_days[-1], symbol=sym, period=period,
-            start_balance=start_balance, apex_threshold=apex_threshold,
+            start_balance=start_balance, prop_threshold=prop_threshold,
             slippage_ticks=slippage_ticks, daily_loss_limit=daily_loss_limit,
             workers=workers)
         ranked = sweep_mod.rank(rows, metric, min_trades)
@@ -89,10 +89,10 @@ def run_walkforward(strategy_path: str, param_grid: dict[str, list],
         w.is_metric = best.get(metric, float("nan"))
 
         strat = load_strategy(strategy_path, w.best_params)
-        apex = ApexConfig(threshold=apex_threshold) if apex_threshold else None
+        prop = PropFirmConfig(threshold=prop_threshold) if prop_threshold else None
         bt = Backtest(strat, start=w.oos_days[0], end=w.oos_days[-1],
                       symbol=sym, period=period, start_balance=start_balance,
-                      apex=apex, slippage_ticks=slippage_ticks,
+                      prop=prop, slippage_ticks=slippage_ticks,
                       daily_loss_limit=daily_loss_limit, progress=False,
                       data_root=data_root, cache_root=cache_root)
         res = bt.run()

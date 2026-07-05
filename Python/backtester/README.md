@@ -92,7 +92,8 @@ python sweep.py strategies\ema_cross.py --param fast_period=6,9,12 ^
 ```
 
 Runs the full grid in parallel, ranks by `--metric` (sharpe default), writes
-`reports\sweep_*.csv`, and prints a per-parameter **sensitivity plateau**
+`reports\sweep_*.csv` (columns include prop-firm min headroom), and prints a
+per-parameter **sensitivity plateau**
 around the best combo — a spike at one value with collapse next door is
 flagged FRAGILE (data-snooping, per Chan). Combos with fewer than
 `--min-trades` rank last.
@@ -122,16 +123,16 @@ and walk-forward efficiency with Davey's verdict (< 0.5 = likely curve-fit).
 - Commissions are per-contract round-turn defaults in
   `backtester/contracts.py` — adjust to your firm's rates.
 
-## Prop-firm (Apex) simulation
+## Prop-firm simulation
 
-The trailing threshold trails the **intratrade** equity peak (unrealized
-included) and, by default, locks at start balance + $100. A breach is equity
-touching the floor.
+The trailing threshold (modeled on Apex's rule set) trails the **intratrade**
+equity peak (unrealized included) and, by default, locks at start balance +
+$100. A breach is equity touching the floor.
 
 ```
---balance 50000 --apex-threshold 2500     # 50K account defaults
---apex-halt                               # stop the test at the breach
---apex-threshold 0                        # disable
+--balance 50000 --prop-threshold 2500     # 50K account defaults
+--prop-halt                               # stop the test at the breach
+--prop-threshold 0                        # disable
 ```
 
 The console summary reports either the breach timestamp or the minimum

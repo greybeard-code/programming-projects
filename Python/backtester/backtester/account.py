@@ -1,4 +1,4 @@
-"""Position/P&L accounting, round-trip trade recording, Apex trailing threshold."""
+"""Position/P&L accounting, round-trip trade recording, prop-firm trailing threshold."""
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -121,22 +121,22 @@ class TradeRecorder:
 
 
 @dataclass
-class ApexConfig:
+class PropFirmConfig:
     threshold: float = 2500.0      # trailing drawdown amount
     lock_buffer: float = 100.0     # floor freezes at start_balance + lock_buffer
     lock: bool = True              # False = trail forever (some eval styles)
     halt_on_breach: bool = False   # True = stop the backtest at breach
 
 
-class ApexTracker:
-    """Apex-style trailing threshold.
+class PropFirmTracker:
+    """Prop-firm trailing threshold (models the Apex rule set).
 
     The floor trails the *intratrade* equity peak (unrealized included) by
     `threshold`, and — if lock=True — freezes once it reaches
     start_balance + lock_buffer. A breach is equity touching the floor.
     """
 
-    def __init__(self, cfg: ApexConfig, start_balance: float):
+    def __init__(self, cfg: PropFirmConfig, start_balance: float):
         self.cfg = cfg
         self.start = start_balance
         self.peak = start_balance
