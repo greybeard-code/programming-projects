@@ -29,6 +29,12 @@ class TerminatorV2(Strategy):
     atr_mult = 4.0
     sl_ticks = 0                      # 0 = off (original default: pure SAR)
     tp_ticks = 0
+    sl_atr = 0.0                      # NT8 SlMode=ATR: stop at N x ATR (at entry)
+    tp_atr = 0.0                      # NT8 TpMode=ATR: target at N x ATR
+    be_atr = 0.0                      # NT8 BeMode=ATR: move stop to BE at N x ATR profit
+    be_offset_ticks = 0
+    daily_loss = 0.0                  # 0 = off; block entries + flatten at -$N day P&L
+    daily_profit = 0.0                # 0 = off; same at +$N (funded-account lock)
     cooldown_bars = 0
     enable_longs = True
     enable_shorts = True
@@ -41,9 +47,27 @@ class TerminatorV2(Strategy):
         self.pending_reverse = 0      # +1/-1 queued after a clean-split flatten
         self.pending_reverse_bar = -1
         self.last_entry_bar = -1
+        self.be_done = False
+        self.day_start_balance = None
+        self.day_blocked = False
 
     def on_session_end(self, date):
         self.pending_reverse = 0
+        self.day_start_balance = None
+        self.day_blocked = False
+
+    def _day_pnl(self, bar):
+        if self.day_start_balance is None:
+            return 0.0
+        unreal = 0.0
+        if self.position != 0:
+            unreal = (self.position * (bar.close - self.avg_price)
+                      * self._broker.spec.point_value)
+        return self.balance - self.day_start_balance + unreal
+
+    def _atr_ticks(self, mult):
+        tick = self._broker.spec.tick_size
+        return max(1, round(mult * self.atr.value / tick))
 
     def _go(self, direction, bar):
         if direction > 0 and not self.enable_longs:
@@ -53,21 +77,53 @@ class TerminatorV2(Strategy):
         if (self.cooldown_bars > 0 and self.last_entry_bar >= 0
                 and bar.index - self.last_entry_bar < self.cooldown_bars):
             return
+        if self.day_blocked:
+            return
         kw = {}
-        if self.sl_ticks > 0:
+        if self.sl_atr > 0:
+            kw["stop_ticks"] = self._atr_ticks(self.sl_atr)
+        elif self.sl_ticks > 0:
             kw["stop_ticks"] = self.sl_ticks
-        if self.tp_ticks > 0:
+        if self.tp_atr > 0:
+            kw["target_ticks"] = self._atr_ticks(self.tp_atr)
+        elif self.tp_ticks > 0:
             kw["target_ticks"] = self.tp_ticks
         if direction > 0:
             self.buy_bracket(**kw) if kw else self.buy(tag="long")
         else:
             self.sell_bracket(**kw) if kw else self.sell(tag="short")
         self.last_entry_bar = bar.index
+        self.be_done = False
 
     def on_bar(self, bar, bars):
         atr = self.atr.update(bar.high, bar.low, bar.close)
         c0 = bar.close
         c1 = self.prev_close
+
+        if self.day_start_balance is None:
+            self.day_start_balance = self.balance
+
+        # daily loss / profit lock (NT8 UseDailyLoss/UseDailyProfit + flatten)
+        if not self.day_blocked and (self.daily_loss > 0 or self.daily_profit > 0):
+            pnl = self._day_pnl(bar)
+            if ((self.daily_loss > 0 and pnl <= -self.daily_loss)
+                    or (self.daily_profit > 0 and pnl >= self.daily_profit)):
+                self.day_blocked = True
+                self.pending_reverse = 0
+                self.cancel_all()
+                if self.position != 0:
+                    self.close_position(tag="daily-lock")
+
+        # breakeven (NT8 BeMode=ATR: trigger recomputed each bar off live ATR)
+        if (self.be_atr > 0 and self.position != 0 and not self.be_done
+                and self.atr.ready):
+            trig_ticks = self._atr_ticks(self.be_atr)
+            tick = self._broker.spec.tick_size
+            profit_ticks = ((bar.close - self.avg_price) / tick if self.position > 0
+                            else (self.avg_price - bar.close) / tick)
+            if profit_ticks >= trig_ticks:
+                if self.move_stop_to_breakeven(offset_ticks=self.be_offset_ticks):
+                    self.be_done = True
 
         if self.trail is None:
             self.trail = c0
