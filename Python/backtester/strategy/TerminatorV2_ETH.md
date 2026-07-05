@@ -69,16 +69,19 @@ Anti-data-snooping checks (the window was derived from this same data):
 
 ## 4. NT8 settings translation
 
-In Terminator_V2's settings (times are your **PC/chart timezone** — the
-values below assume Central; shift +1h if your machine runs Eastern):
+Terminator_V2 reads times in the **PC/chart timezone**. The user's machine
+and NT8 run **Eastern** — these are the values to enter:
 
 - Use Time Filter: **true**
-- Start Time: **093000** CT (= 103000 ET)
-- End Time: **153000** CT (= 163000 ET)
+- Start Time: **103000** (10:30 ET = 09:30 CT)
+- End Time: **163000** (16:30 ET = 15:30 CT)
 - Flatten At Window End: **true**
 - Use Time Filter 2: false (the evening pocket is not statistically worth it)
 - Keep: SL Mode=Ticks, SL Value=200; ATR 20 / Mult in the 3–4 band; 1
   contract under an Apex trailing threshold.
+
+(Backtester sessions/analyses in these reports are stated in US/Central,
+CME exchange time: 09:30–15:30 CT ≡ 10:30–16:30 ET.)
 
 ## Reproduce
 

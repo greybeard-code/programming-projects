@@ -81,6 +81,9 @@ plotly, tzdata, pytest — no pandas/polars, keep it that way unless needed).
 
 - Timestamps are int64 ns UTC everywhere; convert to CT only at the session
   boundary. Day files are UTC calendar days and include Globex overnight.
+- Backtester sessions/analysis are US/Central (CME time), but the user's PC
+  and NT8 run **US/Eastern** — NT8 StartTime/EndTime settings in the
+  strategy/ reports are given in ET (CT+1). Convert when porting either way.
 - Order flow: reduced cache stores prevailing bid/ask sizes and per-trade
   aggressor side (+1 at/above ask, -1 at/below bid); bars carry
   buy_volume/sell_volume, `bar.delta`, `bars.cum_delta` (reset per session).
