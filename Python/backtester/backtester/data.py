@@ -14,7 +14,9 @@ from __future__ import annotations
 import os
 import re
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import numpy as np
 import pyarrow as pa
@@ -29,6 +31,27 @@ MDT_ASK, MDT_BID, MDT_LAST = 0, 1, 2
 
 _DIR_RE = re.compile(r"^(?P<sym>[A-Z0-9]+)-(?P<year>\d{4})_L1$")
 
+_EASTERN = ZoneInfo("America/New_York")
+
+
+def _eastern_offset_ns(date: str) -> int:
+    """UTC offset (ns, negative for US) of Eastern wall time on `date`.
+
+    The raw repo's Timestamps are the recording PC's LOCAL (US/Eastern) wall
+    clock, NOT UTC as its README claims — verified empirically 2026-07-05:
+    the 17:00-18:00 CME halt and the 09:30 cash-open volume spike sit at
+    those literal hours in every file, summer and winter, and tick prices
+    align with an NT8 chart export to within seconds only under the ET
+    interpretation. True UTC = stamp - offset. DST transitions happen 02:00
+    Sunday when the market is closed, so a per-date offset (sampled at the
+    file's midday) is exact for every trade.
+    """
+    d = datetime.strptime(date, "%Y%m%d")
+    midday = datetime(d.year, d.month, d.day, 12, tzinfo=_EASTERN)
+    return int(midday.utcoffset().total_seconds() * 1e9)
+
+
+CACHE_VERSION = b"2"   # v2: raw ET wall-clock stamps converted to true UTC
 
 REDUCED_COLS = ("ts", "price", "volume", "ask", "bid",
                 "ask_size", "bid_size", "aggr")
@@ -125,11 +148,13 @@ class Catalog:
 
     def load_day(self, symbol: str, date: str) -> DayL1:
         """Load reduced trade events for one day, building the cache on first
-        use. Files from an older schema are rebuilt transparently."""
+        use. Files from an older schema/version are rebuilt transparently."""
         rp = self._reduced_path(symbol, date)
         if rp.exists():
             t = pq.read_table(rp)
-            if set(REDUCED_COLS).issubset(t.column_names):
+            meta = t.schema.metadata or {}
+            if (set(REDUCED_COLS).issubset(t.column_names)
+                    and meta.get(b"btcache") == CACHE_VERSION):
                 return DayL1(date, *(t.column(c).to_numpy()
                                      for c in REDUCED_COLS))
         day = self._reduce_raw(symbol, date)
@@ -139,7 +164,8 @@ class Catalog:
             "ts": day.ts, "price": day.price, "volume": day.volume,
             "ask": day.ask, "bid": day.bid, "ask_size": day.ask_size,
             "bid_size": day.bid_size, "aggr": day.aggr,
-        }), tmp, compression="zstd")
+        }).replace_schema_metadata({b"btcache": CACHE_VERSION}),
+            tmp, compression="zstd")
         os.replace(tmp, rp)
         return day
 
@@ -150,6 +176,7 @@ class Catalog:
         t = pq.read_table(raw, columns=["Timestamp", "MarketDataType",
                                         "Price", "Volume"])
         ts = t.column("Timestamp").to_numpy().astype("int64")
+        ts = ts - _eastern_offset_ns(date)   # raw stamps are ET wall clock
         mdt = t.column("MarketDataType").to_numpy()
         price = t.column("Price").to_numpy()
         vol = t.column("Volume").to_numpy()
@@ -192,14 +219,17 @@ class Catalog:
         bp = self._bars_path(symbol, date, spec.key)
         if bp.exists():
             t = pq.read_table(bp)
-            if set(BAR_COLS).issubset(t.column_names):
+            meta = t.schema.metadata or {}
+            if (set(BAR_COLS).issubset(t.column_names)
+                    and meta.get(b"btcache") == CACHE_VERSION):
                 return BarDay(*(t.column(c).to_numpy() for c in BAR_COLS))
         if day is None:
             day = self.load_day(symbol, date)
         bars = build_bars(day, spec, tick_size)
         bp.parent.mkdir(parents=True, exist_ok=True)
         tmp = bp.with_suffix(f".{os.getpid()}.tmp")
-        pq.write_table(pa.table({c: getattr(bars, c) for c in BAR_COLS}),
+        pq.write_table(pa.table({c: getattr(bars, c) for c in BAR_COLS})
+                       .replace_schema_metadata({b"btcache": CACHE_VERSION}),
                        tmp, compression="zstd")
         os.replace(tmp, bp)
         return bars
@@ -286,6 +316,9 @@ def build_tick_bars(day: DayL1, ticks_per_bar: int) -> BarDay:
                   bv.astype("int64"), sv.astype("int64"), i0, i1)
 
 
+RENKO_RESET_GAP_NS = 30 * 60 * 1_000_000_000   # trade gap that resets the anchor
+
+
 def build_renko_bars(day: DayL1, brick: float, trend: float) -> BarDay:
     """ninZaRenko bars, per the published trader manual.
 
@@ -306,6 +339,12 @@ def build_renko_bars(day: DayL1, brick: float, trend: float) -> BarDay:
     gaps can emit several bars on one tick; the extra bars get zero-length
     spans (purely synthetic).
 
+    Session reset (verified against a real ninZaRenko chart export): a trade
+    gap > 30 min (the 17:00-18:00 ET halt, weekends) closes a partial bar at
+    the last traded price and re-anchors the brick grid at the next trade —
+    ninZa restarts its geometry each session rather than running a
+    continuous grid.
+
     NOTE: signal timing on these bars is realistic; the engine still fills
     orders on real ticks, so none of NT8's Renko fantasy-fill problem applies.
     """
@@ -319,19 +358,23 @@ def build_renko_bars(day: DayL1, brick: float, trend: float) -> BarDay:
     ts_end, opens, highs, lows, closes, vols = [], [], [], [], [], []
     bvols, svols, i0s, i1s = [], [], [], []
 
-    # consider only ticks where price changed (big speedup, same bars)
+    # consider only ticks where price changed (big speedup, same bars),
+    # plus the first tick after any session gap (reset points)
     chg = np.flatnonzero(np.diff(prices) != 0) + 1
-    walk = np.concatenate([[0], chg])
+    gap_starts = np.flatnonzero(np.diff(day.ts) > RENKO_RESET_GAP_NS) + 1
+    walk = np.unique(np.concatenate([[0], chg, gap_starts]))
+    gap_set = set(gap_starts.tolist())
 
     anchor = prices[0]      # close of the last emitted bar
     d = 0                   # current trend: +1 / -1 / 0 (no bar yet)
     span_start = 0          # first tick index of the bar being built
 
-    def emit(close: float, direction: int, k: int) -> None:
+    def emit(close: float, direction: int, k: int,
+             body: float | None = None) -> None:
         nonlocal anchor, span_start, d
         i0, i1 = span_start, k + 1
         seg = prices[i0:i1] if i1 > i0 else None
-        o = close - direction * brick               # body is exactly B
+        o = close - direction * (brick if body is None else body)
         opens.append(o)
         closes.append(close)
         highs.append(max(seg.max() if seg is not None else close, o, close))
@@ -348,6 +391,16 @@ def build_renko_bars(day: DayL1, brick: float, trend: float) -> BarDay:
 
     for k in walk:
         p = prices[k]
+        # session reset: close a partial bar at the last pre-gap trade,
+        # then re-anchor the grid at this trade
+        if k in gap_set:
+            last_p = prices[k - 1]
+            if d != 0 and last_p != anchor:
+                emit(last_p, 1 if last_p > anchor else -1, k - 1,
+                     body=abs(last_p - anchor))
+            anchor = p
+            d = 0
+            span_start = k
         if d == 0:                                   # no trend yet: T either way
             if p >= anchor + trend:
                 emit(anchor + trend, 1, k)

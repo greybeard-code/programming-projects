@@ -67,8 +67,8 @@ def main() -> None:
 
     # collect our bars for the UTC dates the export spans (plus neighbors,
     # since ET evenings land in the next UTC day file)
-    d0 = np.datetime64(nt8["ts"].min(), "ns").astype("datetime64[D]")
-    d1 = np.datetime64(nt8["ts"].max(), "ns").astype("datetime64[D]")
+    d0 = np.datetime64(int(nt8["ts"].min()), "ns").astype("datetime64[D]")
+    d1 = np.datetime64(int(nt8["ts"].max()), "ns").astype("datetime64[D]")
     dates = np.arange(d0, d1 + 2).astype(str)
     catalog = Catalog()
     have = set(catalog.days(args.symbol))

@@ -82,8 +82,21 @@ plotly, tzdata, pytest — no pandas/polars, keep it that way unless needed).
 
 ## Conventions & gotchas
 
-- Timestamps are int64 ns UTC everywhere; convert to CT only at the session
-  boundary. Day files are UTC calendar days and include Globex overnight.
+- Timestamps are int64 ns UTC everywhere *after reduction*. CRITICAL: the
+  raw M:\ repo's stamps are the recording PC's **US/Eastern wall clock**,
+  NOT UTC as its README claims (verified 2026-07-05: CME halt sits at
+  stamped 17:00, cash open at 09:30, year-round; tick prices align with an
+  NT8 chart export to seconds only under ET). `_reduce_raw` converts ET→UTC
+  per day (`_eastern_offset_ns`); cache metadata b"btcache"=CACHE_VERSION
+  forces rebuilds when this logic changes. Day files are ET calendar days.
+  ALL session-based results computed before 2026-07-05 used windows
+  mislabeled by 4-5 h — see strategy/ report revision notes.
+- ninZaRenko parity: validated against a real chart export (May 2026) —
+  geometry 100%, session-reset rule confirmed (re-anchor at first trade
+  after the 17:00-18:00 ET halt; implemented as trade-gap >30 min reset in
+  build_renko_bars, with a partial closing bar). Clean sessions match
+  97-99.3%; residual mismatch = live-chart feed reconnect re-anchors,
+  irreproducible by any backtest.
 - Backtester sessions/analysis are US/Central (CME time), but the user's PC
   and NT8 run **US/Eastern** — NT8 StartTime/EndTime settings in the
   strategy/ reports are given in ET (CT+1). Convert when porting either way.
