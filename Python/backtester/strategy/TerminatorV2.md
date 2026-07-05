@@ -1,5 +1,19 @@
 # Terminator_V2 — Evaluation Report
 
+> **REVISED 2026-07-05 — read this first.** The raw data repo's timestamps
+> turned out to be US/Eastern wall clock, not UTC (found via ninZaRenko bar
+> parity validation). Every session label below is therefore shifted: the
+> "RTH 08:30–15:55 CT" runs in this report actually traded ≈12:30–19:55 CT.
+> **The P&L was real; the window label was wrong.** On corrected data:
+> true-RTH-morning SAR **loses** (−$7,666); the edge lives in the
+> **US afternoon + evening reopen**. Corrected recommendation:
+> **session 13:00–19:55 CT (14:00–20:55 ET), ATR 20×4, 200-tick stop,
+> 1 contract** → net $7,142, Sharpe 2.87, maxDD −$1,282, MC breach 6.2%,
+> eval-pass 92.1%. Full corrected analysis:
+> [TerminatorV2_ETH.md](TerminatorV2_ETH.md) revision section. The
+> parameter-robustness conclusions below (period plateau, mult band,
+> stop benefit, cost insensitivity) all re-verified on corrected data.
+
 **Source:** `Terminator_v2.4.2\Strategies\Terminator_V2.cs` (NT8, v2.4.2, 2026-07-03)
 **Tested as:** MNQ, ninZaRenko 100/4 (`r100-4`), RTH 08:30–15:55 CT, 1 contract,
 flat at session end, $50K account, Apex $2,500 trailing threshold.

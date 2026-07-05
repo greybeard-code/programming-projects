@@ -51,7 +51,8 @@ def _eastern_offset_ns(date: str) -> int:
     return int(midday.utcoffset().total_seconds() * 1e9)
 
 
-CACHE_VERSION = b"2"   # v2: raw ET wall-clock stamps converted to true UTC
+CACHE_VERSION = b"2"   # reduced: v2 = ET wall-clock stamps converted to UTC
+BARS_VERSION = b"3"    # bars: v3 = renko session reset w/ forming-bar partial
 
 REDUCED_COLS = ("ts", "price", "volume", "ask", "bid",
                 "ask_size", "bid_size", "aggr")
@@ -221,7 +222,7 @@ class Catalog:
             t = pq.read_table(bp)
             meta = t.schema.metadata or {}
             if (set(BAR_COLS).issubset(t.column_names)
-                    and meta.get(b"btcache") == CACHE_VERSION):
+                    and meta.get(b"btcache") == BARS_VERSION):
                 return BarDay(*(t.column(c).to_numpy() for c in BAR_COLS))
         if day is None:
             day = self.load_day(symbol, date)
@@ -229,7 +230,7 @@ class Catalog:
         bp.parent.mkdir(parents=True, exist_ok=True)
         tmp = bp.with_suffix(f".{os.getpid()}.tmp")
         pq.write_table(pa.table({c: getattr(bars, c) for c in BAR_COLS})
-                       .replace_schema_metadata({b"btcache": CACHE_VERSION}),
+                       .replace_schema_metadata({b"btcache": BARS_VERSION}),
                        tmp, compression="zstd")
         os.replace(tmp, bp)
         return bars
@@ -391,13 +392,18 @@ def build_renko_bars(day: DayL1, brick: float, trend: float) -> BarDay:
 
     for k in walk:
         p = prices[k]
-        # session reset: close a partial bar at the last pre-gap trade,
-        # then re-anchor the grid at this trade
+        # session reset: close the FORMING bar as a partial at the last
+        # pre-gap trade, then re-anchor the grid at this trade. The forming
+        # bar's open is anchor - d*(B - T) (unique regardless of whether it
+        # would have closed with-trend or reversed) — verified against a
+        # real ninZaRenko chart export.
         if k in gap_set:
-            last_p = prices[k - 1]
-            if d != 0 and last_p != anchor:
-                emit(last_p, 1 if last_p > anchor else -1, k - 1,
-                     body=abs(last_p - anchor))
+            if d != 0:
+                last_p = prices[k - 1]
+                form_open = anchor - d * (brick - trend)
+                direction = 1 if last_p >= form_open else -1
+                emit(last_p, direction, k - 1,
+                     body=abs(last_p - form_open))
             anchor = p
             d = 0
             span_start = k

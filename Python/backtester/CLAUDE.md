@@ -132,7 +132,10 @@ docx in research/):
 3. Validate ninZaRenko bar parity against an NT8 chart export.
 4. OIB/delta example strategy using bars.cum_delta.
 
-Validation reference run (EmaCross, MNQ 1m, 156 days, defaults): net ~$1,780,
-1457 trades, WR 33%, Sharpe 1.53, maxDD −$1,838, MC P(breach $2.5k) ~1.8%.
-If a refactor moves these numbers materially without an intentional
-fill-model change, something broke.
+Validation reference run (EmaCross, MNQ 1m, defaults, cache v2/v3 —
+post-timestamp-fix 2026-07-05): net ~-$2,125, 2102 trades, WR 33.4%,
+Sharpe -2.05, maxDD -$3,244, breach 2026-04-22. (The strategy is a loser on
+true RTH; it's a regression canary, not an edge.) If a refactor moves these
+numbers materially without an intentional fill-model/data change, something
+broke. Terminator corrected headline: session 13:00-19:55 CT + 200t stop =
+net ~$7,142, Sharpe 2.87 (see strategy/ reports).

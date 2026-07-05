@@ -122,6 +122,24 @@ def test_renko_first_bar_can_form_downward():
     assert bars.open[0] == pytest.approx(100.5)    # close + B (down bar)
 
 
+def test_renko_session_reset_partial_bar():
+    import numpy as np
+
+    # uptrend to 101.0, price drifts to 101.2, then a >30 min trade gap:
+    # forming bar's open = anchor - (B - T) = 101.0 - 0.5 = 100.5; the
+    # partial closes at the last pre-gap trade (101.2). After the gap the
+    # grid re-anchors at the first new trade (200.0): first bar +/- T.
+    prices = [100.0, 100.5, 101.0, 101.2, 200.0, 200.5]
+    day = make_day(prices)
+    day.ts[4:] += 45 * 60 * 1_000_000_000          # 45-minute gap
+    bars = build_renko_bars(day, brick=1.0, trend=0.5)
+    assert list(bars.close) == [100.5, 101.0, 101.2, 200.5]
+    assert bars.open[2] == pytest.approx(100.5)    # forming-bar open
+    assert bars.open[3] == pytest.approx(199.5)    # fresh anchor at 200.0
+    # no 99-brick march across the gap:
+    assert len(bars) == 4
+
+
 def test_renko_down_then_reversal_up():
     # downtrend at T steps, then reversal up at 2B-T above last close
     prices = [100.0, 99.5, 99.0, 100.5]

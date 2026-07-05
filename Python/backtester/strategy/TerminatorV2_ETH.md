@@ -1,5 +1,32 @@
 # Terminator_V2 — ETH Session & Time-Filter Analysis
 
+> **REVISED 2026-07-05.** The raw repo's timestamps were US/Eastern wall
+> clock, not UTC; all session labels in the original analysis below are
+> shifted by 4–5 h. Corrected results (cache v2/v3, true UTC):
+>
+> - **Full ETH is still a heavy loser**: −$8,811, breached 2026-02-13 —
+>   conclusion unchanged: never trade this strategy round-the-clock.
+> - **True hourly attribution**: the death zone is the **US morning,
+>   07:00–12:59 CT** (−$13.4K; worst 09:00–12:59). Profitable zone:
+>   **13:00–15:59 CT afternoon** plus the **17:00 CT evening reopen**.
+>   The morning-RTH session (08:30–15:55 CT) loses −$7,666 outright.
+> - **Corrected recommended session: 13:00–19:55 CT** (self-contained
+>   afternoon+evening session; the evening leg is essential — afternoon
+>   alone is negative): net **$7,142**, Sharpe **2.87**, maxDD −$1,282,
+>   MC P(breach) **6.2%**, P(pass $3K eval) **92.1%**, with 200-tick stop,
+>   ATR 20×4, 1 contract. Sensitivity re-verified: all 9 grid combos
+>   profitable, period plateau clean.
+> - **Walk-forward on the corrected window (9-combo grid, 5 windows,
+>   IS/OOS 5:1): 5/5 OOS windows profitable, stitched OOS net $5,938 over
+>   77 unseen days, OOS Sharpe 4.63, WFE 1.96.** Re-optimized params stay
+>   inside the plateau every window (20×4 chosen 3 of 5 times).
+> - **Corrected NT8 settings (Eastern PC): Use Time Filter = true,
+>   Start Time 140000, End Time 205500, Flatten At Window End = true.**
+>   (14:00–20:55 ET ≡ 13:00–19:55 CT.)
+>
+> The original text below is kept for the analysis method; subtract 4–5 h
+> from any time label mentally, or trust only the revision block above.
+
 **Config tested:** the main report's recommended engine (ATR 20 × 4.0 SAR,
 200-tick hard stop, 1 contract, MNQ `r100-4`), now on the **full Globex
 session** (17:00 → 15:55 CT, positions carry overnight), 2025-12-15 →

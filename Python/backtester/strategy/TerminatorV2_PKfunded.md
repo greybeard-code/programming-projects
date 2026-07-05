@@ -1,5 +1,14 @@
 # Terminator_V2 — "PK funded(1)" Template Evaluation
 
+> **REVISED 2026-07-05.** Timestamp fix (repo stamps were ET wall clock,
+> not UTC) shifts all session labels below by 4–5 h. The template-vs-default
+> comparisons and the component ablation (profit lock costly, loss limit
+> helpful, BE neutral, 2 contracts over-levered) were re-checked in
+> direction on corrected data and stand qualitatively; exact dollar figures
+> below are from the mislabeled window. The corrected recommended config for
+> this strategy family is in [TerminatorV2_ETH.md](TerminatorV2_ETH.md):
+> session 13:00–19:55 CT, 200-tick stop, 1 contract.
+
 **Source:** `templates\Strategy\Terminator_V2\PK funded(1).xml` (MNQ 09-26,
 ninZaRenko 100/4). **Tested:** MNQ `r100-4`, RTH 08:30–15:55 CT, $50K, Apex
 $2,500 trailing, 2025-12-15 → 2026-06-17 (154 days), tick-level fills.
