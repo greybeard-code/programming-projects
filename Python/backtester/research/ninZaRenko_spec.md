@@ -1,11 +1,12 @@
 # ninZaRenko — Reverse-Engineered Specification
 
-Status 2026-07-05: **complete** to the limit of available evidence.
-Validated against a real ninZaRenko 100/4 MNQ chart export (May 5–18, 2026,
-19,868 bars; `tools/bars_MNQ_ninZaRenko_100-4.csv`), cross-checked with the
-published trader manual (Scribd 392092944). Implemented in
-`backtester/data.py::build_renko_bars` (bars cache v4). No decompiled ninZa
-code was used or accepted.
+Status 2026-07-05: **complete and cross-parameter validated.**
+Validated against five real ninZaRenko MNQ chart exports
+(`tools/bars_MNQ_ninZaRenko_*.csv`): 100/4 (May 5–18, 19,868 bars),
+64/16 (May 4–19, 12,841), and single-day fresh loads 10/3, 36/2, 40/10
+(21,618 bars combined), cross-checked with the published trader manual
+(Scribd 392092944). Implemented in `backtester/data.py::build_renko_bars`
+(bars cache v4). No decompiled ninZa code was used or accepted.
 
 ## Parameters
 
@@ -36,29 +37,57 @@ code was used or accepted.
 
 ## Validation results
 
-- Clean sessions (no live-feed interruptions): **97–99.3% bar-for-bar
-  identity** with our builder over full sessions of 700–4,100 bars.
-- Sessions that disagree start in perfect sync then jump offset mid-session
-  (0 → +10 → ±2 ticks): the live chart re-anchoring after **data-feed
-  reconnects** — path-dependent chart-instance artifacts that no rebuild
-  from historical data (ours or NT8's own) can reproduce.
-- Bonus finding: the parity work exposed that the raw data repo's
-  timestamps were **ET wall clock, not UTC** (fixed in reduction, cache v2).
+**Geometry — parametrically exact.** Invariant check on NT8's *own* bars
+(independent of our tick data): across all five settings — 32,587
+with-trend steps, 4,216 reversals — **zero violations**. Every step is
+exactly ±T or ±(2B−T) (17t, 70t, 70t, 112t, 196t), every regular body is
+exactly B, and the multi-day files contain exactly one body=T bar per
+trading day (10/10 and 12/12), confirming re-anchor happens **only at the
+real 18:00 ET session open**, never on mere quiet spells.
 
-## Remaining (needs fresh NT8 exports)
+**Path parity vs our builder** (one-to-one matcher, 10 s tolerance —
+the two tick feeds skew by up to ~6 s):
 
-1. **Reload test (decisive)**: same 100/4 chart, right-click → Reload All
-   Historical Data (or reopen the chart), re-export with gbBarExporter.
-   Prediction: reload-built bars match ours ~99% in EVERY session, because
-   the reconnect re-anchors vanish. Confirms mismatches are chart artifacts.
-2. **Cross-parameter confirmation**: 2–3 days of a second setting
-   (e.g. 40/10; an odd pair like 10-3 sharpens the 2B−T test).
-   Run: `python tools\compare_bars.py <csv> --symbol MNQ --period r40-10`.
+| setting | chart type | matched by time | identical close |
+|---|---|---|---|
+| 40/10 | fresh load, 1 day | 96.9% | **95.8%** |
+| 10/3 | fresh load, 1 day | 98.6% | **93.0%** |
+| 36/2 | fresh load, 1 day | 96.6% | 68.4% |
+| 100/4 | live-accumulated, 10 days | ~94% | clean sessions 97–99.3% |
+| 64/16 | live-accumulated, 12 days | ~85% | clean sessions 93–95% |
+
+Two — and only two — divergence mechanisms, distinguishable by the offset
+value:
+
+1. **Feed differences** (NT8 historical tick data vs our Market Replay
+   recordings; single-tick extremes and a few seconds of timing skew,
+   verified by tick-level forensics). These flip a bar and offset the grids
+   by exactly **±T — a multiple of the shared price lattice — so they
+   self-heal**: the lag closes as soon as price traverses both thresholds.
+   Impact scales inversely with T (36/2's half-point steps are maximally
+   sensitive; its 126 reversals per 4,655 bars heal slowly).
+2. **Live-feed reconnect re-anchors** (live-accumulated charts only). The
+   new anchor is an arbitrary trade price, so the offset is **never a
+   multiple of T** (observed: −1, ±2 with T=4; +5, −6, −4 with T=16) — a
+   different lattice that persists to session end. Fresh-loaded charts show
+   no persistent offsets at all, which settles the reload question without
+   a separate reload test.
+
+**Session-reset heuristic audit**: every >30-minute trade gap in the repo
+(131 across Dec 2025–Jun 2026) is a genuine session boundary — the daily
+17:00 ET halt, Sunday pre-open, or a holiday early close (13:00 ET halts on
+MLK/Presidents'/Memorial Day, Good Friday). Zero false positives, and the
+gap rule handles early-close holidays that a fixed-18:00 rule would miss.
+
+Bonus finding: the parity work exposed that the raw data repo's
+timestamps were **ET wall clock, not UTC** (fixed in reduction, cache v2).
 
 ## Implications for backtesting
 
 - Signals computed on our bars are faithful to what a (deterministic,
-  reload-built) ninZaRenko chart shows.
+  reload-built) ninZaRenko chart shows. Prefer T ≥ 8–10 ticks on MNQ if
+  chart-vs-backtest reproducibility matters: sub-point trend thresholds
+  amplify feed-level noise in ANY implementation, including NT8's own.
 - A LIVE chart's bars are not even faithful to themselves across reconnects
   — two traders running the same live chart config can hold different bars.
   Renko-signal strategies inherit that nondeterminism in live trading;

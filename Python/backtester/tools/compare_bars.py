@@ -69,7 +69,7 @@ def main() -> None:
     # since ET evenings land in the next UTC day file)
     d0 = np.datetime64(int(nt8["ts"].min()), "ns").astype("datetime64[D]")
     d1 = np.datetime64(int(nt8["ts"].max()), "ns").astype("datetime64[D]")
-    dates = np.arange(d0, d1 + 2).astype(str)
+    dates = np.arange(d0, d1 + np.timedelta64(2, "D")).astype(str)
     catalog = Catalog()
     have = set(catalog.days(args.symbol))
     ts, o, h, l, c = [], [], [], [], []
@@ -88,20 +88,34 @@ def main() -> None:
     ours = {k: np.concatenate(v) for k, v in
             zip("ts o h l c".split(), (ts, o, h, l, c))}
 
+    # One-to-one monotonic alignment. Renko gap sweeps emit several bars on
+    # the SAME timestamp, and the two tick feeds skew by a few seconds — so
+    # a nearest-time match double-counts sweep bars and misses skewed ones.
+    # Within the tolerance window prefer the first unused bar whose close
+    # agrees; otherwise take the nearest-time unused bar.
     tol = int(args.tolerance_s * 1e9)
-    pos = np.searchsorted(ours["ts"], nt8["ts"])
     matched = same_close = same_ohlc = 0
     mismatches = []
+    lo = 0                                   # our bars before lo are consumed
+    n_ours = len(ours["ts"])
     for i in range(len(nt8["ts"])):
+        t = int(nt8["ts"][i])
+        while lo < n_ours and int(ours["ts"][lo]) < t - tol:
+            lo += 1
         best, best_dt = -1, tol + 1
-        for j in (pos[i] - 1, pos[i]):
-            if 0 <= j < len(ours["ts"]):
-                dt = abs(int(ours["ts"][j]) - int(nt8["ts"][i]))
-                if dt < best_dt:
-                    best, best_dt = j, dt
+        j = lo
+        while j < n_ours and int(ours["ts"][j]) <= t + tol:
+            dt = abs(int(ours["ts"][j]) - t)
+            if ours["c"][j] == nt8["c"][i]:
+                best, best_dt = j, dt
+                break                        # earliest close-equal bar wins
+            if dt < best_dt:
+                best, best_dt = j, dt
+            j += 1
         if best < 0 or best_dt > tol:
             mismatches.append((i, None, "no bar within tolerance"))
             continue
+        lo = best + 1                        # consume: never reuse a bar
         matched += 1
         dc = (nt8["c"][i] - ours["c"][best]) / tick
         do = (nt8["o"][i] - ours["o"][best]) / tick
