@@ -16,10 +16,17 @@ SAMPLE_LINES = [
 ]
 
 
-def test_folder_re():
-    assert rc.FOLDER_RE.match("MNQ ##-## 2025").groups() == ("MNQ", "2025")
-    assert rc.FOLDER_RE.match("NQ ##-## 2025").groups() == ("NQ", "2025")
-    assert rc.FOLDER_RE.match("some_other_dir") is None
+def test_year_dir_re():
+    assert rc.YEAR_DIR_RE.fullmatch("2025")
+    assert rc.YEAR_DIR_RE.fullmatch("2026")
+    assert rc.YEAR_DIR_RE.fullmatch("Compress-FoldersTo7z.ps1") is None
+    assert rc.YEAR_DIR_RE.fullmatch("20250") is None
+
+
+def test_instrument_re():
+    assert rc.INSTRUMENT_RE.match("MNQ ##-##").group(1) == "MNQ"
+    assert rc.INSTRUMENT_RE.match("ES ##-##").group(1) == "ES"
+    assert rc.INSTRUMENT_RE.match("no_space_junk") is None
 
 
 def test_chunk_to_table_l1():
@@ -100,7 +107,7 @@ def test_process_day_round_trip(tmp_path):
 
 def _make_csv_root(tmp_path):
     csv_root = tmp_path / "CSV"
-    folder = csv_root / "MNQ ##-## 2025"
+    folder = csv_root / "2025" / "MNQ ##-##"   # <YEAR>/<SYMBOL ##-##>/<day>.csv
     folder.mkdir(parents=True)
     (folder / "20250115.csv").write_text("\n".join(SAMPLE_LINES) + "\n")
     (folder / "20250116.csv").write_text("\n".join(SAMPLE_LINES) + "\n")
@@ -186,7 +193,7 @@ def test_discover_work_reprocesses_stale_source(tmp_path):
     assert rc.discover_work(csv_root, output_root, None, None, ["L1"], force=False) == []
 
     # Re-export one source CSV (changes size + mtime) -> only that day is stale.
-    changed = csv_root / "MNQ ##-## 2025" / "20250115.csv"
+    changed = csv_root / "2025" / "MNQ ##-##" / "20250115.csv"
     changed.write_text("\n".join(SAMPLE_LINES + ["L1;2;20250115060000;0;1.0;1"]) + "\n")
     work = rc.discover_work(csv_root, output_root, None, None, ["L1"], force=False)
     assert len(work) == 1

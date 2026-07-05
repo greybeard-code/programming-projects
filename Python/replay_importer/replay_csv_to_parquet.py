@@ -4,9 +4,12 @@
 The input CSVs are produced by the gbNRDtoCSV add-on (NinjaTrader
 ``MarketReplay.DumpMarketDepth``):
 
-    <csv-root>/<Instrument FullName>/<YYYYMMDD>.csv
+    <csv-root>/<YEAR>/<Instrument FullName>/<YYYYMMDD>.csv
 
-e.g. ``M:\\NinjaTrader_DataRepo\\RawData\\CSV\\MNQ ##-## 2025\\20250115.csv``
+e.g. ``M:\\NinjaTrader_DataRepo\\RawData\\CSV\\2026\\MNQ ##-##\\20251215.csv``
+
+<YEAR> is the CONTRACT year (the roll season), not the calendar date: the
+2026\\... folders hold days from mid-December 2025 onward.
 
 Each CSV has no header, is ';'-delimited, and mixes two record layouts:
 
@@ -20,9 +23,9 @@ one part file per source day - read the whole thing with
     <output-root>/<SYMBOL>-<YEAR>_L1/<YYYYMMDD>.parquet
     <output-root>/<SYMBOL>-<YEAR>_L2/<YYYYMMDD>.parquet
 
-SYMBOL/YEAR come from the input folder name: the leading whitespace-separated
-token is the symbol, the trailing 4-digit token is the year (e.g.
-"MNQ ##-## 2025" -> symbol="MNQ", year="2025").
+YEAR is the top-level folder; SYMBOL is the leading whitespace-separated token
+of the instrument folder inside it (e.g. ``2026/MNQ ##-##`` -> symbol="MNQ",
+year="2026"). Output dataset dirs stay ``<SYMBOL>-<YEAR>_L{1,2}`` regardless.
 """
 
 from __future__ import annotations
@@ -42,7 +45,8 @@ import pyarrow.parquet as pq
 
 LOG = logging.getLogger("replay_csv_to_parquet")
 
-FOLDER_RE = re.compile(r"^(\S+)\s+.*\s(\d{4})$")
+YEAR_DIR_RE = re.compile(r"\d{4}")             # top-level contract-year folder
+INSTRUMENT_RE = re.compile(r"^(\S+)\s")        # symbol = leading token of "SYM ##-##"
 DAY_FILE_RE = re.compile(r"\d{8}")
 
 LEVELS = ("L1", "L2")
@@ -276,30 +280,36 @@ def discover_work(
     its output is missing, ``force`` is set, or the output is stale relative
     to the source CSV (see ``_is_stale``)."""
     work: list[tuple[Path, dict[str, Path]]] = []
-    for folder in sorted(p for p in csv_root.iterdir() if p.is_dir()):
-        m = FOLDER_RE.match(folder.name)
-        if not m:
-            LOG.warning("Skipping folder with unrecognized name: %s", folder.name)
-            continue
-        symbol, year = m.group(1), m.group(2)
-        if symbols and symbol not in symbols:
+    for year_dir in sorted(p for p in csv_root.iterdir() if p.is_dir()):
+        year = year_dir.name
+        if not YEAR_DIR_RE.fullmatch(year):
+            LOG.warning("Skipping non-year folder: %s", year_dir.name)
             continue
         if years and year not in years:
             continue
 
-        for csv_path in sorted(folder.glob("*.csv")):
-            date = csv_path.stem
-            if not DAY_FILE_RE.fullmatch(date):
-                LOG.warning("Skipping file with unrecognized name: %s", csv_path)
+        for folder in sorted(p for p in year_dir.iterdir() if p.is_dir()):
+            m = INSTRUMENT_RE.match(folder.name)
+            if not m:
+                LOG.warning("Skipping folder with unrecognized name: %s", folder)
                 continue
-            targets = {}
-            for level in levels:
-                out_path = output_root / f"{symbol}-{year}_{level}" / f"{date}.parquet"
-                if out_path.exists() and not force and not _is_stale(out_path, csv_path):
+            symbol = m.group(1)
+            if symbols and symbol not in symbols:
+                continue
+
+            for csv_path in sorted(folder.glob("*.csv")):
+                date = csv_path.stem
+                if not DAY_FILE_RE.fullmatch(date):
+                    LOG.warning("Skipping file with unrecognized name: %s", csv_path)
                     continue
-                targets[level] = out_path
-            if targets:
-                work.append((csv_path, targets))
+                targets = {}
+                for level in levels:
+                    out_path = output_root / f"{symbol}-{year}_{level}" / f"{date}.parquet"
+                    if out_path.exists() and not force and not _is_stale(out_path, csv_path):
+                        continue
+                    targets[level] = out_path
+                if targets:
+                    work.append((csv_path, targets))
     return work
 
 

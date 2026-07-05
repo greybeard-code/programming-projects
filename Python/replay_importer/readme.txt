@@ -2,9 +2,10 @@ replay_importer - NinjaTrader Replay CSV -> Parquet
 ====================================================
 
 Converts gbNRDtoCSV market-replay exports
-(M:\NinjaTrader_DataRepo\RawData\CSV\<Instrument>\<YYYYMMDD>.csv) into
+(M:\NinjaTrader_DataRepo\RawData\CSV\<YEAR>\<Instrument>\<YYYYMMDD>.csv) into
 per-day Parquet datasets, split into L1 (quote/trade ticks) and L2
-(order-book depth) outputs.
+(order-book depth) outputs. <YEAR> is the contract/roll year (top-level
+folder); output datasets stay <SYMBOL>-<YEAR>_L{1,2}.
 
 See the docstring at the top of replay_csv_to_parquet.py for the full
 file-format and schema details.
