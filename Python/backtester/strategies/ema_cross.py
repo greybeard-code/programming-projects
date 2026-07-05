@@ -5,7 +5,7 @@ from backtester import EMA, Strategy
 class EmaCross(Strategy):
     symbol = "MNQ"
     period = "1m"
-    session = ("08:30", "15:00")     # RTH, US/Central
+    session = ("09:30", "16:00")     # RTH, US/Eastern
     qty = 1
 
     fast_period = 9

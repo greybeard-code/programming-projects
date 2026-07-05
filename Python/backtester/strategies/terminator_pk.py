@@ -4,7 +4,7 @@ From NT8 template PK funded(1).xml (MNQ 09-26, ninZaRenko 100/4):
 ATR(14) x 2.0 signal line, 2 contracts, SL = 1 x ATR, TP = 2 x ATR,
 breakeven at 1 x ATR (offset 0), daily lock at -$500 / +$400 with flatten.
 Template trades full ETH with exit-on-session-close and no time filter;
-here RTH 08:30-15:55 CT (prop context) — see the evaluation md for the
+here RTH 09:30-16:55 ET (prop context) — see the evaluation md for the
 session caveat. Template's NT8 backtest had IncludeCommission=false and
 Standard fill resolution on Renko (fantasy fills); this test pays real
 spread + commission.
@@ -21,7 +21,7 @@ _spec.loader.exec_module(_mod)
 class TerminatorPKFunded(_mod.TerminatorV2):
     symbol = "MNQ"
     period = "r100-4"
-    session = ("08:30", "15:55")
+    session = ("09:30", "16:55")
     qty = 2
 
     atr_period = 14

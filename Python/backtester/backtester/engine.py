@@ -14,7 +14,9 @@ from .contracts import ContractSpec, get_spec
 from .data import Catalog
 from .strategy import Bar, BarHistory, Strategy, parse_barspec
 
-CT = ZoneInfo("America/Chicago")
+# All user-facing session times are US/Eastern (user preference — their PC,
+# NT8, and trading community all run ET). Internals remain ns UTC.
+SESSION_TZ = ZoneInfo("America/New_York")
 
 
 @dataclass
@@ -41,18 +43,18 @@ class Result:
 
 def _session_bounds_utc(date: str,
                         session: tuple[str, str]) -> tuple[int, int, bool]:
-    """UTC ns of the CT session times on the file's calendar date.
+    """UTC ns of the ET session times on the file's calendar date.
 
     Returns (start_ns, end_ns, wrap). wrap=True means an overnight session
-    (start > end, e.g. Globex 17:00 -> 15:55): the trading day that *ends* on
-    this date began at `start` on the PREVIOUS date, and a new one begins at
-    `start` on this date.
+    (start > end, e.g. Globex 18:00 -> 16:55 ET): the trading day that
+    *ends* on this date began at `start` on the PREVIOUS date, and a new one
+    begins at `start` on this date.
     """
     d = datetime.strptime(date, "%Y%m%d")
 
     def to_ns(hhmm: str) -> int:
         h, m = map(int, hhmm.split(":"))
-        local = datetime(d.year, d.month, d.day, h, m, tzinfo=CT)
+        local = datetime(d.year, d.month, d.day, h, m, tzinfo=SESSION_TZ)
         return int(local.timestamp() * 1e9)
 
     start, end = to_ns(session[0]), to_ns(session[1])

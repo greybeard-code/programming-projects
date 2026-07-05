@@ -91,12 +91,12 @@ class BarHistory:
 class Strategy:
     """Subclass this. Set class attributes, implement on_bar().
 
-    Times are "HH:MM" in US/Central (CME exchange time).
+    Times are "HH:MM" in US/Eastern (the user's PC/NT8 timezone).
     """
 
     symbol: str = "MNQ"
     period: str = "1m"                      # e.g. "30s", "1m", "5m", "1h"
-    session: tuple[str, str] | None = ("08:30", "15:00")
+    session: tuple[str, str] | None = ("09:30", "16:00")
     flat_at_session_end: bool = True
     qty: int = 1
 

@@ -20,13 +20,13 @@ from zoneinfo import ZoneInfo
 
 from backtester import ATR, Strategy
 
-CT = ZoneInfo("America/Chicago")
+ET = ZoneInfo("America/New_York")
 
 
 class TerminatorV2(Strategy):
     symbol = "MNQ"
     period = "r100-4"                 # ninZaRenko brick 100 ticks / trend 4
-    session = ("08:30", "15:55")      # US/Central; original default is ETH
+    session = ("09:30", "16:55")      # US/Eastern; original default is ETH
     flat_at_session_end = True
     qty = 1
 
@@ -44,7 +44,7 @@ class TerminatorV2(Strategy):
     enable_longs = True
     enable_shorts = True
     reverse_max_delay_bars = 5
-    # entry windows, CT "HH:MM" tuples, overnight wrap ok (NT8 UseTimeFilter
+    # entry windows, ET "HH:MM" tuples, overnight wrap ok (NT8 UseTimeFilter
     # + window 2). None = no filter. Blocks ENTRIES only; exits still manage.
     entry_window = None
     entry_window2 = None
@@ -52,7 +52,7 @@ class TerminatorV2(Strategy):
     def _in_entry_window(self, ts_ns):
         if not self.entry_window and not self.entry_window2:
             return True
-        t = datetime.fromtimestamp(ts_ns / 1e9, CT)
+        t = datetime.fromtimestamp(ts_ns / 1e9, ET)
         tod = t.hour * 60 + t.minute
         for w in (self.entry_window, self.entry_window2):
             if not w:

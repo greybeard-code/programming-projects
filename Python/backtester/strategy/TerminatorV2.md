@@ -7,9 +7,10 @@
 > **The P&L was real; the window label was wrong.** On corrected data:
 > true-RTH-morning SAR **loses** (−$7,666); the edge lives in the
 > **US afternoon + evening reopen**. Corrected recommendation:
-> **session 13:00–19:55 CT (14:00–20:55 ET), ATR 20×4, 200-tick stop,
-> 1 contract** → net $7,142, Sharpe 2.87, maxDD −$1,282, MC breach 6.2%,
-> eval-pass 92.1%. Full corrected analysis:
+> **session 14:00–20:55 ET, ATR 20×4, 200-tick stop, 1 contract** →
+> net $7,142, Sharpe 2.87, maxDD −$1,282, MC breach 6.2%,
+> eval-pass 92.1%. All times in these reports are US/Eastern from here on.
+> Full corrected analysis:
 > [TerminatorV2_ETH.md](TerminatorV2_ETH.md) revision section. The
 > parameter-robustness conclusions below (period plateau, mult band,
 > stop benefit, cost insensitivity) all re-verified on corrected data.

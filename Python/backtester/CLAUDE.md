@@ -26,10 +26,11 @@ plotly, tzdata, pytest — no pandas/polars, keep it that way unless needed).
   ~0.05 s/day; first touch ~1.5 s/day. Cache ~1 GB/symbol (gitignored).
 - **engine.py** — day loop → per-bar: `broker.resolve_span(i0, i1)` FIRST
   (fills happen before the strategy sees the bar — no look-ahead), then
-  `strategy.on_bar`. Sessions are "HH:MM" US/Central (zoneinfo, needs tzdata
-  on Windows); bars outside the session are skipped entirely, orders are
-  cancelled and positions flattened at session end (`flat_at_session_end`).
-  Overnight sessions (start > end, e.g. ("17:00","15:55") = Globex day) are
+  `strategy.on_bar`. Sessions are "HH:MM" **US/Eastern** (user preference —
+  ET everywhere user-facing; zoneinfo, needs tzdata on Windows); bars
+  outside the session are skipped entirely, orders are cancelled and
+  positions flattened at session end (`flat_at_session_end`).
+  Overnight sessions (start > end, e.g. ("18:00","16:55") = Globex day) are
   supported: day files are split into segments (_segments), the trading day
   flushes at the END time, and positions/orders carry across the UTC-
   midnight file boundary; anything open at end-of-data is force-flattened.
@@ -97,9 +98,10 @@ plotly, tzdata, pytest — no pandas/polars, keep it that way unless needed).
   build_renko_bars, with a partial closing bar). Clean sessions match
   97-99.3%; residual mismatch = live-chart feed reconnect re-anchors,
   irreproducible by any backtest.
-- Backtester sessions/analysis are US/Central (CME time), but the user's PC
-  and NT8 run **US/Eastern** — NT8 StartTime/EndTime settings in the
-  strategy/ reports are given in ET (CT+1). Convert when porting either way.
+- **US/Eastern ONLY in everything user-facing** (sessions, entry windows,
+  reports, hour attributions) — explicit user preference 2026-07-05; their
+  PC/NT8/community all run ET. Do NOT express times in CT, even though CME
+  is a Chicago exchange. Internals remain int64 ns UTC.
 - Order flow: reduced cache stores prevailing bid/ask sizes and per-trade
   aggressor side (+1 at/above ask, -1 at/below bid); bars carry
   buy_volume/sell_volume, `bar.delta`, `bars.cum_delta` (reset per session).
@@ -137,5 +139,5 @@ post-timestamp-fix 2026-07-05): net ~-$2,125, 2102 trades, WR 33.4%,
 Sharpe -2.05, maxDD -$3,244, breach 2026-04-22. (The strategy is a loser on
 true RTH; it's a regression canary, not an edge.) If a refactor moves these
 numbers materially without an intentional fill-model/data change, something
-broke. Terminator corrected headline: session 13:00-19:55 CT + 200t stop =
+broke. Terminator corrected headline: session 14:00-20:55 ET + 200t stop =
 net ~$7,142, Sharpe 2.87 (see strategy/ reports).

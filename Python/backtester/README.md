@@ -27,7 +27,7 @@ from backtester import EMA, Strategy
 class MyStrat(Strategy):
     symbol = "MNQ"
     period = "1m"                    # time: 30s/1m/5m; tick: 500t; renko: r8
-    session = ("08:30", "15:00")     # US/Central; None = full day
+    session = ("09:30", "16:00")     # US/Eastern; None = full day
     flat_at_session_end = True
     qty = 2
 
