@@ -51,8 +51,15 @@ def _eastern_offset_ns(date: str) -> int:
     return int(midday.utcoffset().total_seconds() * 1e9)
 
 
-CACHE_VERSION = b"2"   # reduced: v2 = ET wall-clock stamps converted to UTC
+CACHE_VERSION = b"3"   # reduced: v3 = trust replay_importer UTC tag, else ET->UTC
 BARS_VERSION = b"4"    # bars: v4 = renko first-session-bar body=T, open=anchor
+
+# The replay_importer (v>=2) stamps output Parquet with these keys and stores
+# true UTC. Files carrying timestamps=UTC skip the _eastern_offset_ns
+# correction; legacy/untagged files are the ET-wall-clock stamps and still get
+# corrected. This lets old and new Parquet coexist with no flag day.
+IMPORTER_TS_KEY = b"replay_importer.timestamps"
+IMPORTER_TS_UTC = b"UTC"
 
 REDUCED_COLS = ("ts", "price", "volume", "ask", "bid",
                 "ask_size", "bid_size", "aggr")
@@ -176,8 +183,11 @@ class Catalog:
             raise FileNotFoundError(f"No raw file for {symbol} {date}")
         t = pq.read_table(raw, columns=["Timestamp", "MarketDataType",
                                         "Price", "Volume"])
-        ts = t.column("Timestamp").to_numpy().astype("int64")
-        ts = ts - _eastern_offset_ns(date)   # raw stamps are ET wall clock
+        meta = t.schema.metadata or {}
+        utc_tagged = meta.get(IMPORTER_TS_KEY) == IMPORTER_TS_UTC
+        ts = t.column("Timestamp").to_numpy(zero_copy_only=False).astype("int64")
+        if not utc_tagged:
+            ts = ts - _eastern_offset_ns(date)   # legacy: raw stamps are ET wall clock
         mdt = t.column("MarketDataType").to_numpy()
         price = t.column("Price").to_numpy()
         vol = t.column("Volume").to_numpy()

@@ -41,10 +41,30 @@ Useful options:
        --symbols MNQ NQ       only process these symbols
        --years 2024 2025      only process these years
        --levels L1            only extract L1 (skip the much larger L2 data)
+       --source-tz TZ         IANA tz of the RECORDING PC's wall clock in the
+                              source CSVs (default America/New_York); stamps are
+                              localized from this and stored as true UTC
+       --jobs N               parallel worker processes (default: CPU count;
+                              1 = serial). Days are independent.
        --force                reprocess days even if output already exists
        --chunk-rows N         rows per Parquet write batch (default 1,000,000)
        --compression zstd     Parquet codec (default zstd)
        -v                     verbose logging
+
+
+Timestamps (IMPORTANT)
+----------------------
+NinjaTrader's DumpMarketDepth stamps the recording PC's LOCAL wall clock, not
+UTC. This importer localizes every stamp from --source-tz and writes true UTC
+(tz-aware) Parquet, tagged in the file's key-value metadata
+(replay_importer.timestamps=UTC, .source_tz, .version). DST is handled
+per-timestamp; a wall time that is ambiguous (fall-back) or nonexistent
+(spring-forward) raises rather than guessing.
+
+Outputs also record the source CSV size/mtime, so a re-exported source day is
+detected and reprocessed automatically (no --force needed). Legacy Parquet
+written before this change carries no UTC tag; downstream consumers treat
+untagged files as Eastern wall clock. Re-run with --force to migrate them.
 
 Example - convert only MNQ L1 data for 2025:
 

@@ -30,8 +30,10 @@ from __future__ import annotations
 import argparse
 import io
 import logging
+import os
 import re
 import sys
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
 
 import pandas as pd
@@ -44,6 +46,21 @@ FOLDER_RE = re.compile(r"^(\S+)\s+.*\s(\d{4})$")
 DAY_FILE_RE = re.compile(r"\d{8}")
 
 LEVELS = ("L1", "L2")
+
+# Provenance embedded in every output file's Parquet key-value metadata.
+# CRITICAL: the recording PC stamps its LOCAL wall clock (US/Eastern), NOT UTC
+# as the legacy repo README claimed. This importer localizes with --source-tz
+# and stores UTC; the metadata below is how the backtester tells UTC-tagged
+# files (skip its ET->UTC correction) from legacy untagged ones (still ET).
+IMPORTER_VERSION = "2"
+DEFAULT_SOURCE_TZ = "America/New_York"
+
+META_VERSION = b"replay_importer.version"
+META_SOURCE_TZ = b"replay_importer.source_tz"
+META_TIMESTAMPS = b"replay_importer.timestamps"     # always b"UTC" for v>=2
+META_SOURCE_SIZE = b"replay_importer.source_size"   # source CSV st_size (bytes)
+META_SOURCE_MTIME = b"replay_importer.source_mtime_ns"  # source CSV st_mtime_ns
+META_SOURCE_NAME = b"replay_importer.source_name"   # source CSV file name
 
 # NinjaTrader.Data.MarketDataType
 MARKET_DATA_TYPE = {
@@ -76,15 +93,16 @@ L2_RAW_DTYPES = {
     "Volume": "int64",
 }
 
-# Output schema: Timestamp+TimestampOffset are combined into one Timestamp column.
+# Output schema: Timestamp+TimestampOffset are combined into one Timestamp
+# column, localized from --source-tz and stored as true UTC (tz-aware).
 L1_SCHEMA = pa.schema([
-    ("Timestamp", pa.timestamp("ns")),
+    ("Timestamp", pa.timestamp("ns", tz="UTC")),
     ("MarketDataType", pa.int8()),
     ("Price", pa.float64()),
     ("Volume", pa.int64()),
 ])
 L2_SCHEMA = pa.schema([
-    ("Timestamp", pa.timestamp("ns")),
+    ("Timestamp", pa.timestamp("ns", tz="UTC")),
     ("MarketDataType", pa.int8()),
     ("Operation", pa.int8()),
     ("Position", pa.int32()),
@@ -98,9 +116,17 @@ RAW_DTYPES = {"L1": L1_RAW_DTYPES, "L2": L2_RAW_DTYPES}
 SCHEMAS = {"L1": L1_SCHEMA, "L2": L2_SCHEMA}
 
 
-def chunk_to_table(lines: list[str], level: str) -> pa.Table:
+def chunk_to_table(lines: list[str], level: str,
+                   source_tz: str = DEFAULT_SOURCE_TZ) -> pa.Table:
     """Parse a batch of raw (tag-stripped) ';'-delimited lines for one record
-    level into a pyarrow Table matching that level's output schema."""
+    level into a pyarrow Table matching that level's output schema.
+
+    The raw stamps are the recording PC's ``source_tz`` wall clock; they are
+    localized and converted to true UTC. DST policy is strict: both ambiguous
+    (fall-back) and nonexistent (spring-forward) wall times land at 02:00 on a
+    Sunday when CME is closed, so a real tick should never hit them -- if one
+    does we raise rather than silently guess an hour.
+    """
     blob = "\n".join(lines)
     df = pd.read_csv(
         io.StringIO(blob),
@@ -109,33 +135,75 @@ def chunk_to_table(lines: list[str], level: str) -> pa.Table:
         names=RAW_COLUMNS[level],
         dtype=RAW_DTYPES[level],
     )
-    timestamp = (
+    naive = (
         pd.to_datetime(df["Timestamp"], format="%Y%m%d%H%M%S")
         + pd.to_timedelta(df["TimestampOffset"].astype("int64") * 100, unit="ns")
+    )
+    timestamp = (
+        naive.dt.tz_localize(source_tz, ambiguous="raise", nonexistent="raise")
+             .dt.tz_convert("UTC")
     )
     df = df.drop(columns=["Timestamp", "TimestampOffset"])
     df.insert(0, "Timestamp", timestamp)
     return pa.Table.from_pandas(df, schema=SCHEMAS[level], preserve_index=False)
 
 
-def process_day(csv_path: Path, targets: dict[str, Path], chunk_rows: int, compression: str) -> dict[str, int]:
+def _provenance_meta(csv_path: Path, source_tz: str) -> dict[bytes, bytes]:
+    """Key-value metadata embedded in every output file: enough for the
+    backtester to trust the UTC stamps and for discover_work to detect a
+    re-exported source CSV."""
+    st = csv_path.stat()
+    return {
+        META_VERSION: IMPORTER_VERSION.encode(),
+        META_SOURCE_TZ: source_tz.encode(),
+        META_TIMESTAMPS: b"UTC",
+        META_SOURCE_SIZE: str(st.st_size).encode(),
+        META_SOURCE_MTIME: str(st.st_mtime_ns).encode(),
+        META_SOURCE_NAME: csv_path.name.encode(),
+    }
+
+
+def _monotonic_check(table: pa.Table, level: str, prev_last: int | None) -> int:
+    """Assert a written chunk's UTC timestamps are non-decreasing (within the
+    chunk and across the previous chunk's last value). Returns the last ts (ns).
+    The tz-aware timestamp's storage is UTC int64 ns, so cast is exact."""
+    ns = table.column("Timestamp").cast(pa.int64()).to_numpy(zero_copy_only=False)
+    if len(ns) == 0:
+        return prev_last if prev_last is not None else 0
+    if (ns[1:] < ns[:-1]).any() or (prev_last is not None and ns[0] < prev_last):
+        raise ValueError(f"{level}: timestamps are not monotonic non-decreasing")
+    return int(ns[-1])
+
+
+def process_day(csv_path: Path, targets: dict[str, Path], chunk_rows: int,
+                compression: str, source_tz: str = DEFAULT_SOURCE_TZ) -> dict[str, int]:
     """Stream csv_path once, writing the requested record levels to
     temporary Parquet files, then atomically rename them into place.
 
     ``targets`` maps level ("L1"/"L2") to its final output path. On any
     error, partial/temporary files are removed and the exception propagates
     so the day is retried on the next run.
+
+    Returns per-level row counts plus a ``"_skipped"`` entry counting lines
+    that matched no requested level, so callers can reconcile
+    total = sum(levels) + skipped against the raw line count.
     """
-    tmp_paths = {level: path.with_name(path.name + ".tmp") for level, path in targets.items()}
+    # pid-unique temp so concurrent runs / retries never collide on one name.
+    suffix = f".{os.getpid()}.tmp"
+    tmp_paths = {level: path.with_name(path.name + suffix) for level, path in targets.items()}
+    meta = _provenance_meta(csv_path, source_tz)
     writers: dict[str, pq.ParquetWriter] = {}
     buffers: dict[str, list[str]] = {level: [] for level in targets}
     row_counts: dict[str, int] = {level: 0 for level in targets}
+    last_ts: dict[str, int | None] = {level: None for level in targets}
+    skipped = 0
 
     def flush(level: str) -> None:
         buf = buffers[level]
         if not buf:
             return
-        table = chunk_to_table(buf, level)
+        table = chunk_to_table(buf, level, source_tz)
+        last_ts[level] = _monotonic_check(table, level, last_ts[level])
         writers[level].write_table(table)
         row_counts[level] += table.num_rows
         buf.clear()
@@ -143,15 +211,17 @@ def process_day(csv_path: Path, targets: dict[str, Path], chunk_rows: int, compr
     try:
         for level, tmp_path in tmp_paths.items():
             tmp_path.parent.mkdir(parents=True, exist_ok=True)
-            writers[level] = pq.ParquetWriter(tmp_path, SCHEMAS[level], compression=compression)
+            schema = SCHEMAS[level].with_metadata(meta)
+            writers[level] = pq.ParquetWriter(tmp_path, schema, compression=compression)
 
         with open(csv_path, "r", newline="") as f:
             for line in f:
-                line = line.rstrip("\n")
+                line = line.rstrip("\r\n")   # tolerate CRLF; no stray \r in the last field
                 if not line:
                     continue
                 buf = buffers.get(line[:2])
                 if buf is None:
+                    skipped += 1
                     continue
                 buf.append(line[3:])
                 if len(buf) >= chunk_rows:
@@ -173,7 +243,24 @@ def process_day(csv_path: Path, targets: dict[str, Path], chunk_rows: int, compr
             tmp_path.unlink(missing_ok=True)
         raise
 
+    row_counts["_skipped"] = skipped
     return row_counts
+
+
+def _is_stale(out_path: Path, csv_path: Path) -> bool:
+    """True if an existing output must be rebuilt: legacy files with no
+    provenance metadata (pre-UTC importer) and files whose recorded source
+    size/mtime no longer match the current CSV (re-exported) both qualify."""
+    try:
+        meta = pq.read_metadata(out_path).metadata or {}
+    except Exception:
+        return True  # unreadable/corrupt -> rebuild
+    stored_size = meta.get(META_SOURCE_SIZE)
+    stored_mtime = meta.get(META_SOURCE_MTIME)
+    if meta.get(META_TIMESTAMPS) != b"UTC" or stored_size is None or stored_mtime is None:
+        return True  # legacy / untagged output
+    st = csv_path.stat()
+    return stored_size != str(st.st_size).encode() or stored_mtime != str(st.st_mtime_ns).encode()
 
 
 def discover_work(
@@ -185,7 +272,9 @@ def discover_work(
     force: bool,
 ) -> list[tuple[Path, dict[str, Path]]]:
     """Find (csv_path, targets) pairs for every source day that still needs
-    one or more of the requested output levels."""
+    one or more of the requested output levels. A day is (re)processed when
+    its output is missing, ``force`` is set, or the output is stale relative
+    to the source CSV (see ``_is_stale``)."""
     work: list[tuple[Path, dict[str, Path]]] = []
     for folder in sorted(p for p in csv_root.iterdir() if p.is_dir()):
         m = FOLDER_RE.match(folder.name)
@@ -206,7 +295,7 @@ def discover_work(
             targets = {}
             for level in levels:
                 out_path = output_root / f"{symbol}-{year}_{level}" / f"{date}.parquet"
-                if out_path.exists() and not force:
+                if out_path.exists() and not force and not _is_stale(out_path, csv_path):
                     continue
                 targets[level] = out_path
             if targets:
@@ -225,6 +314,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--levels", nargs="+", choices=LEVELS, default=list(LEVELS), help="record levels to extract")
     parser.add_argument("--chunk-rows", type=int, default=1_000_000, help="rows per Parquet write batch (default: %(default)s)")
     parser.add_argument("--compression", default="zstd", help="Parquet compression codec (default: %(default)s)")
+    parser.add_argument("--source-tz", default=DEFAULT_SOURCE_TZ,
+                         help="IANA tz of the RECORDING PC's wall clock in the source CSVs; "
+                              "stamps are localized from this and stored as UTC (default: %(default)s)")
+    parser.add_argument("--jobs", type=int, default=None,
+                         help="parallel worker processes for per-day conversion (default: CPU count; 1 = serial)")
     parser.add_argument("--force", action="store_true", help="reprocess a day even if its output already exists")
     parser.add_argument("-v", "--verbose", action="store_true")
     args = parser.parse_args(argv)
@@ -244,12 +338,44 @@ def main(argv: list[str] | None = None) -> int:
         LOG.info("Nothing to do - all requested outputs already exist.")
         return 0
 
-    LOG.info("Processing %d day file(s) into %s", len(work), output_root)
-    for i, (csv_path, targets) in enumerate(work, 1):
-        LOG.info("[%d/%d] %s -> %s", i, len(work), csv_path, ", ".join(sorted(targets)))
-        row_counts = process_day(csv_path, targets, args.chunk_rows, args.compression)
-        LOG.info("    wrote %s", ", ".join(f"{lvl}={n:,} rows" for lvl, n in row_counts.items()))
+    jobs = args.jobs if args.jobs is not None else (os.cpu_count() or 1)
+    jobs = max(1, min(jobs, len(work)))
+    LOG.info("Processing %d day file(s) into %s (source_tz=%s -> UTC, jobs=%d)",
+             len(work), output_root, args.source_tz, jobs)
 
+    def report(i: int, csv_path: Path, targets: dict[str, Path], row_counts: dict[str, int]) -> None:
+        skipped = row_counts.get("_skipped", 0)
+        levels = {k: v for k, v in row_counts.items() if k != "_skipped"}
+        LOG.info("[%d/%d] %s -> %s%s", i, len(work), csv_path,
+                 ", ".join(f"{lvl}={n:,} rows" for lvl, n in sorted(levels.items())),
+                 f", skipped={skipped:,} non-L1/L2 lines" if skipped else "")
+
+    if jobs == 1:
+        for i, (csv_path, targets) in enumerate(work, 1):
+            row_counts = process_day(csv_path, targets, args.chunk_rows, args.compression, args.source_tz)
+            report(i, csv_path, targets, row_counts)
+        return 0
+
+    # Days are independent; fan out across processes. process_day is a
+    # module-level function with picklable args, so this is spawn-safe.
+    failures = 0
+    with ProcessPoolExecutor(max_workers=jobs) as pool:
+        futures = {
+            pool.submit(process_day, csv_path, targets, args.chunk_rows, args.compression, args.source_tz):
+                (csv_path, targets)
+            for csv_path, targets in work
+        }
+        for i, fut in enumerate(as_completed(futures), 1):
+            csv_path, targets = futures[fut]
+            try:
+                report(i, csv_path, targets, fut.result())
+            except Exception as exc:
+                failures += 1
+                LOG.error("[%d/%d] %s FAILED: %s", i, len(work), csv_path, exc)
+
+    if failures:
+        LOG.error("%d day file(s) failed; re-run to retry.", failures)
+        return 1
     return 0
 
 
