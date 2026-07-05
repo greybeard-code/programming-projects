@@ -92,12 +92,17 @@ plotly, tzdata, pytest — no pandas/polars, keep it that way unless needed).
   forces rebuilds when this logic changes. Day files are ET calendar days.
   ALL session-based results computed before 2026-07-05 used windows
   mislabeled by 4-5 h — see strategy/ report revision notes.
-- ninZaRenko parity: validated against a real chart export (May 2026) —
-  geometry 100%, session-reset rule confirmed (re-anchor at first trade
-  after the 17:00-18:00 ET halt; implemented as trade-gap >30 min reset in
-  build_renko_bars, with a partial closing bar). Clean sessions match
-  97-99.3%; residual mismatch = live-chart feed reconnect re-anchors,
-  irreproducible by any backtest.
+- ninZaRenko parity: validated against five real chart exports (10/3, 36/2,
+  40/10, 64/16, 100/4 — see research/ninZaRenko_spec.md). Geometry exact on
+  NT8's own bars (zero invariant violations; 2B−T parametric); re-anchor
+  only at real session opens (trade-gap >30 min reset in build_renko_bars —
+  audited: all 131 repo gaps are true halts/weekends/holiday early closes).
+  Fresh-load charts match 93-96% identical close (smaller T = more
+  feed-noise flips, always ±T and self-healing); live-accumulated charts
+  add persistent reconnect re-anchor offsets (never a multiple of T),
+  irreproducible by any backtest. compare_bars matching is one-to-one
+  monotonic (gap sweeps emit same-ts bars; feeds skew ~6 s, so
+  --tolerance-s 10 for small-T settings).
 - **US/Eastern ONLY in everything user-facing** (sessions, entry windows,
   reports, hour attributions) — explicit user preference 2026-07-05; their
   PC/NT8/community all run ET. Do NOT express times in CT, even though CME
