@@ -57,6 +57,27 @@ and the Parquet repo README. Focus: the timestamp bug found 2026-07-05
    - Optional: add-on writes a sidecar with `TimeZoneInfo.Local.Id` at
      dump time, so future recordings are self-describing.
 
+## Additional code-review findings (2026-07-05, second pass)
+
+Add-on (gbNRDtoCSV.cs):
+   - **Partial-CSV hole**: DumpMarketDepth writes to the FINAL path and the
+     skip check is bare `File.Exists` — a canceled/crashed run leaves a
+     half-written day that every later run skips as done. Dump to `.tmp`,
+     rename on success (same pattern the importer uses).
+   - **Completion race**: workers do `if (--taskCount == 0)` from different
+     dispatcher threads without `Interlocked.Decrement` — complete() can
+     fire twice or never. Replace RandomDispatcher fan-out with Task.Run.
+
+Importer (replay_csv_to_parquet.py):
+   - **Silent drops**: lines not starting L1/L2 are discarded uncounted.
+     Count them and reconcile total = L1 + L2 + skipped in the manifest.
+   - **Stale outputs**: discover_work only checks the parquet exists — a
+     re-exported CSV never gets reprocessed. Store source size/mtime in
+     parquet metadata; reprocess on mismatch.
+   - **Parallelize per-day work** (ProcessPoolExecutor) BEFORE the --force
+     migration run; days are independent, ~core-count speedup.
+   - Minor: `.tmp` suffix not pid-unique (concurrent runs collide).
+
 ## Effort
 
 Importer change + tests: small. Backtester handshake: small (one metadata
