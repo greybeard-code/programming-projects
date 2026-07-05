@@ -126,6 +126,10 @@ Recommendations, in order:
 1. **Add the 200-tick hard stop** (SL Mode=Ticks, 200). Same trade count,
    more P&L, and 2.6× lower probability of blowing an Apex eval. Pure SAR
    with no stop is the single biggest risk in the current configuration.
+1b. **Entry window 09:30–15:30 CT** (see
+   [TerminatorV2_ETH.md](TerminatorV2_ETH.md)): net $7,998, Sharpe 3.52,
+   MC breach probability 0.7%, eval-pass 97.9%. ETH/overnight trading of
+   this strategy loses badly — never run it without the time filter.
 2. Trade it in the mult 3.0–4.0 band; never above 4. Period is free (14–28).
 3. Validate bar parity: export one day of ninZaRenko 100/4 OHLC from NT8
    and diff against our `r100-4` bars; then run the NT8 Strategy Analyzer

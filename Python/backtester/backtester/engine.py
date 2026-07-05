@@ -39,8 +39,15 @@ class Result:
     dll_days: list[str] = field(default_factory=list)
 
 
-def _session_bounds_utc(date: str, session: tuple[str, str]) -> tuple[int, int]:
-    """UTC ns bounds of the CT session window on the file's calendar date."""
+def _session_bounds_utc(date: str,
+                        session: tuple[str, str]) -> tuple[int, int, bool]:
+    """UTC ns of the CT session times on the file's calendar date.
+
+    Returns (start_ns, end_ns, wrap). wrap=True means an overnight session
+    (start > end, e.g. Globex 17:00 -> 15:55): the trading day that *ends* on
+    this date began at `start` on the PREVIOUS date, and a new one begins at
+    `start` on this date.
+    """
     d = datetime.strptime(date, "%Y%m%d")
 
     def to_ns(hhmm: str) -> int:
@@ -49,9 +56,35 @@ def _session_bounds_utc(date: str, session: tuple[str, str]) -> tuple[int, int]:
         return int(local.timestamp() * 1e9)
 
     start, end = to_ns(session[0]), to_ns(session[1])
-    if end <= start:                       # overnight session, e.g. 17:00-16:00
-        end += int(timedelta(days=1).total_seconds() * 1e9)
-    return start, end
+    return start, end, end <= start
+
+
+def _segments(session: tuple[str, str] | None, date: str,
+              ts_end: np.ndarray) -> list[tuple[np.ndarray, bool]]:
+    """Split one day file's bars into (indices, is_trading_day_end) segments.
+
+    - session None: whole file, day ends with the file.
+    - normal session (start < end): one in-window segment, day ends there.
+    - overnight session: bars up to `end` finish the trading day that started
+      yesterday (day_end=True); bars from `start` on begin the next trading
+      day, which carries across the UTC-midnight file boundary
+      (day_end=False — no flatten, orders stay working).
+    """
+    n = len(ts_end)
+    if session is None:
+        return [(np.arange(n), True)]
+    s_ns, e_ns, wrap = _session_bounds_utc(date, session)
+    if not wrap:
+        idx = np.flatnonzero((ts_end > s_ns) & (ts_end <= e_ns))
+        return [(idx, True)] if len(idx) else []
+    out: list[tuple[np.ndarray, bool]] = []
+    idx1 = np.flatnonzero(ts_end <= e_ns)
+    if len(idx1):
+        out.append((idx1, True))
+    idx2 = np.flatnonzero(ts_end > s_ns)
+    if len(idx2):
+        out.append((idx2, False))
+    return out
 
 
 class Backtest:
@@ -100,6 +133,10 @@ class Backtest:
         dll_days: list[str] = []
         bar_index = 0
         halted_on = None
+        day_start_balance = self.account.balance
+        dll_pending = False        # DLL fired mid-trading-day; skip to flush
+        new_trading_day = True
+        last_bar_ref = None        # (DayL1, event idx) of last processed bar
 
         strat.on_start()
         for di, date in enumerate(days):
@@ -111,54 +148,65 @@ class Backtest:
             if len(bars) == 0:
                 continue
             self.broker.begin_day(day)
-            day_start_balance = self.account.balance
 
-            if strat.session:
-                s_ns, e_ns = _session_bounds_utc(date, strat.session)
-                in_sess = (bars.ts_end > s_ns) & (bars.ts_end <= e_ns)
-            else:
-                in_sess = np.ones(len(bars), dtype=bool)
-            sess_idx = np.flatnonzero(in_sess)
-            if len(sess_idx) == 0:
-                continue
-            hist.reset_cum_delta()
-
-            for j in sess_idx:
-                self.broker.resolve_span(int(bars.i0[j]), int(bars.i1[j]))
+            for seg_idx, day_end in _segments(strat.session, date,
+                                              bars.ts_end):
                 if self.broker.halted:
                     break
-                bar = Bar(ts=int(bars.ts_end[j]), open=float(bars.open[j]),
-                          high=float(bars.high[j]), low=float(bars.low[j]),
-                          close=float(bars.close[j]),
-                          volume=int(bars.volume[j]), index=bar_index,
-                          buy_volume=int(bars.buy_volume[j]),
-                          sell_volume=int(bars.sell_volume[j]))
-                hist.append(bar)
-                bar_index += 1
-                strat.on_bar(bar, hist)
-                eq_ts.append(bar.ts)
-                eq.append(self.account.equity(bar.close))
-                floor.append(self.apex.floor if self.apex else float("nan"))
+                if not dll_pending:
+                    if new_trading_day and len(seg_idx):
+                        hist.reset_cum_delta()
+                        new_trading_day = False
+                    for j in seg_idx:
+                        self.broker.resolve_span(int(bars.i0[j]),
+                                                 int(bars.i1[j]))
+                        if self.broker.halted:
+                            break
+                        bar = Bar(ts=int(bars.ts_end[j]),
+                                  open=float(bars.open[j]),
+                                  high=float(bars.high[j]),
+                                  low=float(bars.low[j]),
+                                  close=float(bars.close[j]),
+                                  volume=int(bars.volume[j]), index=bar_index,
+                                  buy_volume=int(bars.buy_volume[j]),
+                                  sell_volume=int(bars.sell_volume[j]))
+                        hist.append(bar)
+                        bar_index += 1
+                        strat.on_bar(bar, hist)
+                        eq_ts.append(bar.ts)
+                        eq.append(self.account.equity(bar.close))
+                        floor.append(self.apex.floor if self.apex
+                                     else float("nan"))
+                        last_bar_ref = (day, int(bars.i1[j]) - 1)
 
-                # daily loss limit: flatten and stand down for the day
-                if (self.daily_loss_limit is not None
-                        and self.account.equity(bar.close) - day_start_balance
-                        <= -self.daily_loss_limit):
+                        # daily loss limit: flatten, stand down until flush
+                        if (self.daily_loss_limit is not None
+                                and self.account.equity(bar.close)
+                                - day_start_balance <= -self.daily_loss_limit):
+                            self.broker.cancel_all()
+                            self.broker.flatten(int(bars.i1[j]) - 1,
+                                                tag="dll")
+                            eq[-1] = self.account.equity(bar.close)
+                            dll_days.append(date)
+                            dll_pending = True
+                            break
+
+                if day_end:
+                    # trading-day flush: cancel orders, flatten, book P&L
                     self.broker.cancel_all()
-                    self.broker.flatten(int(bars.i1[j]) - 1, tag="dll")
-                    eq[-1] = self.account.equity(bar.close)
-                    dll_days.append(date)
-                    break
-
-            # session end: cancel working orders, flatten if configured
-            last_j = int(sess_idx[-1])
-            self.broker.cancel_all()
-            if strat.flat_at_session_end and not self.broker.halted:
-                self.broker.flatten(int(bars.i1[last_j]) - 1, tag="eod")
-                if eq:
-                    eq[-1] = self.account.equity(float(bars.close[last_j]))
-            strat.on_session_end(date)
-            daily[date] = self.account.balance - day_start_balance
+                    if (strat.flat_at_session_end and not self.broker.halted
+                            and len(seg_idx)):
+                        last_j = int(seg_idx[-1])
+                        self.broker.flatten(int(bars.i1[last_j]) - 1,
+                                            tag="eod")
+                        if eq:
+                            eq[-1] = self.account.equity(
+                                float(bars.close[last_j]))
+                    strat.on_session_end(date)
+                    daily[date] = self.account.balance - day_start_balance
+                    day_start_balance = self.account.balance
+                    dll_pending = False
+                    new_trading_day = True
 
             if self.broker.halted:
                 halted_on = date
@@ -166,6 +214,15 @@ class Backtest:
             if self.progress and (di % 20 == 19 or di == len(days) - 1):
                 print(f"  ... {date} ({di + 1}/{len(days)} days) "
                       f"balance={self.account.balance:,.2f}")
+
+        # end of data: an overnight session can leave a live position open
+        if (self.account.position != 0 and not self.broker.halted
+                and last_bar_ref is not None):
+            d, idx = last_bar_ref
+            self.broker.begin_day(d)
+            self.broker.flatten(idx, tag="end-of-data")
+            if eq:
+                eq[-1] = self.account.balance
 
         strat.on_finish()
         return Result(

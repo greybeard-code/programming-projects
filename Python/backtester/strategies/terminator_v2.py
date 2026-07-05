@@ -15,7 +15,12 @@ the full ETH session unless its time filter is on; here we default to RTH
 with flat-at-session-end (prop-firm context). User runs it on MNQ
 ninZaRenko 100/4 -> period "r100-4".
 """
+from datetime import datetime
+from zoneinfo import ZoneInfo
+
 from backtester import ATR, Strategy
+
+CT = ZoneInfo("America/Chicago")
 
 
 class TerminatorV2(Strategy):
@@ -39,6 +44,25 @@ class TerminatorV2(Strategy):
     enable_longs = True
     enable_shorts = True
     reverse_max_delay_bars = 5
+    # entry windows, CT "HH:MM" tuples, overnight wrap ok (NT8 UseTimeFilter
+    # + window 2). None = no filter. Blocks ENTRIES only; exits still manage.
+    entry_window = None
+    entry_window2 = None
+
+    def _in_entry_window(self, ts_ns):
+        if not self.entry_window and not self.entry_window2:
+            return True
+        t = datetime.fromtimestamp(ts_ns / 1e9, CT)
+        tod = t.hour * 60 + t.minute
+        for w in (self.entry_window, self.entry_window2):
+            if not w:
+                continue
+            sh, sm = map(int, w[0].split(":"))
+            eh, em = map(int, w[1].split(":"))
+            s, e = sh * 60 + sm, eh * 60 + em
+            if (s <= e and s <= tod <= e) or (s > e and (tod >= s or tod <= e)):
+                return True
+        return False
 
     def on_start(self):
         self.atr = ATR(self.atr_period)
@@ -78,6 +102,8 @@ class TerminatorV2(Strategy):
                 and bar.index - self.last_entry_bar < self.cooldown_bars):
             return
         if self.day_blocked:
+            return
+        if not self._in_entry_window(bar.ts):
             return
         kw = {}
         if self.sl_atr > 0:

@@ -29,6 +29,10 @@ plotly, tzdata, pytest — no pandas/polars, keep it that way unless needed).
   `strategy.on_bar`. Sessions are "HH:MM" US/Central (zoneinfo, needs tzdata
   on Windows); bars outside the session are skipped entirely, orders are
   cancelled and positions flattened at session end (`flat_at_session_end`).
+  Overnight sessions (start > end, e.g. ("17:00","15:55") = Globex day) are
+  supported: day files are split into segments (_segments), the trading day
+  flushes at the END time, and positions/orders carry across the UTC-
+  midnight file boundary; anything open at end-of-data is force-flattened.
 - **broker.py** — span resolution: repeatedly find the earliest-triggering
   working order in the remaining span (vectorized argmax on the trade-price
   slice), mark equity up to the fill, apply the fill, continue from that
