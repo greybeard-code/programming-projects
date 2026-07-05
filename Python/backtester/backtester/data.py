@@ -52,7 +52,7 @@ def _eastern_offset_ns(date: str) -> int:
 
 
 CACHE_VERSION = b"2"   # reduced: v2 = ET wall-clock stamps converted to UTC
-BARS_VERSION = b"3"    # bars: v3 = renko session reset w/ forming-bar partial
+BARS_VERSION = b"4"    # bars: v4 = renko first-session-bar body=T, open=anchor
 
 REDUCED_COLS = ("ts", "price", "volume", "ask", "bid",
                 "ask_size", "bid_size", "aggr")
@@ -408,10 +408,12 @@ def build_renko_bars(day: DayL1, brick: float, trend: float) -> BarDay:
             d = 0
             span_start = k
         if d == 0:                                   # no trend yet: T either way
+            # first bar of a session: body = T, open = the anchor itself
+            # (verified against a real ninZaRenko chart export)
             if p >= anchor + trend:
-                emit(anchor + trend, 1, k)
+                emit(anchor + trend, 1, k, body=trend)
             elif p <= anchor - trend:
-                emit(anchor - trend, -1, k)
+                emit(anchor - trend, -1, k, body=trend)
         while d > 0 and (p >= anchor + trend or p <= anchor - rev):
             if p >= anchor + trend:
                 emit(anchor + trend, 1, k)

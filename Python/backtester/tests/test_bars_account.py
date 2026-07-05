@@ -77,8 +77,9 @@ def test_renko_uptrend_closes_spaced_by_trend():
     day = make_day(prices)
     bars = build_renko_bars(day, brick=1.0, trend=0.5)
     assert list(bars.close) == [100.5, 101.0, 101.5, 102.0]
-    assert list(bars.open) == [99.5, 100.0, 100.5, 101.0]
-    # open offset: each open sits B-T = 0.5 below the previous close
+    # first bar of a session: body = T, open = anchor (ninZa rule);
+    # thereafter open sits B - T = 0.5 below the previous close
+    assert list(bars.open) == [100.0, 100.0, 100.5, 101.0]
     assert bars.open[1] == bars.close[0] - 0.5
     # spans partition the tick stream up to each closing tick
     assert bars.i0[0] == 0 and bars.i1[0] == 3     # 100.00..100.50 incl
@@ -119,7 +120,7 @@ def test_renko_first_bar_can_form_downward():
     day = make_day(prices)
     bars = build_renko_bars(day, brick=1.0, trend=0.5)
     assert list(bars.close) == [99.5]
-    assert bars.open[0] == pytest.approx(100.5)    # close + B (down bar)
+    assert bars.open[0] == pytest.approx(100.0)    # anchor; body = T
 
 
 def test_renko_session_reset_partial_bar():
@@ -135,7 +136,7 @@ def test_renko_session_reset_partial_bar():
     bars = build_renko_bars(day, brick=1.0, trend=0.5)
     assert list(bars.close) == [100.5, 101.0, 101.2, 200.5]
     assert bars.open[2] == pytest.approx(100.5)    # forming-bar open
-    assert bars.open[3] == pytest.approx(199.5)    # fresh anchor at 200.0
+    assert bars.open[3] == pytest.approx(200.0)    # fresh anchor; body = T
     # no 99-brick march across the gap:
     assert len(bars) == 4
 
