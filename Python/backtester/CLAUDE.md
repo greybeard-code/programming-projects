@@ -97,9 +97,14 @@ plotly, tzdata, pytest — no pandas/polars, keep it that way unless needed).
   NT8's own bars (zero invariant violations; 2B−T parametric); re-anchor
   only at real session opens (trade-gap >30 min reset in build_renko_bars —
   audited: all 131 repo gaps are true halts/weekends/holiday early closes).
-  Fresh-load charts match 93-96% identical close (smaller T = more
-  feed-noise flips, always ±T and self-healing); live-accumulated charts
-  add persistent reconnect re-anchor offsets (never a multiple of T),
+  Breakout is STRICT (`>`/`<`, per ninZaRenko.cs — a close exactly AT the
+  threshold does not emit; an earlier inclusive `>=` printed spurious
+  touch-and-reverse bricks). After that fix (bars cache v5) fresh-load close
+  parity is 100% (40/10, 36/2) / 96.7% (10/3, T=3 = residual feed noise, ±T
+  self-healing). Open+close are exact; the breakout-side H/L runs 1 tick past
+  NT8's clamped extreme (NT8 puts the overshoot tick in the next bar — not
+  matched, would shift renko fills/volume). Live-accumulated charts add
+  persistent reconnect re-anchor offsets (never a multiple of T),
   irreproducible by any backtest. compare_bars matching is one-to-one
   monotonic (gap sweeps emit same-ts bars; feeds skew ~6 s, so
   --tolerance-s 10 for small-T settings).

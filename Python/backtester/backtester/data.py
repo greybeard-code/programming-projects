@@ -52,7 +52,7 @@ def _eastern_offset_ns(date: str) -> int:
 
 
 CACHE_VERSION = b"3"   # reduced: v3 = trust replay_importer UTC tag, else ET->UTC
-BARS_VERSION = b"4"    # bars: v4 = renko first-session-bar body=T, open=anchor
+BARS_VERSION = b"5"    # bars: v5 = renko strict breakout (`>`/`<`) per ninZaRenko.cs
 
 # The replay_importer (v>=2) stamps output Parquet with these keys and stores
 # true UTC. Files carrying timestamps=UTC skip the _eastern_offset_ns
@@ -417,24 +417,30 @@ def build_renko_bars(day: DayL1, brick: float, trend: float) -> BarDay:
             anchor = p
             d = 0
             span_start = k
+        # Breakouts are STRICT (`>` / `<`), matching ninZaRenko.cs
+        # (`breakUp = close > upperLimit`): a close *exactly at* a threshold
+        # updates the forming bar but does not emit a brick — price must
+        # exceed the level. An inclusive `>=` here prints an extra brick on a
+        # touch-and-reverse, offsetting the grid by +/-T (self-healing, but a
+        # real divergence from NT8's own bars).
         if d == 0:                                   # no trend yet: T either way
             # first bar of a session: body = T, open = the anchor itself
             # (verified against a real ninZaRenko chart export)
-            if p >= anchor + trend:
+            if p > anchor + trend:
                 emit(anchor + trend, 1, k, body=trend)
-            elif p <= anchor - trend:
+            elif p < anchor - trend:
                 emit(anchor - trend, -1, k, body=trend)
-        while d > 0 and (p >= anchor + trend or p <= anchor - rev):
-            if p >= anchor + trend:
+        while d > 0 and (p > anchor + trend or p < anchor - rev):
+            if p > anchor + trend:
                 emit(anchor + trend, 1, k)
             else:
                 emit(anchor - rev, -1, k)
-        while d < 0 and (p <= anchor - trend or p >= anchor + rev):
-            if p <= anchor - trend:
+        while d < 0 and (p < anchor - trend or p > anchor + rev):
+            if p < anchor - trend:
                 emit(anchor - trend, -1, k)
             else:
                 emit(anchor + rev, 1, k)             # exits loop (d flipped)
-        while d > 0 and p >= anchor + trend:         # ups after an up-reversal
+        while d > 0 and p > anchor + trend:          # ups after an up-reversal
             emit(anchor + trend, 1, k)
 
     return BarDay(
