@@ -5,7 +5,7 @@ Converts gbNRDtoCSV market-replay exports
 (M:\NinjaTrader_DataRepo\RawData\CSV\<YEAR>\<Instrument>\<YYYYMMDD>.csv) into
 per-day Parquet datasets, split into L1 (quote/trade ticks) and L2
 (order-book depth) outputs. <YEAR> is the contract/roll year (top-level
-folder); output datasets stay <SYMBOL>-<YEAR>_L{1,2}.
+folder), mirrored in the output tree: <YEAR>\<SYMBOL>-<YEAR>_L{1,2}.
 
 See the docstring at the top of replay_csv_to_parquet.py for the full
 file-format and schema details.
@@ -81,13 +81,13 @@ first full run can take several hours.
 
 Output layout
 --------------
-       <output-root>\<SYMBOL>-<YEAR>_L1\<YYYYMMDD>.parquet
-       <output-root>\<SYMBOL>-<YEAR>_L2\<YYYYMMDD>.parquet
+       <output-root>\<YEAR>\<SYMBOL>-<YEAR>_L1\<YYYYMMDD>.parquet
+       <output-root>\<YEAR>\<SYMBOL>-<YEAR>_L2\<YYYYMMDD>.parquet
 
 Each dataset directory can be read as a single DataFrame:
 
        import pandas as pd
-       df = pd.read_parquet(r"M:\NinjaTrader_DataRepo\RawData\Parquet\MNQ-2025_L1")
+       df = pd.read_parquet(r"M:\NinjaTrader_DataRepo\RawData\Parquet\2025\MNQ-2025_L1")
 
 
 Running the tests

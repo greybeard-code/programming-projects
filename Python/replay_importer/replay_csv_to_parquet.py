@@ -16,16 +16,17 @@ Each CSV has no header, is ';'-delimited, and mixes two record layouts:
     L1;MarketDataType;Timestamp;TimestampOffset;Price;Volume
     L2;MarketDataType;Timestamp;TimestampOffset;Operation;Position;MarketMaker;Price;Volume
 
-Output layout (one Parquet "dataset" directory per symbol/year/level, with
-one part file per source day - read the whole thing with
-``pd.read_parquet("<SYMBOL>-<YEAR>_L1")``):
+Output layout mirrors the CSV tree's <YEAR> nesting: one Parquet "dataset"
+directory per symbol/year/level under its contract-year folder, one part file
+per source day (read a whole dataset with
+``pd.read_parquet("<YEAR>/<SYMBOL>-<YEAR>_L1")``):
 
-    <output-root>/<SYMBOL>-<YEAR>_L1/<YYYYMMDD>.parquet
-    <output-root>/<SYMBOL>-<YEAR>_L2/<YYYYMMDD>.parquet
+    <output-root>/<YEAR>/<SYMBOL>-<YEAR>_L1/<YYYYMMDD>.parquet
+    <output-root>/<YEAR>/<SYMBOL>-<YEAR>_L2/<YYYYMMDD>.parquet
 
 YEAR is the top-level folder; SYMBOL is the leading whitespace-separated token
 of the instrument folder inside it (e.g. ``2026/MNQ ##-##`` -> symbol="MNQ",
-year="2026"). Output dataset dirs stay ``<SYMBOL>-<YEAR>_L{1,2}`` regardless.
+year="2026").
 """
 
 from __future__ import annotations
@@ -304,7 +305,7 @@ def discover_work(
                     continue
                 targets = {}
                 for level in levels:
-                    out_path = output_root / f"{symbol}-{year}_{level}" / f"{date}.parquet"
+                    out_path = output_root / year / f"{symbol}-{year}_{level}" / f"{date}.parquet"
                     if out_path.exists() and not force and not _is_stale(out_path, csv_path):
                         continue
                     targets[level] = out_path

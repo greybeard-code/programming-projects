@@ -132,8 +132,8 @@ def test_discover_work_and_incremental(tmp_path):
     work_forced = rc.discover_work(csv_root, output_root, None, None, ["L1", "L2"], force=True)
     assert len(work_forced) == 2
 
-    assert (output_root / "MNQ-2025_L1" / "20250115.parquet").exists()
-    assert (output_root / "MNQ-2025_L2" / "20250116.parquet").exists()
+    assert (output_root / "2025" / "MNQ-2025_L1" / "20250115.parquet").exists()
+    assert (output_root / "2025" / "MNQ-2025_L2" / "20250116.parquet").exists()
 
 
 def test_discover_work_symbol_and_year_filters(tmp_path):
@@ -207,9 +207,9 @@ def test_main_end_to_end(tmp_path, capsys):
     rc_argv = ["--csv-root", str(csv_root), "--output-root", str(output_root),
                "--chunk-rows", "100", "--jobs", "1"]
     assert rc.main(rc_argv) == 0
-    assert (output_root / "MNQ-2025_L1" / "20250115.parquet").exists()
-    assert (output_root / "MNQ-2025_L1" / "20250116.parquet").exists()
-    assert (output_root / "MNQ-2025_L2" / "20250115.parquet").exists()
+    assert (output_root / "2025" / "MNQ-2025_L1" / "20250115.parquet").exists()
+    assert (output_root / "2025" / "MNQ-2025_L1" / "20250116.parquet").exists()
+    assert (output_root / "2025" / "MNQ-2025_L2" / "20250115.parquet").exists()
 
     # Second run is a no-op.
     assert rc.main(rc_argv) == 0
