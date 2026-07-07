@@ -32,6 +32,21 @@
 > revision note predicted; the edge lives only in the afternoon+evening
 > window.
 
+> **REVISED (3) 2026-07-06 — full-dataset rerun.** The Parquet repo was
+> re-converted (UTC-tagged; round-trip verified bit-identical to the old
+> data on all 15 overlap dates) and expanded to **510 MNQ days,
+> 2024-12-16 → 2026-07-03** (this report was originally written on 163 days).
+> Backtester data discovery was extended to find the importer's year-nested
+> layout (`Parquet\<YEAR>\<SYM>-<YEAR>_L1`). Recommended config (14:00–20:55
+> ET, ATR 20×4, 200t) over the full ~19 months (471 in-session days): net
+> **$12,858**, Sharpe **1.82**, PF 1.25, maxDD −$2,618, 950 trades,
+> consistency 16.9%, survived Apex (min headroom $860); MC P(profit) 100%,
+> P(breach $2.5K) 24.8%, eval-pass 78.6%. The edge **generalizes
+> out-of-sample** — Sharpe is below the Dec2025–Jun2026 slice (2.92) and
+> breach risk higher (24.8% vs 5%), but net/PF/consistency hold across
+> multiple regimes and a full year of data the strategy never saw when tuned.
+> Default 09:30–16:55 still loses (Sharpe −0.23, breached 2025-02-12).
+
 **Source:** `Terminator_v2.4.2\Strategies\Terminator_V2.cs` (NT8, v2.4.2, 2026-07-03)
 **Tested as:** MNQ, ninZaRenko 100/4 (`r100-4`), RTH 08:30–15:55 CT, 1 contract,
 flat at session end, $50K account, Apex $2,500 trailing threshold.

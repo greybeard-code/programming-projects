@@ -125,18 +125,29 @@ class Catalog:
         self.cache_root = Path(cache_root) if cache_root else DEFAULT_CACHE_ROOT
 
     def day_files(self, symbol: str) -> dict[str, Path]:
-        """Map YYYYMMDD -> raw parquet path, merged across contract years."""
+        """Map YYYYMMDD -> raw parquet path, merged across contract years.
+
+        Contract folders (``<SYM>-<YEAR>_L1``) are found both at the data root
+        AND one level under a 4-digit year folder (the importer's newer
+        ``<YEAR>\\<SYM>-<YEAR>_L1`` layout) — the two coexist in the repo. If a
+        date appears in both, the later (year-nested) scan wins; overlap dates
+        are bit-identical between exports, so it does not matter.
+        """
         symbol = symbol.upper()
-        out: dict[str, Path] = {}
         if not self.data_root.exists():
             raise FileNotFoundError(f"Data root not found: {self.data_root}")
-        for d in sorted(self.data_root.iterdir()):
-            m = _DIR_RE.match(d.name)
-            if not m or m.group("sym") != symbol:
-                continue
-            for f in d.glob("*.parquet"):
-                if re.fullmatch(r"\d{8}", f.stem):
-                    out[f.stem] = f
+        scan_roots = [self.data_root]
+        scan_roots += sorted(d for d in self.data_root.iterdir()
+                             if d.is_dir() and re.fullmatch(r"\d{4}", d.name))
+        out: dict[str, Path] = {}
+        for root in scan_roots:
+            for d in sorted(root.iterdir()):
+                m = _DIR_RE.match(d.name)
+                if not m or m.group("sym") != symbol:
+                    continue
+                for f in d.glob("*.parquet"):
+                    if re.fullmatch(r"\d{8}", f.stem):
+                        out[f.stem] = f
         if not out:
             raise FileNotFoundError(
                 f"No L1 data for {symbol} under {self.data_root}")
