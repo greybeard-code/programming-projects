@@ -127,10 +127,18 @@ def chunk_to_table(lines: list[str], level: str,
     level into a pyarrow Table matching that level's output schema.
 
     The raw stamps are the recording PC's ``source_tz`` wall clock; they are
-    localized and converted to true UTC. DST policy is strict: both ambiguous
-    (fall-back) and nonexistent (spring-forward) wall times land at 02:00 on a
-    Sunday when CME is closed, so a real tick should never hit them -- if one
-    does we raise rather than silently guess an hour.
+    localized and converted to true UTC. DST policy:
+    - Fall-back repeated hour (01:00-01:59 ET on the first Sunday in November):
+      genuinely ambiguous, and sparse overnight ticks DO land there (isolated,
+      one per instrument, not a live two-pass session). Resolve to the first
+      pass (EDT) with ``ambiguous=True`` -- deterministic and monotonicity-safe.
+      The 1-hour ambiguity is immaterial: 01:00-01:59 ET on a Sunday is outside
+      every trading session, and _monotonic_check backstops the (unobserved for
+      CME index futures) live-two-pass case. ``ambiguous="infer"`` is NOT used:
+      it needs the repeated pair present in one array and raises "no repeated
+      times" on the isolated ticks this data actually has.
+    - Spring-forward gap (02:00-02:59 ET): a NONEXISTENT wall time a real clock
+      never stamps, so ``nonexistent="raise"`` stays a data-integrity guard.
     """
     blob = "\n".join(lines)
     df = pd.read_csv(
@@ -145,7 +153,7 @@ def chunk_to_table(lines: list[str], level: str,
         + pd.to_timedelta(df["TimestampOffset"].astype("int64") * 100, unit="ns")
     )
     timestamp = (
-        naive.dt.tz_localize(source_tz, ambiguous="raise", nonexistent="raise")
+        naive.dt.tz_localize(source_tz, ambiguous=True, nonexistent="raise")
              .dt.tz_convert("UTC")
     )
     df = df.drop(columns=["Timestamp", "TimestampOffset"])

@@ -57,6 +57,16 @@ def test_chunk_to_table_nonexistent_wall_time_raises():
         rc.chunk_to_table(["2;0;20210314023000;0;100.0;1"], "L1")
 
 
+def test_chunk_to_table_ambiguous_fallback_resolves_to_edt():
+    # 2025-11-02 01:39:59 ET is inside the fall-back repeated hour (ambiguous).
+    # Sparse overnight ticks land here as isolated stamps; we resolve to the
+    # first pass (EDT, UTC-4) deterministically instead of raising, so
+    # 01:39:59 EDT -> 05:39:59 UTC. (ambiguous="infer" would raise "no repeated
+    # times" on a lone stamp -- see the DST policy note in chunk_to_table.)
+    df = rc.chunk_to_table(["2;0;20251102013959;0;100.0;1"], "L1").to_pandas()
+    assert df["Timestamp"].iloc[0] == pd.Timestamp("2025-11-02 05:39:59", tz="UTC")
+
+
 def test_chunk_to_table_source_tz_override():
     # UTC source -> no shift.
     df = rc.chunk_to_table(["2;0;20210115120000;0;100.0;1"], "L1", source_tz="UTC").to_pandas()
