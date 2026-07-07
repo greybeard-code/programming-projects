@@ -391,7 +391,7 @@ def main(argv: list[str] | None = None) -> int:
         levels = {k: v for k, v in row_counts.items() if k != "_skipped"}
         LOG.info("[%d/%d] %s -> %s%s", i, len(work), csv_path,
                  ", ".join(f"{lvl}={n:,} rows" for lvl, n in sorted(levels.items())),
-                 f", skipped={skipped:,} non-L1/L2 lines" if skipped else "")
+                 f", skipped={skipped:,} lines (unrecognized or malformed)" if skipped else "")
 
     if jobs == 1:
         for i, (csv_path, targets) in enumerate(work, 1):
