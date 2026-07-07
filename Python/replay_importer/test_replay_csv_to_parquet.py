@@ -168,6 +168,26 @@ def test_process_day_counts_skipped_lines(tmp_path):
     assert row_counts["_skipped"] == n_other
 
 
+def test_process_day_drops_truncated_lines(tmp_path):
+    # Partial-write corruption (recorder writes to the final path): a line cut
+    # short so a required integer field is missing must be dropped, not crash,
+    # and counted as skipped.
+    lines = SAMPLE_LINES + [
+        "L1;1;",                                   # truncated right after type
+        "L1;2;20210120050500;3160000;1857.",       # truncated, Volume missing
+    ]
+    csv_path = tmp_path / "20210120.csv"
+    csv_path.write_text("\n".join(lines) + "\n")
+    targets = {"L1": tmp_path / "out" / "SYM-2021_L1" / "20210120.parquet"}
+    row_counts = rc.process_day(csv_path, targets, chunk_rows=100, compression="snappy")
+
+    n_l1_good = sum(1 for l in SAMPLE_LINES if l.startswith("L1;"))
+    n_l2 = sum(1 for l in SAMPLE_LINES if l.startswith("L2;"))
+    assert row_counts["L1"] == n_l1_good                 # only well-formed L1 kept
+    assert row_counts["_skipped"] == n_l2 + 2            # 4 L2 (not requested) + 2 truncated
+    assert pd.read_parquet(targets["L1"]).shape[0] == n_l1_good
+
+
 def test_process_day_embeds_utc_provenance_metadata(tmp_path):
     csv_path = tmp_path / "20210120.csv"
     csv_path.write_text("\n".join(SAMPLE_LINES) + "\n")

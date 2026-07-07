@@ -120,6 +120,21 @@ RAW_COLUMNS = {"L1": L1_RAW_COLUMNS, "L2": L2_RAW_COLUMNS}
 RAW_DTYPES = {"L1": L1_RAW_DTYPES, "L2": L2_RAW_DTYPES}
 SCHEMAS = {"L1": L1_SCHEMA, "L2": L2_SCHEMA}
 
+# For reading: nullable integer dtypes so a truncated/short line yields <NA>
+# for the missing fields instead of crashing the C parser ("Integer column has
+# NA values"). Malformed rows are then dropped and counted as skipped. The
+# recorder writes to the final path, so an interrupted dump leaves exactly such
+# a partial last line.
+_NULLABLE = {"int8": "Int8", "int16": "Int16", "int32": "Int32", "int64": "Int64"}
+READ_DTYPES = {
+    lvl: {c: _NULLABLE.get(t, t) for c, t in RAW_DTYPES[lvl].items()}
+    for lvl in RAW_DTYPES
+}
+# A row is kept only if every field except MarketMaker (a legitimately-empty
+# L2 string) parsed; a truncated line leaves one of these <NA>.
+REQUIRED_COLS = {lvl: [c for c in cols if c != "MarketMaker"]
+                 for lvl, cols in RAW_COLUMNS.items()}
+
 
 def chunk_to_table(lines: list[str], level: str,
                    source_tz: str = DEFAULT_SOURCE_TZ) -> pa.Table:
@@ -146,8 +161,14 @@ def chunk_to_table(lines: list[str], level: str,
         sep=";",
         header=None,
         names=RAW_COLUMNS[level],
-        dtype=RAW_DTYPES[level],
+        dtype=READ_DTYPES[level],
     )
+    # Drop truncated/malformed rows (a required field is <NA>). The caller
+    # counts them as skipped via len(chunk) - table.num_rows.
+    req = REQUIRED_COLS[level]
+    valid = df[req].notna().all(axis=1)
+    if not valid.all():
+        df = df[valid].reset_index(drop=True)
     naive = (
         pd.to_datetime(df["Timestamp"], format="%Y%m%d%H%M%S")
         + pd.to_timedelta(df["TimestampOffset"].astype("int64") * 100, unit="ns")
@@ -198,7 +219,8 @@ def process_day(csv_path: Path, targets: dict[str, Path], chunk_rows: int,
     so the day is retried on the next run.
 
     Returns per-level row counts plus a ``"_skipped"`` entry counting lines
-    that matched no requested level, so callers can reconcile
+    that matched no requested level PLUS malformed/truncated L1/L2 rows dropped
+    during parsing, so callers can still reconcile
     total = sum(levels) + skipped against the raw line count.
     """
     # pid-unique temp so concurrent runs / retries never collide on one name.
@@ -212,10 +234,12 @@ def process_day(csv_path: Path, targets: dict[str, Path], chunk_rows: int,
     skipped = 0
 
     def flush(level: str) -> None:
+        nonlocal skipped
         buf = buffers[level]
         if not buf:
             return
         table = chunk_to_table(buf, level, source_tz)
+        skipped += len(buf) - table.num_rows   # malformed rows dropped in parse
         last_ts[level] = _monotonic_check(table, level, last_ts[level])
         writers[level].write_table(table)
         row_counts[level] += table.num_rows
