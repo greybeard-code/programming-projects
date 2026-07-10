@@ -1,124 +1,86 @@
 # Terminator_V2 — ETH Session & Time-Filter Analysis
 
-> **REVISED 2026-07-05.** The raw repo's timestamps were US/Eastern wall
-> clock, not UTC; all session labels in the original analysis below are
-> shifted by 4–5 h. Corrected results (cache v2/v3, true UTC):
->
-> - **Full ETH is still a heavy loser**: −$8,811, breached 2026-02-13 —
->   conclusion unchanged: never trade this strategy round-the-clock.
-> - **True hourly attribution** (all times US/Eastern): the death zone is
->   the **US morning, 08:00–13:59 ET** (−$13.4K; worst 10:00–13:59).
->   Profitable zone: **14:00–16:59 ET afternoon** plus the **18:00 ET
->   evening reopen**. The morning-RTH session (09:30–16:55 ET) loses
->   −$7,666 outright.
-> - **Corrected recommended session: 14:00–20:55 ET** (self-contained
->   afternoon+evening session; the evening leg is essential — afternoon
->   alone is negative): net **$7,142**, Sharpe **2.87**, maxDD −$1,282,
->   MC P(breach) **6.2%**, P(pass $3K eval) **92.1%**, with 200-tick stop,
->   ATR 20×4, 1 contract. Sensitivity re-verified: all 9 grid combos
->   profitable, period plateau clean.
->   *(Re-validated 2026-07-05 on bit-identical NT8-parity bars — strict
->   breakout + breakout-tick-to-next-bar, cache v6: net $7,677, Sharpe 2.92,
->   maxDD −$1,286, breach 5.0%, eval-pass 93.2%. Edge holds, marginally
->   stronger. See [TerminatorV2.md](TerminatorV2.md) revision (2).)*
-> - **Walk-forward on the corrected window (9-combo grid, 5 windows,
->   IS/OOS 5:1): 5/5 OOS windows profitable, stitched OOS net $5,938 over
->   77 unseen days, OOS Sharpe 4.63, WFE 1.96.** Re-optimized params stay
->   inside the plateau every window (20×4 chosen 3 of 5 times).
-> - **Corrected NT8 settings: Use Time Filter = true, Start Time 140000,
->   End Time 205500, Flatten At Window End = true.**
->
-> The original text below is kept for the analysis method only; its time
-> labels are stale (and in CT). Trust only the revision block above —
-> all current reports use US/Eastern exclusively.
+**Purpose:** show where the strategy's edge actually lives across the full
+Globex session, justifying the entry-window choice in the main report's
+recommended config ([TerminatorV2.md](TerminatorV2.md)).
 
-**Config tested:** the main report's recommended engine (ATR 20 × 4.0 SAR,
-200-tick hard stop, 1 contract, MNQ `r100-4`), now on the **full Globex
-session** (17:00 → 15:55 CT, positions carry overnight), 2025-12-15 →
-2026-06-17. Ports: `strategies/terminator_eth.py`; entry windows via
-`entry_window` on `strategies/terminator_v2.py`. Evaluated 2026-07-04.
-Companion reports: [TerminatorV2.md](TerminatorV2.md),
-[TerminatorV2_PKfunded.md](TerminatorV2_PKfunded.md).
+**Data:** 2024-12-16 → 2026-07-03 (510 days), tick-level L1 replay, MNQ
+`r100-4` bars. Attribution run below uses ATR 20×4 / 200-tick stop (the
+config used when this table was generated); the main report's recommended
+config uses ATR 28×3.25 / 100-tick stop — this table is about *timing*,
+not an exact P&L match to that config. Port: `strategies/terminator_eth.py`.
+All times US/Eastern. Evaluated 2026-07-09.
 
-## 1. ETH verdict: do not trade this strategy overnight
+## 1. Full ETH, no entry filter: still not tradeable as-is
 
-| | RTH (08:30–15:55 CT) | ETH (17:00–15:55 CT) |
-|---|---|---|
-| Net P&L | **+$7,620** | **−$4,449** |
-| Trades / win rate | 346 / 43% | 1,343 / 31% |
-| Sharpe | 2.96 | −0.88 |
-| Max drawdown | −$2,142 | −$9,097 |
-| Apex $2.5K | survived | **breached 2026-01-09** |
-| MC P(breach) | 6.3% | **96.2%** |
+Running the full Globex session (`session=("18:00","16:55")`) with **no**
+entry-time filter: net **+$2,405** but **breached Apex 2025-03-10** — an
+unfiltered 24-hour SAR is net positive on this data but its drawdown path
+fails. Some entry-time filtering is required; §2 shows where to put it.
 
-The overnight/European tape generates 4× the signals with no follow-through:
-r100-4 closes print on 1-point moves, so thin-session chop crosses the trail
-line constantly while real overnight trends are rare. The PK template's
-default (no time filter, full ETH) is trading straight through this.
+## 2. Net P&L by ET entry hour (full 510-day dataset)
 
-## 2. Where the money actually lives (P&L by CT entry hour, ETH run)
+`17:00` has no bars (CME daily maintenance halt).
 
-| Zone (CT) | Trades | Net | Verdict |
-|---|---|---|---|
-| 17:00–01:59 (Globex evening/Asia) | 221 | +$913 | breakeven churn — commissions eat it |
-| **02:00–08:59 (Europe + US pre-open)** | **825** | **−$14,798** | the death zone; every hour negative |
-| **09:00–15:59 (US day)** | **297** | **+$9,437** | every single hour positive |
+| ET hr | net $ | trades | avg/tr | | ET hr | net $ | trades | avg/tr |
+|---|---|---|---|---|---|---|---|---|
+| 00 | −91 | 49 | −1.9 | | 12 | −638 | 248 | −2.6 |
+| 01 | +801 | 43 | +18.6 | | 13 | −1,181 | 242 | −4.9 |
+| 02 | +1,568 | 61 | +25.7 | | **14** | +279 | 214 | +1.3 |
+| 03 | −2,032 | 80 | −25.4 | | **15** | **+3,880** | 254 | +15.3 |
+| 04 | −442 | 85 | −5.2 | | 16 | +159 | 123 | +1.3 |
+| 05 | −1,204 | 60 | −20.1 | | **18** | **+4,278** | 142 | +30.1 |
+| 06 | +781 | 76 | +10.3 | | 19 | +1,144 | 63 | +18.2 |
+| 07 | −1,379 | 118 | −11.7 | | 20 | +1,037 | 110 | +9.4 |
+| 08 | **−2,804** | 166 | −16.9 | | 21 | +2,278 | 68 | +33.5 |
+| 09 | −1,930 | 494 | −3.9 | | 22 | +660 | 53 | +12.5 |
+| 10 | −363 | 519 | −0.7 | | 23 | −514 | 34 | −15.1 |
+| 11 | −1,881 | 307 | −6.1 | | | | | |
 
-Details that matter:
-- Worst avg/trade hour: **08:00–08:59 CT (−$38/trade, 19% WR)** — the hour
-  *containing* the 08:30 open. Aldridge's "avoid the first 30 minutes"
-  (wide spreads, informed flow) shows up perfectly in the data.
-- Heaviest bleeding: 04:00–05:59 CT (European cash) — 349 trades, −$6,222.
-- Midday (11:00–13:59 CT) is *positive* here (+$3,950) — TSM's midday block
-  applies to fast scalpers, not to this slow SAR. **No midday filter needed.**
-- 19:00–20:59 CT shows +$1,673 on 30 trades — too small a sample to chase.
+**The edge is the US afternoon + the 18:00 ET Globex reopen** (14:00–22:00
+ET positive, strongest 15:00 and 18:00 ET). **The US morning 07:00–13:00 ET
+bleeds every hour** — 08:00 ET is the single worst hour (−$2,804).
 
-## 3. Recommended time filter — tested, plateau-checked, split-half-checked
+Reproduce the table: run `strategies/terminator_eth.py` and bucket
+`entry_time_utc` in its `_trades.csv` by ET entry hour.
 
-Entry window **09:30–15:30 CT** on the RTH session (entries only; exits and
-the 15:55 flatten unchanged):
+## 3. From attribution to the recommended entry windows
 
-| Entries from | Net | Sharpe | MaxDD | Trades | Apex headroom |
-|---|---|---|---|---|---|
-| 08:30 (baseline) | $7,620 | 2.96 | −$2,142 | 346 | $1,276 |
-| 09:00 | $7,673 | 3.32 | −$1,202 | 273 | $1,578 |
-| **09:30** | **$7,998** | **3.52** | −$1,675 | 243 | $1,628 |
-| 10:00 | $7,830 | 3.41 | — | — | — |
-| 10:30 | $6,454 | 2.87 | — | — | — |
+Per-entry-hour P&L is not the same as windowed P&L (a position opened late
+can still be managed well past the entry cutoff), so the entry windows in
+the main report were swept and plateau-checked directly rather than read
+off this table alone. Result: entries in **15:30–16:55 ET** (afternoon) and
+**18:00–22:55 ET** (evening reopen) — both squarely inside this table's
+profitable zone, with the US morning excluded entirely. Full config,
+robustness, and walk-forward results: [TerminatorV2.md](TerminatorV2.md) §3–6.
 
-Monte Carlo for 09:30–15:30: **P(Apex breach) = 0.7%** (from 6.3%),
-**P(pass $3K eval before breach) = 97.9%**, P(profitable 6 months) = 100%
-of 2,000 sims, 5th-percentile outcome +$3,491.
+## 4. Why a single 18:00→16:55 ET session, not a short daytime box
 
-Anti-data-snooping checks (the window was derived from this same data):
-- **Plateau:** 09:00/09:30/10:00 starts all land Sharpe 3.3–3.5 — the edge
-  is the zone, not a magic minute. Degradation at 10:30 is gradual.
-- **Split halves:** windowed beats baseline in the *weak* half
-  (Dec–Mar: Sharpe 1.22 → 2.61) and matches it in the strong half
-  (Mar–Jun: 4.15 → 4.22). The filter helps exactly when the edge is thin.
-- Independently predicted by the literature (Aldridge open-spread window,
-  TSM U-shaped volume) before this data was examined.
+CME's own trading day already runs 18:00 ET (prior calendar day) → 17:00 ET
+next day, with the maintenance halt marking the boundary. A single engine
+session spanning **18:00 ET (prior day) → 16:55 ET (same trading day)**,
+flattening once at the end, never holds a position through *any* halt —
+verified directly on the recommended config (0 of 990 trades touch the
+17:00–18:00 ET halt) — while still covering both the 15:00 ET and 18:00 ET
+peaks above. Restricting to a short daytime-only box instead needlessly
+gives up the 18:00 ET reopen, the single best hour in the dataset, for no
+compliance benefit.
 
-## 4. NT8 settings translation
+## 5. NT8 settings translation
 
-Terminator_V2 reads times in the **PC/chart timezone**. The user's machine
-and NT8 run **Eastern** — these are the values to enter:
+Needs a **session template spanning 18:00 ET → 16:55 ET next day**
+(flatten positions/cancel orders at session end), plus two entry time
+filters (gate new entries only):
+- Time Filter 1: Start **153000**, End **165500**
+- Time Filter 2: Start **180000**, End **225500**
 
-- Use Time Filter: **true**
-- Start Time: **103000** (10:30 ET = 09:30 CT)
-- End Time: **163000** (16:30 ET = 15:30 CT)
-- Flatten At Window End: **true**
-- Use Time Filter 2: false (the evening pocket is not statistically worth it)
-- Keep: SL Mode=Ticks, SL Value=200; ATR 20 / Mult in the 3–4 band; 1
-  contract under an Apex trailing threshold.
-
-(Backtester sessions/analyses in these reports are stated in US/Central,
-CME exchange time: 09:30–15:30 CT ≡ 10:30–16:30 ET.)
+SL Mode = Ticks, Value = 100. ATR 28 / Mult 3.25 (see
+[TerminatorV2.md](TerminatorV2.md) §8 for the full recommended config).
 
 ## Reproduce
 
 ```powershell
 .venv\Scripts\python cli.py strategies\terminator_eth.py --mc-target 3000
-# hourly attribution: see strategy/TerminatorV2_ETH.md commit, or bucket
-# reports\TerminatorETH_MNQ_r100-4_trades.csv by CT entry hour
+# hourly attribution: bucket reports\TerminatorETH_MNQ_r100-4_trades.csv
+# by ET entry hour (entry_time_utc column, converted to America/New_York)
 ```

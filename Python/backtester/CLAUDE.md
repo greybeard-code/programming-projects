@@ -110,6 +110,32 @@ plotly, tzdata, pytest — no pandas/polars, keep it that way unless needed).
   irreproducible by any backtest. compare_bars matching is one-to-one
   monotonic (gap sweeps emit same-ts bars; feeds skew ~6 s, so
   --tolerance-s 10 for small-T settings).
+- **CME trading day**: runs **18:00 ET (prior calendar day) → 17:00 ET**,
+  with the 17:00–18:00 ET daily maintenance halt marking the boundary
+  between one trading day and the next (verified across all 3 DST
+  transitions in the repo — halt always sits at stamped 17:00 ET, reopen
+  always 18:00:00 ET). A session spanning `("18:00","16:55")` (the engine's
+  overnight-session support) is therefore ONE compliant trading day: it
+  flattens once, before the *next* halt, and never holds a position through
+  any halt — this is a materially different (and much better) framing than
+  restricting trading to a short daytime box. See TerminatorV2.md REVISED
+  (6) for why this matters.
+- **Apex rule set** (the modeled prop-firm rules, per user 2026-07-09):
+  trailing drawdown **$2,000** (⚠ `PropFirmConfig.threshold` in account.py
+  currently defaults to **$2,500** — every backtest/report run before
+  2026-07-09 used the wrong threshold; breach probabilities and headroom
+  numbers in strategy/ reports need re-checking against $2,000 before being
+  trusted); flat **5 minutes before close** (close = the 17:00 ET halt, so
+  flat by 16:55 ET — matches the buffer already used in terminator_rec.py);
+  max position size **6 full-size minis or 60 micros**; **minimum trade
+  duration 30 seconds** (a trade closed faster than that doesn't count /
+  may be a rule violation). The 30s-minimum is **NOT currently modeled by
+  the engine at all** — no code checks or enforces it. Spot-checked
+  2026-07-09 on the TerminatorRec champion (990 trades): **11.1% (110
+  trades) closed in under 30 seconds**, median duration 577s. This is a
+  real gap — those backtested trades might not be valid on a live Apex
+  account, and the champion's true P&L on a real account could differ from
+  the backtested number until this is enforced and re-validated.
 - **US/Eastern ONLY in everything user-facing** (sessions, entry windows,
   reports, hour attributions) — explicit user preference 2026-07-05; their
   PC/NT8/community all run ET. Do NOT express times in CT, even though CME

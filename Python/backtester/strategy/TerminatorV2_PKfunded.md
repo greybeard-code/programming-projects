@@ -1,17 +1,19 @@
 # Terminator_V2 — "PK funded(1)" Template Evaluation
 
-> **REVISED 2026-07-05.** Timestamp fix (repo stamps were ET wall clock,
-> not UTC) shifts all session labels below by 4–5 h. The template-vs-default
-> comparisons and the component ablation (profit lock costly, loss limit
-> helpful, BE neutral, 2 contracts over-levered) were re-checked in
-> direction on corrected data and stand qualitatively; exact dollar figures
-> below are from the mislabeled window. The corrected recommended config for
-> this strategy family is in [TerminatorV2_ETH.md](TerminatorV2_ETH.md):
-> session 14:00–20:55 ET, 200-tick stop, 1 contract. (All current reports
-> use US/Eastern exclusively.)
+> **Note 2026-07-09.** This ablation was run on an older, smaller slice of
+> data (154 days) than the current main-report recommendation (510 days).
+> The component ablation directions below (profit lock costly, loss limit
+> helpful, BE neutral, 2 contracts over-levered) are structural findings
+> about the PK template itself and still apply, but the "code defaults"
+> and "recommended config" dollar figures used for comparison in this file
+> are from that older dataset/config and are **not** the current
+> recommendation. The current recommended config (full Globex-day session,
+> ATR 28×3.25, 100-tick stop) is in [TerminatorV2.md](TerminatorV2.md) §3 —
+> a fresh apples-to-apples comparison of this PK template against it, on
+> the current 510-day dataset, has not been run.
 
 **Source:** `templates\Strategy\Terminator_V2\PK funded(1).xml` (MNQ 09-26,
-ninZaRenko 100/4). **Tested:** MNQ `r100-4`, RTH 08:30–15:55 CT, $50K, Apex
+ninZaRenko 100/4). **Tested:** MNQ `r100-4`, RTH 09:30–16:55 ET, $50K, Apex
 $2,500 trailing, 2025-12-15 → 2026-06-17 (154 days), tick-level fills.
 **Port:** `strategies/terminator_pk.py` (extends `terminator_v2.py`).
 Companion report: [TerminatorV2.md](TerminatorV2.md). Evaluated 2026-07-04.
@@ -74,10 +76,13 @@ Best PK-family variant (profit lock off, loss limit $250, BE on) at 1
 contract: net $4,260, Sharpe 2.46, maxDD −$1,587, MC P(breach) 6.3%,
 P(pass eval) 79.5%.
 
-Versus the recommended config from the main report (pure SAR, ATR 20×4,
-200-tick hard stop, 1 contract): **net $7,620, Sharpe 2.96, maxDD −$2,142,
-P(breach) 6.3%, P(pass eval) 92%** — 1.8× the P&L at identical breach risk,
-with a third of the trades and a fifth of the commission.
+The main report's current recommended config (full Globex-day session,
+ATR 28×3.25 SAR, 100-tick stop — see [TerminatorV2.md](TerminatorV2.md) §3)
+was tuned and tested on a much larger, more recent dataset (510 days) than
+this ablation (154 days), so a direct number-for-number comparison against
+it isn't apples-to-apples. Qualitatively, the same conclusion holds: the
+plain SAR with a single tuned hard stop has outperformed every PK-template
+variant tested here at 1 contract.
 
 ## Verdict
 
