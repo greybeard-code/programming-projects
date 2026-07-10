@@ -173,18 +173,20 @@ Both prior open items are now resolved; one live-account question remains
 
 ## 8. NT8 settings
 
-**Requires Terminator_V2 v2.4.2+** (adds the *Time Filter Entries Only* mode —
-see §9; earlier versions cannot reproduce this config, they lose 28% of P&L
-or breach the floor).
+**Requires Terminator_V2 v2.4.2+** (adds the second time window and the
+*Time Filter Entries Only* mode — see §9; earlier versions cannot reproduce
+this config, they lose 28% of P&L or breach the floor).
 
-- **Session template** spanning **18:00 ET → 16:55 ET next day** (flatten
-  positions / cancel orders at session end — the actual trading-day
-  boundary, not a time filter).
+- **Session template** spanning **18:00 ET → 16:55 ET next day**, set to
+  flatten positions / cancel orders at session end. **This is what makes the
+  strategy flat by 16:55** — it is the trading-day boundary, NOT a time
+  filter, and it is independent of the entry windows below.
 - **Use Time Filter = true**, **Time Filter Entries Only = true**,
   **Flatten At Window End = false**.
-- One window: **Start 153000, End 225500** (v2.4.2 has a single window; with
-  the 18:00→16:55 session the 16:55–18:00 halt has no bars, so a single
-  15:30–22:55 window reproduces both the afternoon and evening entry blocks).
+- **Two entry windows, each bounded by the 16:55 close** (a single window may
+  never span the close):
+  - Time Filter 1: **Start 153000, End 165500** (afternoon)
+  - Use Time Filter 2 = true, Time Filter 2: **Start 180000, End 225500** (evening reopen)
 - SL Mode = Ticks, Value = **100**. ATR **28** / Mult **3.25**. 1 contract.
 
 ## 9. Port-fidelity: why entries-only mode is required
@@ -205,8 +207,19 @@ FlattenAtEnd=true throws away the overnight/morning carry (−$6,263, −28%);
 FlattenAtEnd=false keeps the P&L but holds through reversal signals outside
 the window, deepening drawdowns until it breaches. v2.4.2's *Time Filter
 Entries Only* gates entries while letting the reversal exit always fire and
-disabling the window-end flatten — reproducing the entries-only column. The
-C# change is unit-inspected but **not yet NT8-compiled**; build it and
+disabling the window-end flatten — reproducing the entries-only column.
+
+**Flat at 16:55 vs the entry windows — two separate things.** Being flat by
+16:55 every trading day is enforced by the **session template** (flatten at
+session end), not by the entry windows. The entry windows only gate *entries*
+and each must stay on one side of the close: **15:30–16:55** and
+**18:00–22:55** (never a single window spanning 16:55). The entries-only
+carry still ends at the session flatten (16:55) — an evening entry can ride
+to the next afternoon but is closed at 16:55, so the position never crosses
+the close either. v2.4.2 adds the second window so the two blocks can be set
+without one window crossing 16:55.
+
+The C# change is unit-inspected but **not yet NT8-compiled**; build it and
 validate with `tools/compare_nt8.py` against a Python trade export before
 trading it live.
 

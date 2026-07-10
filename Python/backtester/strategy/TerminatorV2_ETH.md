@@ -69,13 +69,14 @@ compliance benefit.
 ## 5. NT8 settings translation
 
 Needs a **session template spanning 18:00 ET → 16:55 ET next day** (flatten
-positions/cancel orders at session end) plus **Terminator_V2 v2.4.2**'s
-*Time Filter Entries Only* mode: Use Time Filter = true, Entries Only = true,
-Flatten At Window End = false, one window **153000–225500** (the 16:55–18:00
-halt has no bars, so a single window covers both entry blocks). The
-entries-only mode is required — the older window modes lose 28% of P&L or
-breach the Apex floor; see [TerminatorV2.md](TerminatorV2.md) §9 for the
-measured comparison.
+positions/cancel orders at session end — this is what enforces flat-by-16:55,
+independent of the entry windows) plus **Terminator_V2 v2.4.2**'s dual windows
++ *Time Filter Entries Only* mode: Use Time Filter = true, Entries Only = true,
+Flatten At Window End = false, and **two windows, each bounded by the 16:55
+close** — Filter 1 **153000–165500**, Use Time Filter 2 = true, Filter 2
+**180000–225500** (a single window may never span the close). The entries-only
+mode is required — the older window modes lose 28% of P&L or breach the Apex
+floor; see [TerminatorV2.md](TerminatorV2.md) §9 for the measured comparison.
 
 SL Mode = Ticks, Value = 100. ATR 28 / Mult 3.25 (see
 [TerminatorV2.md](TerminatorV2.md) §8 for the full recommended config).

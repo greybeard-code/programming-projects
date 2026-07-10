@@ -3,17 +3,22 @@
 //  ATR trailing-stop stop-and-reverse strategy with full risk/exit/filter
 //  controls, an on-chart dashboard, and engine plots.
 //
-//  v2.4.2: TIME FILTER ENTRIES-ONLY mode (Time Filter Entries Only). When on,
-//   the time window gates only NEW entries — an opposite SAR signal still
-//   flattens the live position outside the window (the reversal EXIT always
-//   manages), and the window-end auto-flatten is disabled so a position may
-//   carry across the out-of-window gap until a signal, a hard stop, or the
-//   session close. This reproduces the Python backtester's recommended config
-//   (entries-only windows), which the prior window logic could NOT: the old
-//   FlattenAtEnd=true force-flattened at window end (measured -28% P&L on the
-//   MNQ r100-4 champion) and FlattenAtEnd=false blocked the reversal exit
-//   outside the window (measured: breached the $2,000 Apex trailing floor).
-//   Default OFF — existing templates behave exactly as before.
+//  v2.4.2: (1) SECOND TIME WINDOW (Use Time Filter 2 + Start/End Time 2).
+//   Entries are allowed when in EITHER window, so the two entry blocks (each
+//   staying on one side of the daily close) are specified separately — a
+//   single window must NEVER span the 16:55 close. Being flat at 16:55 is the
+//   SESSION TEMPLATE's job (flatten at session end), independent of these
+//   entry windows.
+//   (2) TIME FILTER ENTRIES-ONLY mode. When on, the windows gate only NEW
+//   entries — an opposite SAR signal still flattens the live position outside
+//   the window (the reversal EXIT always manages), and the window-end
+//   auto-flatten is disabled so a position may carry across the out-of-window
+//   gap until a signal, a hard stop, or the session-end flatten. Reproduces
+//   the Python backtester's recommended config, which the prior window logic
+//   could NOT: FlattenAtEnd=true force-flattened at window end (measured -28%
+//   P&L on the MNQ r100-4 champion) and FlattenAtEnd=false blocked the
+//   reversal exit outside the window (measured: breached the $2,000 floor).
+//   Both default OFF — existing templates behave exactly as before.
 //
 //  v2.4.1: fix historical Day PnL bleeding into realtime when a position is CARRIED across the
 //   historical->realtime boundary. The carried-position unrealized baseline was captured inside
@@ -373,6 +378,19 @@ namespace NinjaTrader.NinjaScript.Strategies
 		public bool TimeFilterEntriesOnly { get; set; }
 
 		[NinjaScriptProperty]
+		[Display(Name = "Use Time Filter 2", GroupName = "10. Session", Order = 5)]
+		[RefreshProperties(RefreshProperties.All)]
+		public bool UseWindow2 { get; set; }
+
+		[NinjaScriptProperty]
+		[Display(Name = "Start Time 2 (HHMMSS)", GroupName = "10. Session", Order = 6)]
+		public int StartTime2 { get; set; }
+
+		[NinjaScriptProperty]
+		[Display(Name = "End Time 2 (HHMMSS)", GroupName = "10. Session", Order = 7)]
+		public int EndTime2 { get; set; }
+
+		[NinjaScriptProperty]
 		[Display(Name = "Cooldown Bars", GroupName = "11. Misc", Order = 0)]
 		public int CooldownBars { get; set; }
 
@@ -514,6 +532,9 @@ namespace NinjaTrader.NinjaScript.Strategies
 				EndTime = 160000;
 				FlattenAtEnd = true;
 				TimeFilterEntriesOnly = false;
+				UseWindow2 = false;
+				StartTime2 = 180000;
+				EndTime2 = 225500;
 
 				CooldownBars = 0;
 				ShowMarkers = true;
@@ -615,8 +636,15 @@ namespace NinjaTrader.NinjaScript.Strategies
 		private bool InWindow()
 		{
 			int t = ToTime(Time[0]);
-			if (StartTime <= EndTime) return t >= StartTime && t <= EndTime;
-			return t >= StartTime || t <= EndTime;
+			if (InOneWindow(t, StartTime, EndTime)) return true;
+			if (UseWindow2 && InOneWindow(t, StartTime2, EndTime2)) return true;
+			return false;
+		}
+
+		private static bool InOneWindow(int t, int start, int end)
+		{
+			if (start <= end) return t >= start && t <= end;
+			return t >= start || t <= end;
 		}
 
 		private double TickValue()
@@ -1913,7 +1941,9 @@ namespace NinjaTrader.NinjaScript.Strategies
 				+ "   Acct  " + (Account != null ? Account.Name : "?");
 
 			string windowText = UseTimeFilter
-				? string.Format("Window  {0:000000}-{1:000000}", StartTime, EndTime)
+				? (UseWindow2
+					? string.Format("Window  {0:000000}-{1:000000} / {2:000000}-{3:000000}", StartTime, EndTime, StartTime2, EndTime2)
+					: string.Format("Window  {0:000000}-{1:000000}", StartTime, EndTime))
 				: "Window  always on";
 			string windowStateText;
 			Brush windowStateBrush;
