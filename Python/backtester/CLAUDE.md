@@ -200,10 +200,16 @@ docx in research/):
    bricks/day — dense but correct.
 3. Validate ninZaRenko bar parity against an NT8 chart export.
 4. OIB/delta example strategy using bars.cum_delta.
-Also open: reconcile the NT8 time-filter semantics vs the Python
-"entries-only" windows (see the strategy review 2026-07-09) — the C#
-`FlattenAtEnd`/window-blocks-reversal behavior can't reproduce the champion
-as-is; needs an entries-only filter mode or a measured Python variant.
+NT8 time-filter reconciliation — DONE 2026-07-09. Measured all three window
+semantics over 510 days ($2k floor): entries-only $22,409 (survives);
+FlattenAtEnd=true $16,146 (−28%, the carry is real profit); FlattenAtEnd=
+false $21,907 but BREACHES (−$26 headroom, holds through out-of-window
+reversal signals). So the champion needs entries-only semantics. Modeled in
+Python via terminator_v2.py flags `flatten_at_window_end` /
+`window_blocks_reversal` (both default off). Terminator_V2.cs bumped to
+v2.4.2 with a **Time Filter Entries Only** mode (gates entries, reversal exit
+always fires, window-end flatten disabled) — inspected but NOT yet
+NT8-compiled; build + compare_nt8 before live. See TerminatorV2.md §9.
 
 Validation reference run (EmaCross, MNQ 1m, defaults, cache v2/v3 —
 post-timestamp-fix 2026-07-05): net ~-$2,125, 2102 trades, WR 33.4%,

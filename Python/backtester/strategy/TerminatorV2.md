@@ -173,14 +173,42 @@ Both prior open items are now resolved; one live-account question remains
 
 ## 8. NT8 settings
 
-Needs a **session template spanning 18:00 ET → 16:55 ET next day**
-(flatten positions/cancel orders at session end — this is the actual
-trading-day boundary, not a time filter), plus two entry time filters that
-gate new entries only:
-- Time Filter 1: Start **153000**, End **165500**
-- Time Filter 2: Start **180000**, End **225500**
+**Requires Terminator_V2 v2.4.2+** (adds the *Time Filter Entries Only* mode —
+see §9; earlier versions cannot reproduce this config, they lose 28% of P&L
+or breach the floor).
 
-SL Mode = Ticks, Value = **100**. ATR **28** / Mult **3.25**. 1 contract.
+- **Session template** spanning **18:00 ET → 16:55 ET next day** (flatten
+  positions / cancel orders at session end — the actual trading-day
+  boundary, not a time filter).
+- **Use Time Filter = true**, **Time Filter Entries Only = true**,
+  **Flatten At Window End = false**.
+- One window: **Start 153000, End 225500** (v2.4.2 has a single window; with
+  the 18:00→16:55 session the 16:55–18:00 halt has no bars, so a single
+  15:30–22:55 window reproduces both the afternoon and evening entry blocks).
+- SL Mode = Ticks, Value = **100**. ATR **28** / Mult **3.25**. 1 contract.
+
+## 9. Port-fidelity: why entries-only mode is required
+
+The recommended config depends on **entries-only** window semantics: the
+window blocks new entries, but an opposite SAR signal still exits the live
+position, and a position may carry across the out-of-window gap until a
+signal / hard stop / session flatten. The two window modes the C# had before
+v2.4.2 were measured against this over the full 510 days ($2,000 floor):
+
+| Window semantics | Net | Sharpe | max DD | $2,000 floor |
+|---|---|---|---|---|
+| **entries-only** (v2.4.2, recommended) | $22,409 | 3.90 | −$1,488 | survives ($678) |
+| FlattenAtEnd=true (force-flat at window end) | $16,146 | 3.23 | −$1,530 | survives ($808) |
+| FlattenAtEnd=false (reversal exit blocked out of window) | $21,907 | 3.00 | −$2,003 | **BREACHES (−$26)** |
+
+FlattenAtEnd=true throws away the overnight/morning carry (−$6,263, −28%);
+FlattenAtEnd=false keeps the P&L but holds through reversal signals outside
+the window, deepening drawdowns until it breaches. v2.4.2's *Time Filter
+Entries Only* gates entries while letting the reversal exit always fire and
+disabling the window-end flatten — reproducing the entries-only column. The
+C# change is unit-inspected but **not yet NT8-compiled**; build it and
+validate with `tools/compare_nt8.py` against a Python trade export before
+trading it live.
 
 ## Reproduce
 

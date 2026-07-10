@@ -48,6 +48,15 @@ class TerminatorV2(Strategy):
     # + window 2). None = no filter. Blocks ENTRIES only; exits still manage.
     entry_window = None
     entry_window2 = None
+    # NT8 time-filter semantics (default = the Python "entries-only" model:
+    # both False). Set one to reproduce the C# Terminator_V2 behavior:
+    #   flatten_at_window_end -> NT8 FlattenAtEnd=true: force-flatten the
+    #     position the moment it is outside every entry window (no carry).
+    #   window_blocks_reversal -> NT8 FlattenAtEnd=false: an opposite cross
+    #     outside the window is ignored (no reversal exit) — the position is
+    #     held until back in-window, a hard stop, or session flatten.
+    flatten_at_window_end = False
+    window_blocks_reversal = False
 
     def _in_entry_window(self, ts_ns):
         if not self.entry_window and not self.entry_window2:
@@ -197,12 +206,25 @@ class TerminatorV2(Strategy):
                     self._go(self.pending_reverse, bar)
                     self.pending_reverse = 0
         else:
+            # only pay the ET conversion when a window-semantics flag is on
+            in_window = True
+            if self.flatten_at_window_end or self.window_blocks_reversal:
+                in_window = self._in_entry_window(bar.ts)
+            # NT8 FlattenAtEnd=true: force-flatten outside every entry window.
+            if self.flatten_at_window_end and not in_window:
+                self.cancel_all()
+                self.close_position(tag="window-end", force=True)
+                self.pending_reverse = 0
+                self.want_reverse = 0
+                return
             # an opposite cross records the intent to reverse; the actual
             # clean-split flatten waits until the Apex min-hold has elapsed
             # (min_hold_s=0 -> hold_ok always True -> fires on the cross bar,
-            # identical to the original immediate reversal).
+            # identical to the original immediate reversal). NT8 FlattenAtEnd=
+            # false blocks the reversal entirely when out of window.
             if direction != 0 and ((direction > 0) != (pos > 0)):
-                self.want_reverse = direction
+                if not (self.window_blocks_reversal and not in_window):
+                    self.want_reverse = direction
             if (self.want_reverse and self.pending_reverse == 0
                     and self.hold_ok()):
                 # bracket stop stays live until this fires (a hard stop can
