@@ -99,6 +99,9 @@ class Strategy:
     session: tuple[str, str] | None = ("09:30", "16:00")
     flat_at_session_end: bool = True
     qty: int = 1
+    # Net-position cap (contracts). None = use the symbol's Apex cap
+    # (6 minis / 60 micros); 0 disables the guard entirely.
+    max_position: int | None = None
 
     def __init__(self):
         self._broker = None      # wired by the engine

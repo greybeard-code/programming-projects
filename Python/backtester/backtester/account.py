@@ -122,7 +122,7 @@ class TradeRecorder:
 
 @dataclass
 class PropFirmConfig:
-    threshold: float = 2500.0      # trailing drawdown amount
+    threshold: float = 2000.0      # trailing drawdown amount (Apex real floor)
     lock_buffer: float = 100.0     # floor freezes at start_balance + lock_buffer
     lock: bool = True              # False = trail forever (some eval styles)
     halt_on_breach: bool = False   # True = stop the backtest at breach

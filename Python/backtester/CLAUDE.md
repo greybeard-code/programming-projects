@@ -118,24 +118,26 @@ plotly, tzdata, pytest — no pandas/polars, keep it that way unless needed).
   overnight-session support) is therefore ONE compliant trading day: it
   flattens once, before the *next* halt, and never holds a position through
   any halt — this is a materially different (and much better) framing than
-  restricting trading to a short daytime box. See TerminatorV2.md REVISED
-  (6) for why this matters.
+  restricting trading to a short daytime box. See TerminatorV2.md §3 and
+  TerminatorV2_ETH.md §4 for why this matters.
 - **Apex rule set** (the modeled prop-firm rules, per user 2026-07-09):
-  trailing drawdown **$2,000** (⚠ `PropFirmConfig.threshold` in account.py
-  currently defaults to **$2,500** — every backtest/report run before
-  2026-07-09 used the wrong threshold; breach probabilities and headroom
-  numbers in strategy/ reports need re-checking against $2,000 before being
-  trusted); flat **5 minutes before close** (close = the 17:00 ET halt, so
-  flat by 16:55 ET — matches the buffer already used in terminator_rec.py);
-  max position size **6 full-size minis or 60 micros**; **minimum trade
-  duration 30 seconds** (a trade closed faster than that doesn't count /
-  may be a rule violation). The 30s-minimum is **NOT currently modeled by
-  the engine at all** — no code checks or enforces it. Spot-checked
-  2026-07-09 on the TerminatorRec champion (990 trades): **11.1% (110
-  trades) closed in under 30 seconds**, median duration 577s. This is a
-  real gap — those backtested trades might not be valid on a live Apex
-  account, and the champion's true P&L on a real account could differ from
-  the backtested number until this is enforced and re-validated.
+  trailing drawdown **$2,000** — `PropFirmConfig.threshold` in account.py now
+  defaults to $2,000 (corrected from $2,500 on 2026-07-09; the CLI
+  `--prop-threshold`, sweep, and walk-forward defaults were moved too). The
+  Terminator champion has been re-validated against the real floor: survives
+  the actual sequence with $678 headroom, MC P(breach) 1.4% (was $1,178 /
+  0.4% at the wrong $2,500). Flat **5 minutes before close** (close = the
+  17:00 ET halt, so flat by 16:55 ET — matches terminator_rec.py). Max
+  position size **6 full-size minis or 60 micros** — now enforced by the
+  broker (`ContractSpec.apex_max_position`, clamps net position; auto-applied
+  per symbol, override via `Strategy.max_position`, 0 disables). **Minimum
+  trade duration 30 seconds** (a trade closed faster doesn't count / may be a
+  rule violation): every run now REPORTS sub-30s exposure (metrics.py
+  `sub30s_*`, shown in console + tearsheet). On the champion: 11.1% (110/990)
+  close sub-30s, median 577s, and those trades are collectively **−$4,211**
+  (a net drag, not hidden profit). Enforcement (deferring strategy-initiated
+  exits to the 30s mark) is the remaining piece; hard stop-outs under 30s are
+  a firm-rule matter, not a fill-model one.
 - **US/Eastern ONLY in everything user-facing** (sessions, entry windows,
   reports, hour attributions) — explicit user preference 2026-07-05; their
   PC/NT8/community all run ET. Do NOT express times in CT, even though CME

@@ -21,9 +21,9 @@ Config: full Globex trading day session ("18:00","16:55"), entries in
 ATR(28) x 3.25 SAR on ninZaRenko 100/4, **100-tick hard stop**, 1 contract.
 
 Full-run (2024-12-16..2026-07-03): net $22,409, Sharpe 3.90 (Sortino 11.20,
-Calmar 9.49), PF 1.69, maxDD -$1,488, 990 trades, WR 33.1%, survived Apex
-$2.5K (min headroom $1,178). MC(2000): P(profit) 100%, P(breach) 0.4%,
-P(pass $3K eval) 99.6%. Split-half: H1 +$8,465 Sh2.89, H2 +$13,848 Sh4.84
+Calmar 9.49), PF 1.69, maxDD -$1,488, 990 trades, WR 33.1%, survived the real
+Apex $2K floor (min headroom $678). MC(2000): P(profit) 100%, P(breach) 1.4%,
+P(pass $3K eval) 98.7%. Split-half: H1 +$8,465 Sh2.89, H2 +$13,848 Sh4.84
 (stronger recently, as with every other cut of this data). Compliance
 verified directly: 0/990 trades have any entry/exit timestamp inside the
 17:00-18:00 ET halt.

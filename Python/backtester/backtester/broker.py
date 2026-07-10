@@ -30,13 +30,18 @@ class SimBroker:
     def __init__(self, spec: ContractSpec, account: Account,
                  recorder: TradeRecorder, prop: PropFirmTracker | None = None,
                  slippage_ticks: float = 0.0,
-                 on_fill: Callable[[Fill], None] | None = None):
+                 on_fill: Callable[[Fill], None] | None = None,
+                 max_position: int | None = None):
         self.spec = spec
         self.account = account
         self.recorder = recorder
         self.prop = prop
         self.slippage = slippage_ticks * spec.tick_size
         self.on_fill = on_fill
+        # Apex net-position cap (contracts). None/0 = off. A fill is clamped so
+        # |net position| can never exceed it (models the 6-mini/60-micro rule).
+        self.max_position = max_position or None
+        self._cap_warned = False
         self.working: list[Order] = []
         self.fills: list[Fill] = []
         self._brackets: dict[int, BracketSpec] = {}   # entry order id -> spec
@@ -155,9 +160,24 @@ class SimBroker:
         if o in self.working:
             self.working.remove(o)
 
-        # split fills that reverse through flat so trade recording stays clean
+        # Apex max-position guard: clamp this fill so the resulting net
+        # position never exceeds the cap. Correct for both adds and reversals
+        # (a reversal only clamps if the far side would overshoot the cap).
         pos_before = self.account.position
         after = pos_before + o.side * o.qty
+        if (self.max_position is not None and not o.is_exit
+                and abs(after) > self.max_position):
+            o.qty = max(0, o.qty - (abs(after) - self.max_position))
+            if not self._cap_warned:
+                print(f"  [broker] max-position cap {self.max_position} hit — "
+                      f"clamping entry to keep |position| <= cap")
+                self._cap_warned = True
+            if o.qty == 0:
+                o.state = OrderState.CANCELLED
+                return
+            after = pos_before + o.side * o.qty
+
+        # split fills that reverse through flat so trade recording stays clean
         parts = [(o.qty, pos_before)]
         if pos_before != 0 and after != 0 and (after > 0) != (pos_before > 0):
             parts = [(abs(pos_before), pos_before), (abs(after), 0)]

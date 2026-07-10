@@ -18,6 +18,7 @@ class ContractSpec:
     point_value: float
     commission_rt: float  # round-turn, per contract, dollars
     description: str = ""
+    is_micro: bool = False
 
     @property
     def tick_value(self) -> float:
@@ -27,6 +28,11 @@ class ContractSpec:
     def commission_side(self) -> float:
         return self.commission_rt / 2.0
 
+    @property
+    def apex_max_position(self) -> int:
+        """Apex net-position cap: 6 full-size minis or 60 micros."""
+        return 60 if self.is_micro else 6
+
 
 SPECS: dict[str, ContractSpec] = {
     "ES":  ContractSpec("ES",  0.25, 50.0,   3.10, "E-mini S&P 500"),
@@ -35,12 +41,12 @@ SPECS: dict[str, ContractSpec] = {
     "RTY": ContractSpec("RTY", 0.10, 50.0,   3.10, "E-mini Russell 2000"),
     "CL":  ContractSpec("CL",  0.01, 1000.0, 3.34, "Crude Oil"),
     "GC":  ContractSpec("GC",  0.10, 100.0,  3.54, "Gold"),
-    "MES": ContractSpec("MES", 0.25,  5.0,   1.04, "Micro E-mini S&P 500"),
-    "MNQ": ContractSpec("MNQ", 0.25,  2.0,   1.04, "Micro E-mini Nasdaq-100"),
-    "MYM": ContractSpec("MYM", 1.00,  0.5,   1.04, "Micro E-mini Dow"),
-    "M2K": ContractSpec("M2K", 0.10,  5.0,   1.04, "Micro E-mini Russell 2000"),
-    "MCL": ContractSpec("MCL", 0.01, 100.0,  1.34, "Micro Crude Oil"),
-    "MGC": ContractSpec("MGC", 0.10, 10.0,   1.34, "Micro Gold"),
+    "MES": ContractSpec("MES", 0.25,  5.0,   1.04, "Micro E-mini S&P 500", is_micro=True),
+    "MNQ": ContractSpec("MNQ", 0.25,  2.0,   1.04, "Micro E-mini Nasdaq-100", is_micro=True),
+    "MYM": ContractSpec("MYM", 1.00,  0.5,   1.04, "Micro E-mini Dow", is_micro=True),
+    "M2K": ContractSpec("M2K", 0.10,  5.0,   1.04, "Micro E-mini Russell 2000", is_micro=True),
+    "MCL": ContractSpec("MCL", 0.01, 100.0,  1.34, "Micro Crude Oil", is_micro=True),
+    "MGC": ContractSpec("MGC", 0.10, 10.0,   1.34, "Micro Gold", is_micro=True),
 }
 
 

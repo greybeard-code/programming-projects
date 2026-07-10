@@ -26,7 +26,7 @@ def main() -> None:
     ap.add_argument("--start")
     ap.add_argument("--end")
     ap.add_argument("--balance", type=float, default=50_000.0)
-    ap.add_argument("--prop-threshold", type=float, default=2500.0)
+    ap.add_argument("--prop-threshold", type=float, default=2000.0)
     ap.add_argument("--slippage", type=float, default=0.0)
     ap.add_argument("--daily-loss-limit", type=float, default=None)
     ap.add_argument("--metric", default="sharpe",

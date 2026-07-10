@@ -75,15 +75,20 @@ stop, 1 contract.
 | Max drawdown | −$1,488 (−2.55%) |
 | Best / worst day | +$1,797 / −$479 |
 | Consistency (largest day % of profit) | 8.0% |
-| Prop-firm trailing threshold (this run: $2,500\*) | survived, min headroom **$1,178** |
+| Prop-firm trailing threshold ($2,000 real Apex floor) | survived, min headroom **$678** |
 
-\* This project's default `PropFirmConfig.threshold` is $2,500; the user's
-actual Apex trailing drawdown is $2,000 (see CLAUDE.md). Headroom/breach
-numbers against the real $2,000 floor have not yet been re-run — treat the
-figures above as optimistic until that's done.
+Tested against the **real $2,000** Apex trailing drawdown (the project default
+was corrected from $2,500 to $2,000 on 2026-07-09). The actual 400-day
+sequence survives with $678 of headroom to spare; Monte Carlo breach
+probability is in §4.
 
 **Compliance verified directly:** 0 of 990 trades have any entry or exit
 timestamp inside the 17:00–18:00 ET daily maintenance halt.
+
+**Minimum-hold exposure:** 110 of 990 trades (11.1%) close in under 30
+seconds, which Apex does not count as valid trades. Those sub-30s trades are
+collectively **−$4,211** — a net drag, not a hidden edge — so enforcing the
+rule does not remove profit (see §7 item 2 and CLAUDE.md).
 
 ## 4. Monte Carlo (2,000 resamples, iid resampling)
 
@@ -92,8 +97,8 @@ timestamp inside the 17:00–18:00 ET daily maintenance halt.
 | Final P&L 5% / median / 95% | $15,143 / $22,559 / $30,036 |
 | P(profitable) | 100% |
 | Max drawdown median / 5%-worst | −$1,513 / −$2,314 |
-| **P(breach $2,500 trailing)** | **0.4%** |
-| **P(pass $3,000 eval before breach)** | **99.6%** |
+| **P(breach $2,000 trailing)** | **1.4%** |
+| **P(pass $3,000 eval before breach)** | **98.7%** |
 
 ## 5. Robustness
 
@@ -137,12 +142,17 @@ profitable and improving, 5/5 walk-forward OOS windows profitable with
 OOS beating IS, and directly verified compliance (never holds through the
 daily halt).
 
-Two open items before treating this as final for live/funded trading:
-1. **Re-run against the real $2,000 Apex trailing threshold** (currently
-   tested at $2,500) — breach probability will be higher than reported.
-2. **Model the 30-second minimum trade duration rule** — not currently
-   enforced by the engine; a spot-check found 11.1% of this config's trades
-   close in under 30 seconds. See CLAUDE.md for both open items.
+One open item before treating this as final for live/funded trading:
+1. ~~Re-run against the real $2,000 Apex trailing threshold~~ **DONE
+   (2026-07-09):** survives the actual sequence with $678 headroom; MC
+   P(breach $2,000) = 1.4%. Still comfortably safe.
+2. **30-second minimum trade duration** — Apex does not count trades held
+   under 30s. 11.1% of this config's trades (110/990) close sub-30s, but
+   they are collectively **−$4,211**, so they subtract from the headline
+   rather than inflate it. Enforcement (deferring strategy-initiated exits
+   to the 30s mark) is being modeled to confirm the compliant P&L; hard
+   stop-outs under 30s are a firm-rule matter, not a fill-model one. See
+   CLAUDE.md.
 
 ## 8. NT8 settings
 

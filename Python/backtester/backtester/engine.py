@@ -96,6 +96,7 @@ class Backtest:
                  prop: PropFirmConfig | None = PropFirmConfig(),
                  slippage_ticks: float = 0.0,
                  daily_loss_limit: float | None = None,
+                 max_position: int | None = None,
                  data_root=None, cache_root=None,
                  progress: bool = True):
         self.strategy = strategy
@@ -108,9 +109,16 @@ class Backtest:
         self.account = Account(self.spec, start_balance)
         self.recorder = TradeRecorder(self.spec)
         self.prop = PropFirmTracker(prop, start_balance) if prop else None
+        # Net-position cap resolution: explicit arg > strategy attr > symbol's
+        # Apex default (6 minis / 60 micros). A resolved 0 disables the guard.
+        mp = max_position if max_position is not None \
+            else getattr(strategy, "max_position", None)
+        if mp is None:
+            mp = self.spec.apex_max_position
         self.broker = SimBroker(self.spec, self.account, self.recorder,
                                 self.prop, slippage_ticks,
-                                on_fill=self._notify_fill)
+                                on_fill=self._notify_fill,
+                                max_position=mp)
         self.daily_loss_limit = daily_loss_limit
         self.progress = progress
         self._in_bar_cb = False

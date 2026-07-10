@@ -25,9 +25,9 @@ def main() -> None:
     ap.add_argument("--balance", type=float, default=50_000.0,
                     help="starting balance (default 50000)")
     ap.add_argument("--prop-threshold", "--apex-threshold", dest="prop_threshold",
-                    type=float, default=2500.0,
+                    type=float, default=2000.0,
                     help="prop-firm trailing threshold in $, Apex-style "
-                         "(default 2500; 0 disables)")
+                         "(default 2000; 0 disables)")
     ap.add_argument("--prop-halt", "--apex-halt", dest="prop_halt",
                     action="store_true",
                     help="stop the backtest when the threshold is breached")
