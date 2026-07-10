@@ -67,9 +67,18 @@ plotly, tzdata, pytest — no pandas/polars, keep it that way unless needed).
   (expects a DAILY ATR). Engine `daily_loss_limit` flattens + stands down
   for the day (exit tag "dll", days listed in Result.dll_days).
 - **strategy.py** — Strategy base (on_start/on_bar/on_fill/on_session_end/
-  on_finish; buy_bracket, move_stop, move_stop_to_breakeven, ...);
-  indicators.py has incremental NT8-style indicators (EMA, SMA, ATR, RSI,
-  EfficiencyRatio, Highest, Lowest). Bar types via `period` / BarSpec:
+  on_finish; buy_bracket, move_stop, move_stop_to_breakeven, ...).
+  Multi-timeframe: declare `secondary_periods` (e.g. ["15m"]); the engine
+  appends each secondary bar the instant it closes (ts_end <= primary ts, no
+  look-ahead), fires optional `on_secondary_bar(bar, bars, period)`, and
+  exposes completed bars via `self.secondary(period)` — see
+  strategies/mtf_example.py. Optional `on_tick(ts, price, index)`: defining
+  it switches that run to a per-event resolver (broker.resolve_span_ticks,
+  slower Python-per-event) where orders submitted in on_tick fill on LATER
+  events (no look-ahead); strategies that define neither stay on the exact
+  fast path (champion re-run bit-identical). indicators.py has incremental
+  NT8-style indicators (EMA, SMA, ATR, RSI, EfficiencyRatio, Highest,
+  Lowest). Bar types via `period` / BarSpec:
   time ("1m"), tick ("500t"), renko ("r8-4" = brick 8 ticks / trend 4;
   "r8" defaults trend to brick/2). Renko follows the published ninZaRenko
   manual (Scribd doc 392092944): body always = brick B; with-trend close at
@@ -181,8 +190,10 @@ walk-forward runner, Carver sizing, 53 unit tests.
 
 Next (order per research/22_Books_Summary.md, distilled from the 22-book
 docx in research/):
-1. Port a real user strategy (GodZillaKilla-style) — expect gaps:
-   multi-timeframe bars (secondary series), possibly on_tick.
+1. Port a real user strategy (GodZillaKilla-style). Prereqs now DONE:
+   multi-timeframe bars (`secondary_periods`/`on_secondary_bar`/`secondary()`)
+   and `on_tick` both landed 2026-07-09 (strategies/mtf_example.py is the
+   template; tests/test_multiseries.py). Remaining: the actual port.
 2. ~~Per-day trade chart~~ DONE: tools/plot_day.py (candles + entry/exit
    markers + entry-window shading, ET; warm-up lead-in so signals match a
    full run). Note: small-T renko (r100-4) prints thousands of overlapping

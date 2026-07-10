@@ -116,6 +116,38 @@ class SimBroker:
                 raise RuntimeError("resolve_span: runaway fill loop")
         self._mark(i, i1)
 
+    def resolve_span_ticks(self, i0: int, i1: int, on_tick) -> None:
+        """resolve_span variant that calls on_tick(ts, price, idx) after each
+        trade event, so orders a strategy submits inside on_tick fill on LATER
+        events (no look-ahead). Fills/marks are identical to resolve_span when
+        on_tick submits nothing — only finer-grained. Per-event Python, so
+        slower; the engine uses it only when a Strategy defines on_tick.
+        """
+        if self.halted or self._day is None or i0 >= i1:
+            return
+        d = self._day
+        i = i0
+        for e in range(i0, i1):
+            # fill every working order that triggers at or before event e
+            while self.working:
+                best_k, best_o = None, None
+                for o in self.working:
+                    k = self._trigger_index(o, i, e + 1)
+                    if k is not None and (best_k is None or k < best_k):
+                        best_k, best_o = k, o
+                if best_o is None:
+                    break
+                self._mark(i, best_k)
+                if self.halted:
+                    return
+                self._fill(best_o, best_k)
+                i = best_k
+            self._mark(i, e + 1)
+            if self.halted:
+                return
+            i = e + 1
+            on_tick(int(d.ts[e]), float(d.price[e]), e)
+
     def _trigger_index(self, o: Order, i: int, i1: int) -> int | None:
         d = self._day
         p = d.price

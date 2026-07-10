@@ -106,11 +106,17 @@ class Strategy:
     # exits (close_position / reversals) wait until the position is this old;
     # hard bracket stops and session/DLL flattens are NOT gated. 0 = off.
     min_hold_s: float = 0.0
+    # Extra bar series for multi-timeframe logic, e.g. ["5m", "15m"]. Each is
+    # a period string (same grammar as `period`). During on_bar, read the
+    # completed secondary bars via self.secondary(period) — only bars that
+    # closed at/before the current primary bar are present (no look-ahead).
+    secondary_periods: list[str] = []
 
     def __init__(self):
         self._broker = None      # wired by the engine
         self._account = None
         self._now_ts = 0         # current bar close ts, set by the engine
+        self._secondary = {}     # period -> BarHistory, wired by the engine
 
     # ---- lifecycle hooks ----
     def on_start(self) -> None: ...
@@ -118,6 +124,17 @@ class Strategy:
     def on_fill(self, fill: Fill) -> None: ...
     def on_session_end(self, date: str) -> None: ...
     def on_finish(self) -> None: ...
+    # Optional: fires when a secondary-series bar completes, just before the
+    # primary on_bar that first sees it. Override to update HTF indicators.
+    def on_secondary_bar(self, bar: Bar, bars: BarHistory, period: str) -> None: ...
+    # Optional: fires per reduced trade event within a bar span. Defining it
+    # switches the engine to a slower per-event resolver; orders submitted
+    # here fill on later events (no look-ahead). Read-only price at `ts`.
+    def on_tick(self, ts: int, price: float, index: int) -> None: ...
+
+    def secondary(self, period: str) -> BarHistory:
+        """Completed bars of a declared secondary series (as of now)."""
+        return self._secondary[period]
 
     # ---- state ----
     @property
