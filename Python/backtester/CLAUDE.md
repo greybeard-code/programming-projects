@@ -151,8 +151,12 @@ plotly, tzdata, pytest — no pandas/polars, keep it that way unless needed).
 - The repo root is the parent monorepo (`C:\Dev\programming-projects`); only
   `git add` paths inside this folder. There are unrelated worktree deletions
   in the repo — leave them alone.
-- Commissions in contracts.py are approximate all-in round-turns; user may
-  recalibrate to their prop firm's rates.
+- Commissions in contracts.py are the Apex **Tradovate** all-in round-turns
+  (per apextraderfunding.com help center, 2026-07-09): minis $3.10, equity
+  micros $1.04, CL $3.34/MCL $1.34, GC $3.54/MGC $1.34. Apex's Rithmic rates
+  differ (minis $3.98, micros $1.02) — override per run if applicable. MNQ
+  was already $1.04 before this calibration, so pre-existing MNQ results
+  (incl. the Terminator champion) are unaffected.
 
 ## State / roadmap (updated 2026-07-04)
 
