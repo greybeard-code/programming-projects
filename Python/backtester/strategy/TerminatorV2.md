@@ -112,6 +112,17 @@ rule does not remove profit (see §7 item 2 and CLAUDE.md).
 - **`atr_period`:** 20–60 all cluster Sharpe 3.65–3.81 — a free parameter.
 - **Entry-window boundaries:** afternoon start 14:30–16:00 ET and
   evening-leg end 21:55–23:55 ET are both broad plateaus, not knife-edges.
+- **Slippage:** the headline pays the spread but no extra slippage. Adding
+  1 / 2 ticks of slippage on every market and stop fill (~1,980 fills):
+
+  | extra slippage | net | Sharpe | max DD | $2,000 headroom |
+  |---|---|---|---|---|
+  | 0 ticks (base) | $22,409 | 3.90 | −$1,488 | $678 |
+  | 1 tick | $20,722 | 3.66 | −$1,512 | $618 |
+  | 2 ticks | $20,077 | 3.56 | −$1,537 | $591 |
+
+  Still profitable, high-Sharpe, and non-breaching at 2 ticks — the edge is
+  not spread-fragile.
 
 ## 6. Walk-forward (5 windows, IS/OOS 5:1)
 
