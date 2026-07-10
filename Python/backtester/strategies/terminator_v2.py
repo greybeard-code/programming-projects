@@ -70,6 +70,7 @@ class TerminatorV2(Strategy):
         self.prev_close = None
         self.pending_reverse = 0      # +1/-1 queued after a clean-split flatten
         self.pending_reverse_bar = -1
+        self.want_reverse = 0         # +1/-1 desired reverse, waiting on min-hold
         self.last_entry_bar = -1
         self.be_done = False
         self.day_start_balance = None
@@ -77,6 +78,7 @@ class TerminatorV2(Strategy):
 
     def on_session_end(self, date):
         self.pending_reverse = 0
+        self.want_reverse = 0
         self.day_start_balance = None
         self.day_blocked = False
 
@@ -136,9 +138,11 @@ class TerminatorV2(Strategy):
                     or (self.daily_profit > 0 and pnl >= self.daily_profit)):
                 self.day_blocked = True
                 self.pending_reverse = 0
+                self.want_reverse = 0
                 self.cancel_all()
                 if self.position != 0:
-                    self.close_position(tag="daily-lock")
+                    # risk stand-down: bypass the min-hold gate
+                    self.close_position(tag="daily-lock", force=True)
 
         # breakeven (NT8 BeMode=ATR: trigger recomputed each bar off live ATR)
         if (self.be_atr > 0 and self.position != 0 and not self.be_done
@@ -182,6 +186,7 @@ class TerminatorV2(Strategy):
 
         pos = self.position
         if pos == 0:
+            self.want_reverse = 0             # flat: nothing left to reverse
             if direction != 0:
                 self._go(direction, bar)       # fresh cross overrides queue
                 self.pending_reverse = 0
@@ -191,11 +196,20 @@ class TerminatorV2(Strategy):
                 else:
                     self._go(self.pending_reverse, bar)
                     self.pending_reverse = 0
-        elif direction != 0 and ((direction > 0) != (pos > 0)):
-            # clean-split reversal: flatten now, re-enter once flat
-            if self.pending_reverse != direction:
+        else:
+            # an opposite cross records the intent to reverse; the actual
+            # clean-split flatten waits until the Apex min-hold has elapsed
+            # (min_hold_s=0 -> hold_ok always True -> fires on the cross bar,
+            # identical to the original immediate reversal).
+            if direction != 0 and ((direction > 0) != (pos > 0)):
+                self.want_reverse = direction
+            if (self.want_reverse and self.pending_reverse == 0
+                    and self.hold_ok()):
+                # bracket stop stays live until this fires (a hard stop can
+                # still exit a too-young position — a firm-rule matter).
                 self.cancel_all()
                 self.close_position(tag="reverse")
-                self.pending_reverse = direction
+                self.pending_reverse = self.want_reverse
                 self.pending_reverse_bar = bar.index
+                self.want_reverse = 0
 

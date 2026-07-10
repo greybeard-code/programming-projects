@@ -182,6 +182,7 @@ class Backtest:
                                   sell_volume=int(bars.sell_volume[j]))
                         hist.append(bar)
                         bar_index += 1
+                        strat._now_ts = bar.ts
                         strat.on_bar(bar, hist)
                         eq_ts.append(bar.ts)
                         eq.append(self.account.equity(bar.close))

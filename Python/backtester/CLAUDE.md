@@ -135,9 +135,18 @@ plotly, tzdata, pytest — no pandas/polars, keep it that way unless needed).
   rule violation): every run now REPORTS sub-30s exposure (metrics.py
   `sub30s_*`, shown in console + tearsheet). On the champion: 11.1% (110/990)
   close sub-30s, median 577s, and those trades are collectively **−$4,211**
-  (a net drag, not hidden profit). Enforcement (deferring strategy-initiated
-  exits to the 30s mark) is the remaining piece; hard stop-outs under 30s are
-  a firm-rule matter, not a fill-model one.
+  (a net drag, not hidden profit). Enforcement is also modeled:
+  `Strategy.min_hold_s` (engine sets `strat._now_ts` each bar; `hold_ok()` /
+  `position_age_s()` gate `close_position`, `force=True` bypasses for risk
+  stand-downs). Terminator reversals defer to the 30s mark via a
+  `want_reverse` intent. Enforcing it on the champion costs only **−$78
+  (0.3%)** (net $22,331) — the edge does not rely on sub-30s exits.
+  terminator_rec keeps `min_hold_s=0` for NT8-port parity (the C# has no 30s
+  logic); the $78 is the compliance cost, not a config change. ~101 sub-30s
+  trades REMAIN even when enforced because they are hard **stop-outs** (the
+  100-tick bracket stop is not deferred — a firm-rule matter, not a
+  fill-model one; worth confirming with Apex whether a sub-30s stop fill is
+  voided the way a manual quick close is).
 - **US/Eastern ONLY in everything user-facing** (sessions, entry windows,
   reports, hour attributions) — explicit user preference 2026-07-05; their
   PC/NT8/community all run ET. Do NOT express times in CT, even though CME

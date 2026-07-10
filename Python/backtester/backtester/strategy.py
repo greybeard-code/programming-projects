@@ -102,10 +102,15 @@ class Strategy:
     # Net-position cap (contracts). None = use the symbol's Apex cap
     # (6 minis / 60 micros); 0 disables the guard entirely.
     max_position: int | None = None
+    # Apex minimum trade duration (seconds). > 0 makes strategy-initiated
+    # exits (close_position / reversals) wait until the position is this old;
+    # hard bracket stops and session/DLL flattens are NOT gated. 0 = off.
+    min_hold_s: float = 0.0
 
     def __init__(self):
         self._broker = None      # wired by the engine
         self._account = None
+        self._now_ts = 0         # current bar close ts, set by the engine
 
     # ---- lifecycle hooks ----
     def on_start(self) -> None: ...
@@ -130,6 +135,17 @@ class Strategy:
     @property
     def balance(self) -> float:
         return self._account.balance
+
+    def position_age_s(self) -> float:
+        """Seconds the current open position has been held (inf if flat)."""
+        rec = self._broker.recorder
+        if rec.open is None or self._account.position == 0:
+            return float("inf")
+        return (self._now_ts - rec.open.entry_ts) / 1e9
+
+    def hold_ok(self) -> bool:
+        """True if the Apex min-hold has elapsed (or is disabled)."""
+        return self.min_hold_s <= 0 or self.position_age_s() >= self.min_hold_s
 
     # ---- orders ----
     def buy(self, qty: int | None = None, tag: str = "") -> Order:
@@ -232,10 +248,17 @@ class Strategy:
                                 annual_vol_target,
                                 max_contracts=max_contracts)
 
-    def close_position(self, tag: str = "exit") -> Order | None:
-        """Flatten with a market order (fills next tick)."""
+    def close_position(self, tag: str = "exit",
+                       force: bool = False) -> Order | None:
+        """Flatten with a market order (fills next tick).
+
+        Blocked (returns None) if the Apex min-hold hasn't elapsed, unless
+        `force` (risk stand-downs like a daily-loss lock pass force=True).
+        """
         pos = self._account.position
         if pos == 0:
+            return None
+        if not force and not self.hold_ok():
             return None
         o = Order(side=SELL if pos > 0 else BUY, qty=abs(pos),
                   type=OrderType.MARKET, tag=tag, is_exit=True)

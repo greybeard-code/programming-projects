@@ -142,17 +142,23 @@ profitable and improving, 5/5 walk-forward OOS windows profitable with
 OOS beating IS, and directly verified compliance (never holds through the
 daily halt).
 
-One open item before treating this as final for live/funded trading:
+Both prior open items are now resolved; one live-account question remains
+(item 2, for the user to confirm with Apex):
 1. ~~Re-run against the real $2,000 Apex trailing threshold~~ **DONE
    (2026-07-09):** survives the actual sequence with $678 headroom; MC
    P(breach $2,000) = 1.4%. Still comfortably safe.
-2. **30-second minimum trade duration** — Apex does not count trades held
-   under 30s. 11.1% of this config's trades (110/990) close sub-30s, but
-   they are collectively **−$4,211**, so they subtract from the headline
-   rather than inflate it. Enforcement (deferring strategy-initiated exits
-   to the 30s mark) is being modeled to confirm the compliant P&L; hard
-   stop-outs under 30s are a firm-rule matter, not a fill-model one. See
-   CLAUDE.md.
+2. **30-second minimum trade duration** — modeled and measured
+   (2026-07-09). Enforcing the rule (deferring the strategy's own reversal
+   exits until the position is 30s old; engine `min_hold_s=30`) moves the
+   headline by only **−$78 (0.3%)**: net $22,331, Sharpe 3.89, same max
+   drawdown, still survives ($678 headroom). **The edge does not depend on
+   sub-30s exits** (they were −$4,211 anyway). Caveat: even with enforcement
+   ~101 trades still close sub-30s because those are **hard stop-outs** (the
+   100-tick stop), which are not deferred — whether Apex voids a sub-30s
+   *stop* fill (vs a manual quick close) is a rule question worth confirming
+   with them. terminator_rec itself keeps `min_hold_s=0` to stay bit-for-bit
+   with the NT8 port (which has no 30s logic); the $78 figure is the cost of
+   compliance, not a change to the recommended config.
 
 ## 8. NT8 settings
 
