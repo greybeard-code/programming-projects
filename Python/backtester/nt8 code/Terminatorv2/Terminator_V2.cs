@@ -212,148 +212,148 @@ namespace NinjaTrader.NinjaScript.Strategies
 
 		#region Parameters
 		[NinjaScriptProperty]
-		[Display(Name = "ATR Period", GroupName = "1. Core", Order = 0)]
+		[Display(Name = "ATR Period", GroupName = "01. Core", Order = 0)]
 		public int ATRPeriod { get; set; }
 
 		[NinjaScriptProperty]
-		[Display(Name = "ATR Multiplier", GroupName = "1. Core", Order = 1)]
+		[Display(Name = "ATR Multiplier", GroupName = "01. Core", Order = 1)]
 		public double ATRMult { get; set; }
 
 		[NinjaScriptProperty]
-		[Display(Name = "Quantity", GroupName = "1. Core", Order = 2)]
+		[Display(Name = "Quantity", GroupName = "01. Core", Order = 2)]
 		public int Quantity { get; set; }
 
 		[NinjaScriptProperty]
-		[Display(Name = "Source", GroupName = "2. Signal", Order = 0)]
+		[Display(Name = "Source", GroupName = "02. Signal", Order = 0)]
 		public PriceType Source { get; set; }
 
 		[NinjaScriptProperty]
-		[Display(Name = "VWMA Mode", GroupName = "2. Signal", Order = 1)]
+		[Display(Name = "VWMA Mode", GroupName = "02. Signal", Order = 1)]
 		[RefreshProperties(RefreshProperties.All)]
 		public TtVwmaMode VwmaMode { get; set; }
 
 		[NinjaScriptProperty]
-		[Display(Name = "VWMA Period", GroupName = "2. Signal", Order = 2)]
+		[Display(Name = "VWMA Period", GroupName = "02. Signal", Order = 2)]
 		public int VwmaPeriod { get; set; }
 
 		[NinjaScriptProperty]
-		[Display(Name = "Volume Filter", GroupName = "3. Filters", Order = 0)]
+		[Display(Name = "Volume Filter", GroupName = "03. Filters", Order = 0)]
 		[RefreshProperties(RefreshProperties.All)]
 		public bool VolumeFilter { get; set; }
 
 		[NinjaScriptProperty]
-		[Display(Name = "Volume SMA Period", GroupName = "3. Filters", Order = 1)]
+		[Display(Name = "Volume SMA Period", GroupName = "03. Filters", Order = 1)]
 		public int VolumeSmaPeriod { get; set; }
 
 		[NinjaScriptProperty]
-		[Display(Name = "Volume Multiplier", GroupName = "3. Filters", Order = 2)]
+		[Display(Name = "Volume Multiplier", GroupName = "03. Filters", Order = 2)]
 		public double VolumeMult { get; set; }
 
 		[NinjaScriptProperty]
-		[Display(Name = "Enable Longs", GroupName = "3. Filters", Order = 3)]
+		[Display(Name = "Enable Longs", GroupName = "03. Filters", Order = 3)]
 		public bool EnableLongs { get; set; }
 
 		[NinjaScriptProperty]
-		[Display(Name = "Enable Shorts", GroupName = "3. Filters", Order = 4)]
+		[Display(Name = "Enable Shorts", GroupName = "03. Filters", Order = 4)]
 		public bool EnableShorts { get; set; }
 
 		[NinjaScriptProperty]
-		[Display(Name = "TP Mode", GroupName = "4. Take-Profit", Order = 0)]
+		[Display(Name = "TP Mode", GroupName = "04. Take-Profit", Order = 0)]
 		[RefreshProperties(RefreshProperties.All)]
 		public TtExitMode TpMode { get; set; }
 
 		[NinjaScriptProperty]
-		[Display(Name = "TP Value", GroupName = "4. Take-Profit", Order = 1)]
+		[Display(Name = "TP Value", GroupName = "04. Take-Profit", Order = 1)]
 		public double TpValue { get; set; }
 
 		[NinjaScriptProperty]
-		[Display(Name = "SL Mode", GroupName = "5. Stop-Loss", Order = 0)]
+		[Display(Name = "SL Mode", GroupName = "05. Stop-Loss", Order = 0)]
 		[RefreshProperties(RefreshProperties.All)]
 		public TtSlMode SlMode { get; set; }
 
 		[NinjaScriptProperty]
-		[Display(Name = "SL Value (ATR/Ticks/$)", GroupName = "5. Stop-Loss", Order = 1)]
+		[Display(Name = "SL Value (ATR/Ticks/$)", GroupName = "05. Stop-Loss", Order = 1)]
 		public double SlValue { get; set; }
 
 		[NinjaScriptProperty]
-		[Display(Name = "SL EMA Period", GroupName = "5. Stop-Loss", Order = 2)]
+		[Display(Name = "SL EMA Period", GroupName = "05. Stop-Loss", Order = 2)]
 		public int SlEmaPeriod { get; set; }
 
 		[NinjaScriptProperty]
-		[Display(Name = "SL EMA Buffer (ticks)", GroupName = "5. Stop-Loss", Order = 3)]
+		[Display(Name = "SL EMA Buffer (ticks)", GroupName = "05. Stop-Loss", Order = 3)]
 		public int SlEmaBufferTicks { get; set; }
 
 		[NinjaScriptProperty]
-		[Display(Name = "Breakeven Mode", GroupName = "6. Breakeven", Order = 0)]
+		[Display(Name = "Breakeven Mode", GroupName = "06. Breakeven", Order = 0)]
 		[RefreshProperties(RefreshProperties.All)]
 		public TtSimpleMode BeMode { get; set; }
 
 		[NinjaScriptProperty]
-		[Display(Name = "BE Trigger", GroupName = "6. Breakeven", Order = 1)]
+		[Display(Name = "BE Trigger", GroupName = "06. Breakeven", Order = 1)]
 		public double BeTrigger { get; set; }
 
 		[NinjaScriptProperty]
-		[Display(Name = "BE Offset (ticks)", GroupName = "6. Breakeven", Order = 2)]
+		[Display(Name = "BE Offset (ticks)", GroupName = "06. Breakeven", Order = 2)]
 		public int BeOffsetTicks { get; set; }
 
 		[NinjaScriptProperty]
-		[Display(Name = "Trail Mode", GroupName = "7. Auto-Trail", Order = 0)]
+		[Display(Name = "Trail Mode", GroupName = "07. Auto-Trail", Order = 0)]
 		[RefreshProperties(RefreshProperties.All)]
 		public TtTrailMode TrailMode { get; set; }
 
 		[NinjaScriptProperty]
-		[Display(Name = "Trail Value (ATR/Ticks)", GroupName = "7. Auto-Trail", Order = 1)]
+		[Display(Name = "Trail Value (ATR/Ticks)", GroupName = "07. Auto-Trail", Order = 1)]
 		public double TrailValue { get; set; }
 
 		[NinjaScriptProperty]
-		[Display(Name = "Trail EMA Period", GroupName = "7. Auto-Trail", Order = 2)]
+		[Display(Name = "Trail EMA Period", GroupName = "07. Auto-Trail", Order = 2)]
 		public int TrailEmaPeriod { get; set; }
 
 		[NinjaScriptProperty]
-		[Display(Name = "Trail EMA Buffer (ticks)", GroupName = "7. Auto-Trail", Order = 3)]
+		[Display(Name = "Trail EMA Buffer (ticks)", GroupName = "07. Auto-Trail", Order = 3)]
 		public int TrailEmaBufferTicks { get; set; }
 
 		[NinjaScriptProperty]
-		[Display(Name = "Use Daily Loss Limit", GroupName = "8. Daily Risk", Order = 0)]
+		[Display(Name = "Use Daily Loss Limit", GroupName = "08. Daily Risk", Order = 0)]
 		[RefreshProperties(RefreshProperties.All)]
 		public bool UseDailyLoss { get; set; }
 
 		[NinjaScriptProperty]
-		[Display(Name = "Daily Loss ($)", GroupName = "8. Daily Risk", Order = 1)]
+		[Display(Name = "Daily Loss ($)", GroupName = "08. Daily Risk", Order = 1)]
 		public double DailyLoss { get; set; }
 
 		[NinjaScriptProperty]
-		[Display(Name = "Use Daily Profit Target", GroupName = "8. Daily Risk", Order = 2)]
+		[Display(Name = "Use Daily Profit Target", GroupName = "08. Daily Risk", Order = 2)]
 		[RefreshProperties(RefreshProperties.All)]
 		public bool UseDailyProfit { get; set; }
 
 		[NinjaScriptProperty]
-		[Display(Name = "Daily Profit ($)", GroupName = "8. Daily Risk", Order = 3)]
+		[Display(Name = "Daily Profit ($)", GroupName = "08. Daily Risk", Order = 3)]
 		public double DailyProfit { get; set; }
 
 		[NinjaScriptProperty]
-		[Display(Name = "Flatten On Daily Limit", GroupName = "8. Daily Risk", Order = 4)]
+		[Display(Name = "Flatten On Daily Limit", GroupName = "08. Daily Risk", Order = 4)]
 		public bool DailyFlatten { get; set; }
 
 		[NinjaScriptProperty]
-		[Display(Name = "Max Trades Per Day (0=off)", GroupName = "8. Daily Risk", Order = 5)]
+		[Display(Name = "Max Trades Per Day (0=off)", GroupName = "08. Daily Risk", Order = 5)]
 		public int MaxTradesPerDay { get; set; }
 
 		[NinjaScriptProperty]
-		[Display(Name = "Discard Carried Pos At Realtime", GroupName = "8. Daily Risk", Order = 6)]
+		[Display(Name = "Discard Carried Pos At Realtime", GroupName = "08. Daily Risk", Order = 6)]
 		public bool DiscardCarriedAtRealtime { get; set; }
 
 		[NinjaScriptProperty]
-		[Display(Name = "Sizing Mode", GroupName = "9. Sizing", Order = 0)]
+		[Display(Name = "Sizing Mode", GroupName = "09. Sizing", Order = 0)]
 		[RefreshProperties(RefreshProperties.All)]
 		public TtSizingMode SizingMode { get; set; }
 
 		[NinjaScriptProperty]
-		[Display(Name = "Risk Per Trade ($)", GroupName = "9. Sizing", Order = 1)]
+		[Display(Name = "Risk Per Trade ($)", GroupName = "09. Sizing", Order = 1)]
 		public double RiskPerTrade { get; set; }
 
 		[NinjaScriptProperty]
-		[Display(Name = "Max Contracts (hard cap)", GroupName = "9. Sizing", Order = 2)]
+		[Display(Name = "Max Contracts (hard cap)", GroupName = "09. Sizing", Order = 2)]
 		public int MaxContracts { get; set; }
 
 		[NinjaScriptProperty]
@@ -2250,7 +2250,9 @@ namespace NinjaTrader.NinjaScript.Strategies
 			if (!UseDailyProfit) RemoveProperties(col, nameof(DailyProfit));
 			if (!UseDailyLoss && !UseDailyProfit) RemoveProperties(col, nameof(DailyFlatten));
 			if (SizingMode != TtSizingMode.RiskBased) RemoveProperties(col, nameof(RiskPerTrade));
-			if (!UseTimeFilter) RemoveProperties(col, nameof(StartTime), nameof(EndTime), nameof(FlattenAtEnd));
+			if (!UseTimeFilter) RemoveProperties(col, nameof(StartTime), nameof(EndTime), nameof(FlattenAtEnd),
+				nameof(TimeFilterEntriesOnly), nameof(UseWindow2), nameof(StartTime2), nameof(EndTime2));
+			else if (!UseWindow2) RemoveProperties(col, nameof(StartTime2), nameof(EndTime2));
 			if (!ShowDashboard) RemoveProperties(col, nameof(DashboardStartMinimized), nameof(DashboardCorner));
 			if (!EnableManualBrackets) RemoveProperties(col, nameof(ManualNudgeTicks), nameof(ManualStopMode));
 
