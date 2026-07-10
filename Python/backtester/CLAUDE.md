@@ -183,9 +183,16 @@ Next (order per research/22_Books_Summary.md, distilled from the 22-book
 docx in research/):
 1. Port a real user strategy (GodZillaKilla-style) — expect gaps:
    multi-timeframe bars (secondary series), possibly on_tick.
-2. Per-day trade chart (candles + entry/exit markers) for visual debugging.
+2. ~~Per-day trade chart~~ DONE: tools/plot_day.py (candles + entry/exit
+   markers + entry-window shading, ET; warm-up lead-in so signals match a
+   full run). Note: small-T renko (r100-4) prints thousands of overlapping
+   bricks/day — dense but correct.
 3. Validate ninZaRenko bar parity against an NT8 chart export.
 4. OIB/delta example strategy using bars.cum_delta.
+Also open: reconcile the NT8 time-filter semantics vs the Python
+"entries-only" windows (see the strategy review 2026-07-09) — the C#
+`FlattenAtEnd`/window-blocks-reversal behavior can't reproduce the champion
+as-is; needs an entries-only filter mode or a measured Python variant.
 
 Validation reference run (EmaCross, MNQ 1m, defaults, cache v2/v3 —
 post-timestamp-fix 2026-07-05): net ~-$2,125, 2102 trades, WR 33.4%,
