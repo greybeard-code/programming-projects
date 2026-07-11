@@ -160,6 +160,15 @@ class SimBroker:
                 return i  # marketable at first evaluation
             seg = p[i:i1]
             hit = seg < o.price if o.side == BUY else seg > o.price
+        elif o.plan is not None:  # dynamic stop (auto-BE / trailing)
+            seg = p[i:i1]
+            levels = o.plan.levels(seg)
+            hit = seg >= levels if o.side == BUY else seg <= levels
+            k = int(np.argmax(hit))
+            if not hit[k if k < len(hit) else 0]:
+                return None
+            o.price = float(levels[k])   # effective stop at the trigger
+            return i + k
         else:  # STOP
             seg = p[i:i1]
             hit = seg >= o.price if o.side == BUY else seg <= o.price
@@ -258,6 +267,12 @@ class SimBroker:
         if i >= k or self._day is None:
             return
         d = self._day
+        # commit this consumed segment into dynamic-stop high-water marks
+        # (evaluation windows always extend past the last committed event,
+        # so levels() sees every event exactly once at trigger time)
+        for o in self.working:
+            if o.plan is not None:
+                o.plan.advance(d.price[i:k])
         pos = self.account.position
         if pos == 0:
             if self.prop is not None:
