@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell(\\(Get-Content \"C:\\\\Dev\\\\programming-projects\\\\NinjaScript\\\\DimDIm\\\\DDQZone.cs\" | Measure-Object -Line\\).Lines)"
+    ]
+  }
+}

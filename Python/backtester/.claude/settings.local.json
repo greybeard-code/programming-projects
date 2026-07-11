@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell(python -m venv \"C:\\\\Dev\\\\programming-projects\\\\Python\\\\backtester\\\\.venv\")",
+      "PowerShell(& \"C:\\\\Dev\\\\programming-projects\\\\Python\\\\backtester\\\\.venv\\\\Scripts\\\\pip.exe\" install numpy pyarrow plotly pytest --quiet 2>&1)",
+      "Bash(ls \"/c/Users/dcjon/Documents/NinjaTrader 8/bin/Custom/Indicators/GreyBeard/\")",
+      "Bash(./.venv/Scripts/python.exe -m pytest tests/test_nt8config.py -q)",
+      "Bash(./.venv/Scripts/python.exe -m pytest tests -q)",
+      "Bash(./.venv/Scripts/python.exe -m pytest tests/test_atm.py -q)",
+      "Bash(./.venv/Scripts/python.exe -c ' *)",
+      "Bash(./.venv/Scripts/python.exe -m pytest tests/test_gbsignals_pana.py -q)"
+    ]
+  }
+}

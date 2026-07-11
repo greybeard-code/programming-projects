@@ -14,7 +14,7 @@ using NinjaTrader.Gui.Tools;
 using NinjaTrader.NinjaScript;
 #endregion
 
-// WeeklyUpdate - Downloads last 14 days of replay data for ES, MES, NQ, MNQ, GC, MGC
+// WeeklyUpdate - Downloads last 14 days of replay data for ES, MES, NQ, MNQ, YM, MYM, RTY, M2K, GC, MGC
 // 2026-0417 GreyBeard - Initial version based on MultidayReplayDownloaderWindowEN
 
 namespace NinjaTrader.Gui.NinjaScript
@@ -30,7 +30,7 @@ namespace NinjaTrader.Gui.NinjaScript
 			if (State == State.SetDefaults)
 			{
 				Name = "WeeklyUpdate";
-				Description = "Download last 14 days of replay data for ES, MES, NQ, MNQ, GC, MGC";
+				Description = "Download last 14 days of replay data for ES, MES, NQ, MNQ, YM, MYM, RTY, M2K, GC, MGC";
 			}
 			else if (State == State.Terminated)
 			{
@@ -96,6 +96,7 @@ namespace NinjaTrader.Gui.NinjaScript
 		// UI Controls
 		private Button btnDownload;
 		private Button btnClearLog;
+		private CheckBox chkSkipExisting;
 		private TextBox tbOutput;
 		private Label lProgress;
 		private ProgressBar pbProgress;
@@ -108,16 +109,17 @@ namespace NinjaTrader.Gui.NinjaScript
 		private DateTime startTimestamp;
 		private List<WUDownloadEntry> downloadQueue;
 		private int currentDownloadIndex = 0;
+		private int totalInstruments = 0;
 
 		// Contract months per instrument root
 		private static readonly string[] QuarterlyMonths = { "03", "06", "09", "12" };
 		private static readonly string[] GoldMonths     = { "02", "04", "06", "08", "10", "12" };
 
-		private static readonly string[] TargetRoots = { "ES", "MES", "NQ", "MNQ", "YM", "MYM", "GC", "MGC", "CL", "MCL" };
+		private static readonly string[] TargetRoots = { "ES", "MES", "NQ", "MNQ", "YM", "MYM", "RTY", "M2K", "GC", "MGC" };
 
 		public WeeklyUpdateWindow()
 		{
-			Caption = "Weekly Update v1.0";
+			Caption = "Weekly Update v1.1";
 			Width = 550;
 			Height = 400;
 			Content = BuildContent();
@@ -158,6 +160,83 @@ namespace NinjaTrader.Gui.NinjaScript
 			return string.Format("{0} {1}-{2:D2}", root, months[0], (year + 1) % 100);
 		}
 
+		// Returns the contract(s) to download for a root. Normally just the current
+		// contract, but during rollover week (expiration within 7 days either side
+		// of today) both the old and new contracts are returned.
+		private List<string> GetActiveContracts(string root)
+		{
+			var contracts = new List<string> { GetCurrentContract(root) };
+
+			int month, year;
+			ParseContract(contracts[0], out month, out year);
+
+			DateTime expiration = GetExpirationDate(root, month, year);
+			if (Math.Abs((expiration.Date - DateTime.Today).TotalDays) <= 7)
+				contracts.Add(GetNextContract(root, month, year));
+
+			return contracts;
+		}
+
+		// Parses "ROOT MM-YY" into month (1-12) and year (20YY)
+		private static void ParseContract(string contract, out int month, out int year)
+		{
+			string[] parts = contract.Split(' ')[1].Split('-');
+			month = int.Parse(parts[0]);
+			year  = 2000 + int.Parse(parts[1]);
+		}
+
+		// Returns the approximate last-trading-day (expiration) date for a contract
+		private static DateTime GetExpirationDate(string root, int month, int year)
+		{
+			// CL/MCL expire ~20th of the month prior to the contract month
+			if (root == "CL" || root == "MCL")
+			{
+				int expMonth = month - 1;
+				int expYear  = year;
+				if (expMonth < 1) { expMonth = 12; expYear--; }
+				return new DateTime(expYear, expMonth, 20);
+			}
+
+			// GC/MGC expire on the 3rd-to-last business day of the contract month
+			if (root == "GC" || root == "MGC")
+				return ThirdToLastBusinessDay(year, month);
+
+			// ES/NQ/YM and minis expire on the 3rd Friday of the contract month
+			return ThirdFriday(year, month);
+		}
+
+		private static DateTime ThirdFriday(int year, int month)
+		{
+			DateTime firstOfMonth = new DateTime(year, month, 1);
+			int daysUntilFriday = ((int)DayOfWeek.Friday - (int)firstOfMonth.DayOfWeek + 7) % 7;
+			return firstOfMonth.AddDays(daysUntilFriday + 14);
+		}
+
+		private static DateTime ThirdToLastBusinessDay(int year, int month)
+		{
+			DateTime date = new DateTime(year, month, DateTime.DaysInMonth(year, month));
+			int businessDays = 0;
+			while (true)
+			{
+				if (date.DayOfWeek != DayOfWeek.Saturday && date.DayOfWeek != DayOfWeek.Sunday)
+				{
+					businessDays++;
+					if (businessDays == 3) return date;
+				}
+				date = date.AddDays(-1);
+			}
+		}
+
+		// Returns the next contract in the rotation for the given root
+		private static string GetNextContract(string root, int month, int year)
+		{
+			int step = (root == "CL" || root == "MCL") ? 1 : (root == "GC" || root == "MGC") ? 2 : 3;
+			int nextMonth = month + step;
+			int nextYear  = year;
+			if (nextMonth > 12) { nextMonth -= 12; nextYear++; }
+			return string.Format("{0} {1:D2}-{2:D2}", root, nextMonth, nextYear % 100);
+		}
+
 		private DependencyObject BuildContent()
 		{
 			const double margin   = 10;
@@ -169,17 +248,18 @@ namespace NinjaTrader.Gui.NinjaScript
 			Grid mainGrid = new Grid { Background = new SolidColorBrush(Colors.Transparent) };
 			mainGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });                        // Row 0: description
 			mainGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });                        // Row 1: contract list
-			mainGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });                        // Row 2: download button
-			mainGrid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });   // Row 3: log
-			mainGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });                        // Row 4: progress label
-			mainGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });                        // Row 5: progress bar
+			mainGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });                        // Row 2: options
+			mainGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });                        // Row 3: download button
+			mainGrid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });   // Row 4: log
+			mainGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });                        // Row 5: progress label
+			mainGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });                        // Row 6: progress bar
 
 			Brush labelBrush = TryFindResource("FontLabelBrush") as Brush ?? Brushes.White;
 
 			// Row 0: Description
 			Label lblDesc = new Label
 			{
-				Content = "Downloads the last 14 days of market replay data. Skips already-downloaded files.",
+				Content = "Downloads the last 14 days of market replay data.",
 				Margin = new Thickness(margin, margin, margin, spacing / 2),
 				Foreground = labelBrush,
 				FontSize = fontSize
@@ -188,10 +268,10 @@ namespace NinjaTrader.Gui.NinjaScript
 			mainGrid.Children.Add(lblDesc);
 
 			// Row 1: Current contract list
-			string contracts = string.Join("   ", TargetRoots.Select(r => GetCurrentContract(r)));
+			string contracts = string.Join("   ", TargetRoots.SelectMany(r => GetActiveContracts(r)));
 			Label lblContracts = new Label
 			{
-				Content = contracts,
+				Content = new TextBlock { Text = contracts, TextWrapping = TextWrapping.Wrap },
 				Margin = new Thickness(margin, 0, margin, spacing),
 				Foreground = labelBrush,
 				FontSize = fontSize,
@@ -200,7 +280,40 @@ namespace NinjaTrader.Gui.NinjaScript
 			Grid.SetRow(lblContracts, 1);
 			mainGrid.Children.Add(lblContracts);
 
-			// Row 2: Download button
+			// Row 2: Options
+			StackPanel optionsPanel = new StackPanel
+			{
+				Orientation = Orientation.Horizontal,
+				HorizontalAlignment = HorizontalAlignment.Left,
+				VerticalAlignment = VerticalAlignment.Center,
+				Margin = new Thickness(margin, 0, margin, spacing)
+			};
+
+			chkSkipExisting = new CheckBox
+			{
+				IsChecked = false,
+				VerticalAlignment = VerticalAlignment.Center,
+				Margin = new Thickness(0, 0, 4, 0)
+			};
+
+			Label lblSkipExisting = new Label
+			{
+				Content = "Skip Existing Replay Files",
+				VerticalAlignment = VerticalAlignment.Center,
+				Foreground = labelBrush,
+				FontSize = fontSize,
+				Padding = new Thickness(0),
+				Margin = new Thickness(0)
+			};
+			// Make label non-clickable (only checkbox is clickable)
+			lblSkipExisting.MouseDown += (s, e) => e.Handled = true;
+
+			optionsPanel.Children.Add(chkSkipExisting);
+			optionsPanel.Children.Add(lblSkipExisting);
+			Grid.SetRow(optionsPanel, 2);
+			mainGrid.Children.Add(optionsPanel);
+
+			// Row 3: Download button
 			btnDownload = new Button
 			{
 				Content = "_Download",
@@ -213,10 +326,10 @@ namespace NinjaTrader.Gui.NinjaScript
 				HorizontalAlignment = HorizontalAlignment.Left
 			};
 			btnDownload.Click += BtnDownload_Click;
-			Grid.SetRow(btnDownload, 2);
+			Grid.SetRow(btnDownload, 3);
 			mainGrid.Children.Add(btnDownload);
 
-			// Row 3: Log header + log output
+			// Row 4: Log header + log output
 			Grid logPanel = new Grid();
 			logPanel.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
 			logPanel.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
@@ -266,10 +379,10 @@ namespace NinjaTrader.Gui.NinjaScript
 			Grid.SetRow(tbOutput, 1);
 			logPanel.Children.Add(logHeaderGrid);
 			logPanel.Children.Add(tbOutput);
-			Grid.SetRow(logPanel, 3);
+			Grid.SetRow(logPanel, 4);
 			mainGrid.Children.Add(logPanel);
 
-			// Row 4: Progress Label
+			// Row 5: Progress Label
 			lProgress = new Label
 			{
 				Content = "",
@@ -278,16 +391,16 @@ namespace NinjaTrader.Gui.NinjaScript
 				Foreground = labelBrush,
 				FontSize = fontSize
 			};
-			Grid.SetRow(lProgress, 4);
+			Grid.SetRow(lProgress, 5);
 			mainGrid.Children.Add(lProgress);
 
-			// Row 5: Progress Bar
+			// Row 6: Progress Bar
 			pbProgress = new ProgressBar
 			{
 				Height = 0,
 				Margin = new Thickness(margin, 0, margin, margin)
 			};
-			Grid.SetRow(pbProgress, 5);
+			Grid.SetRow(pbProgress, 6);
 			mainGrid.Children.Add(pbProgress);
 
 			return mainGrid;
@@ -328,7 +441,7 @@ namespace NinjaTrader.Gui.NinjaScript
 		{
 			downloadQueue = new List<WUDownloadEntry>();
 
-			DateTime endDate   = DateTime.Today;
+			DateTime endDate   = DateTime.Today.AddDays(-1);
 			DateTime startDate = DateTime.Today.AddDays(-14);
 
 			// Count Saturdays in range once (same dates for all instruments)
@@ -339,42 +452,51 @@ namespace NinjaTrader.Gui.NinjaScript
 			int skippedExisting   = 0;
 			int instrumentErrors  = 0;
 
+			totalInstruments = 0;
+
 			foreach (string root in TargetRoots)
 			{
-				string instrumentName = GetCurrentContract(root);
-				Instrument instrument = null;
+				List<string> activeContracts = GetActiveContracts(root);
+				totalInstruments += activeContracts.Count;
+				if (activeContracts.Count > 1)
+					LogMessage(string.Format("Rollover week for {0}: downloading {1}.", root, string.Join(" and ", activeContracts)));
 
-				try { instrument = Instrument.GetInstrument(instrumentName); }
-				catch { }
-
-				if (instrument == null)
+				foreach (string instrumentName in activeContracts)
 				{
-					LogMessage(string.Format("WARNING: '{0}' not found — skipping.", instrumentName));
-					instrumentErrors++;
-					continue;
-				}
+					Instrument instrument = null;
 
-				string replayDir = Path.Combine(Core.Globals.UserDataDir, "db", "replay", instrument.FullName);
+					try { instrument = Instrument.GetInstrument(instrumentName); }
+					catch { }
 
-				for (DateTime date = startDate; date <= endDate; date = date.AddDays(1))
-				{
-					if (date.DayOfWeek == DayOfWeek.Saturday) continue;
-
-					string nrdPath = Path.Combine(replayDir, date.ToString("yyyyMMdd") + ".nrd");
-
-					if (File.Exists(nrdPath))
+					if (instrument == null)
 					{
-						skippedExisting++;
+						LogMessage(string.Format("WARNING: '{0}' not found — skipping.", instrumentName));
+						instrumentErrors++;
 						continue;
 					}
 
-					downloadQueue.Add(new WUDownloadEntry
+					string replayDir = Path.Combine(Core.Globals.UserDataDir, "db", "replay", instrument.FullName);
+
+					for (DateTime date = startDate; date <= endDate; date = date.AddDays(1))
 					{
-						Date       = date,
-						Instrument = instrument,
-						NrdPath    = nrdPath,
-						Status     = WUDownloadStatus.Pending
-					});
+						if (date.DayOfWeek == DayOfWeek.Saturday) continue;
+
+						string nrdPath = Path.Combine(replayDir, date.ToString("yyyyMMdd") + ".nrd");
+
+						if (chkSkipExisting.IsChecked == true && File.Exists(nrdPath))
+						{
+							skippedExisting++;
+							continue;
+						}
+
+						downloadQueue.Add(new WUDownloadEntry
+						{
+							Date       = date,
+							Instrument = instrument,
+							NrdPath    = nrdPath,
+							Status     = WUDownloadStatus.Pending
+						});
+					}
 				}
 			}
 
@@ -396,6 +518,7 @@ namespace NinjaTrader.Gui.NinjaScript
 
 			btnDownload.Content   = "_Cancel";
 			btnDownload.IsEnabled = true;
+			chkSkipExisting.IsEnabled = false;
 
 			const double m = 8;
 			pbProgress.Minimum = 0;
@@ -405,7 +528,7 @@ namespace NinjaTrader.Gui.NinjaScript
 			pbProgress.Margin  = new Thickness(m, 0, m, m);
 			lProgress.Height   = 24;
 
-			LogMessage(string.Format("Queued {0} download(s) across {1} instrument(s).", totalDays, TargetRoots.Length));
+			LogMessage(string.Format("Queued {0} download(s) across {1} instrument(s).", totalDays, totalInstruments));
 			Globals.RandomDispatcher.InvokeAsync(new Action(() => DownloadNextDay()));
 		}
 
@@ -565,6 +688,7 @@ namespace NinjaTrader.Gui.NinjaScript
 				isRunning = false;
 				btnDownload.Content   = "_Download";
 				btnDownload.IsEnabled = true;
+				chkSkipExisting.IsEnabled = true;
 
 				int completed = downloadQueue.Count(d => d.Status == WUDownloadStatus.Completed);
 				int failed    = downloadQueue.Count(d => d.Status == WUDownloadStatus.Failed);

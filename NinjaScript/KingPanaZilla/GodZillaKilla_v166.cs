@@ -48,9 +48,10 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
     [CategoryOrder ("Indicator: ThunderZilla", 9)]
     [CategoryOrder ("Indicator: SuperJumpBoost", 10)]
     [CategoryOrder ("Indicator: SumoPullback", 11)]
-    [CategoryOrder ("Display", 12)]
-    [CategoryOrder ("Audio Alerts", 13)]
-    [CategoryOrder ("Logging", 14)]
+    [CategoryOrder ("Indicator: NobleCloud", 12)]
+    [CategoryOrder ("Display", 13)]
+    [CategoryOrder ("Audio Alerts", 14)]
+    [CategoryOrder ("Logging", 15)]
     #endregion
 
     public class GodZillaKilla : Strategy, ICustomTypeDescriptor
@@ -98,7 +99,7 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
 
         #region Variables
         // Drawing
-        private SimpleFont title = new SimpleFont("Agency Fb", 16) { Size = 20, Bold = true };
+        private SimpleFont title = new SimpleFont("Agency Fb", 20) { Bold = true };
         private SimpleFont signalArrowFont = new SimpleFont("Arial", 10) { Bold = true };
 
         // ATM
@@ -106,15 +107,29 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
         private string orderId = string.Empty;
         private bool isAtmStrategyCreated = false;
 
+        // Stale-ATM-ID timeout (defense #3) — when AtmStrategyCreate's confirmation
+        // callback never fires (silently rejected), atmStrategyId stays set and every
+        // subsequent GetAtmStrategy* call logs level-3 "ID does not exist" errors
+        // → log mutex saturation → UI thread starves → AppHangB1. Tracking the
+        // setter timestamp lets us clear orphan IDs after ATM_REGISTRATION_TIMEOUT_SEC
+        // wall-seconds. See AGENTS.md gotcha #18 + memory/feedback_atm_stale_id_error_flood.md.
+        // This timestamp is ALSO used by defense #8 to detect mid-trade staleness
+        // after HDS bounces (a previously-valid ID suddenly returns "does not exist").
+        private DateTime _atmIdsSetUtc          = DateTime.MinValue;
+        private DateTime _martingaleIdsSetUtc   = DateTime.MinValue;
+        private const int ATM_REGISTRATION_TIMEOUT_SEC = 10;
+
         // Fixed PT/SL order mode
         private string fixedEntrySignalName = string.Empty;
         private MarketPosition fixedEntryDirection = MarketPosition.Flat;
+        private int fixedEntrySequence = 0;
         private double fixedEntryAvgPrice = 0.0;
         private int fixedEntryQty = 0;
         private bool fixedPositionConfirmed = false;
         private bool fixedTradeCloseProcessed = false;
         private string fixedMartingaleSignalName = string.Empty;
         private MarketPosition fixedMartingaleDirection = MarketPosition.Flat;
+        private int fixedMartingaleSequence = 0;
         private double fixedMartingaleEntryAvgPrice = 0.0;
         private int fixedMartingaleEntryQty = 0;
         private bool fixedMartingalePositionConfirmed = false;
@@ -141,6 +156,7 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
         private bool pendingReverseUsesTH = false;
         private bool pendingReverseUsesSJ = false;
         private bool pendingReverseUsesSU = false;
+        private bool pendingReverseUsesNC = false;
         private int pendingReverseGroupSize = 0;
         private string pendingReverseGroupName = string.Empty;
 
@@ -152,6 +168,7 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
         private bool pendingSignalUsesTH = false;
         private bool pendingSignalUsesSJ = false;
         private bool pendingSignalUsesSU = false;
+        private bool pendingSignalUsesNC = false;
         private int pendingSignalGroupSize = 0;
         private string pendingSignalGroupName = string.Empty;
         private string pendingSignalReason = string.Empty;
@@ -177,6 +194,11 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
         private DateTime pendingSessionPnlPrintTime = Core.Globals.MinDate;
         private string lastSessionPnlPrintKey = string.Empty;
 
+        // FixedTicks fresh-start SystemPerformance baseline.
+        // Prevents old/historical SystemPerformance trades from leaking into StartFreshOnEnable PnL.
+        private double fixedPerformanceRealizedBaseline = 0.0;
+        private bool fixedPerformanceBaselineCaptured = false;
+
         // Fresh-start inherited/open-position baseline
         private bool freshStartInheritedPositionActive = false;
         private MarketPosition freshStartInheritedDirection = MarketPosition.Flat;
@@ -200,9 +222,20 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
         private DateTime _lastTickUiSyncUtc = DateTime.MinValue;
         private const int TICK_UI_SYNC_INTERVAL_MS = 100;
 
+        // Rolling drawing-tag cleanup (defense #4) — feedback_nt8_wpf_quota_prevention.md.
+        // Each Draw.ArrowUp/Down/Text call with a unique-per-bar tag holds WPF
+        // brush + geometry refs. Without rolling cleanup, the chart's draw-object
+        // pool exhausts over multi-hour sessions → "Not Enough Quota" lockup.
+        // Bound the per-prefix retained pool to DRAW_TAG_KEEP bars (~2h on 30s).
+        private const int DRAW_TAG_KEEP = 250;
+
         // Trade logging
         private StreamWriter _logWriter;
-        private Dictionary<string, TradeRecord> _tradeMap = new Dictionary<string, TradeRecord>();
+        // ConcurrentDictionary (was Dictionary) — _tradeMap is read AND written from
+        // both the UI thread (OnBarUpdate/OnMarketData) and background threads
+        // (SystemPerformance callbacks). Plain Dictionary is not thread-safe.
+        private System.Collections.Concurrent.ConcurrentDictionary<string, TradeRecord> _tradeMap
+            = new System.Collections.Concurrent.ConcurrentDictionary<string, TradeRecord>();
         private bool _atmPositionConfirmed = false;
 
         private class TradeRecord
@@ -214,6 +247,12 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
             public double OpenPrice;
             public int Qty;
             public string AtmStrategyName;
+
+            // New tracking/logging fields
+            public string SignalCombo;
+            public string UsedSignals;
+            public string TradeResult;
+            public string LastTradeLine;
         }
 
         // Signal tracking
@@ -237,15 +276,22 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
             public bool UsesTH;
             public bool UsesSJ;
             public bool UsesSU;
+            public bool UsesNC;
         }
 
         private SignalTradeStats koStats = new SignalTradeStats();
         private SignalTradeStats paStats = new SignalTradeStats();
         private SignalTradeStats thStats = new SignalTradeStats();
         private SignalTradeStats suStats = new SignalTradeStats();
+        private SignalTradeStats                ncStats                     = new SignalTradeStats();
         private SignalTradeStats sjStats = new SignalTradeStats();
-        private SignalTradeStats groupSet1Stats = new SignalTradeStats();
-        private SignalTradeStats groupSet2Stats = new SignalTradeStats();
+
+        // Exact confluence combo stats.
+        // Example keys:
+        // SET1-G3-KO+PA+SU
+        // SET1-G3-PA+TH+SJ
+        // SET2-G3-PA+TH+SJ
+        private Dictionary<string, SignalTradeStats> confluenceStatsByKey = new Dictionary<string, SignalTradeStats>();
 
         private int activeTradeGroupSize = 0;
         private string activeTradeGroupName = string.Empty;
@@ -253,6 +299,7 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
         private bool activeTradeUsesPA = false;
         private bool activeTradeUsesTH = false;
         private bool activeTradeUsesSU = false;
+        private bool                            activeTradeUsesNC           = false;
         private bool activeTradeUsesSJ = false;
         private MarketPosition activeTradeDirection = MarketPosition.Flat;
         private string lastTradeClosedSummary = string.Empty;
@@ -267,6 +314,7 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
         private gbPANAKanal _pana;
         private gbThunderZilla _thunder;
         private gbSumoPullback _sumo;
+        private gbNobleCloud                    _nc;
         private gbSuperJumpBoost _sjb;
 
         // Normalized signal series used by entries, tracking, and visuals
@@ -275,6 +323,7 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
         private Series<double> _thSignalSeries;
         private Series<double> _sjSignalSeries;
         private Series<double> _suSignalSeries;
+        private Series<double>                  _ncSignalSeries;
 
         // ---- HUD (SharpDX boxed dashboard, AlightenLite-style) ----
         // Snapshot fields written by data thread (BuildDashboardSnapshot) and
@@ -303,6 +352,7 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
         private bool   _hudNewsBlocked = false;
         private bool   _hudShowNews = false;
         private bool   _hudShowSignals = false;
+        private bool   _hudShowOpenPnl = true;
         private string _hudKillBanner = "";
 
         // SharpDX brush + format (UI thread owned, recreated on RT change)
@@ -348,6 +398,9 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
         private bool _lastNewsBlockActive = false;
         private bool _newsRuntimeDisabledPrinted = false;
 
+        // Indicator null-state diagnostic (one-time print)
+        private bool _indicatorNullWarned = false;
+
         // Button Panel
         private Border _controlPanel;
         private Button _armLongBtn, _armShortBtn, _revBtn, _autoArmBtn, _closeBtn;
@@ -358,6 +411,7 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
         private bool _autoArm = true;
         private bool _reverseOnAlternateSignal = true;
         private volatile bool _strategyEnabled = true;
+        private bool _hudIsMasterActive;
 
         // ATMPlotMarkers integration — ATM mode only
         private class MarkerEntryExitData
@@ -391,15 +445,15 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
         {
             if (State == State.SetDefaults)
             {
-                Description = "GodZillaKilla — strategy using direct KingOrderBlock/PANAKanal/ThunderZilla/SuperJumpBoost/SumoPullback child indicator signals.";
+                Description = "GodZillaKilla — strategy using direct KingOrderBlock/PANAKanal/ThunderZilla/SuperJumpBoost/SumoPullback/NobleCloud child indicator signals.";
                 Name = "GodZillaKilla";
                 StrategyName = Name;
-                _strategyVersion = "1.5.1";
+                _strategyVersion = "1.6.6";
 
                 Author = "Playr101";
                 Credits = "GreyBeard, ninZa.co, RenkoKings, ES, rbro999";
 
-                IsExitOnSessionCloseStrategy = true;
+                IsExitOnSessionCloseStrategy = false;
                 ExitOnSessionCloseSeconds = 30;
                 IsFillLimitOnTouch = true;
                 MaximumBarsLookBack = MaximumBarsLookBack.TwoHundredFiftySix;
@@ -408,7 +462,9 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
                 StartBehavior = StartBehavior.WaitUntilFlat;
                 TimeInForce = TimeInForce.Day;
                 TraceOrders = true;
-                RealtimeErrorHandling = RealtimeErrorHandling.IgnoreAllErrors;
+                // StopCancelClose surfaces rejections to OnOrderUpdate rather than swallowing
+                // them — pairs with the OnOrderUpdate diagnostic logging below.
+                RealtimeErrorHandling = RealtimeErrorHandling.StopCancelClose;
                 BarsRequiredToTrade = 2;
                 IsInstantiatedOnEachOptimizationIteration = false;
                 IsUnmanaged = false;
@@ -437,10 +493,13 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
                 // the SharpDX info panel entirely (stability mode — see AGENTS.md
                 // gotcha #17). The control panel can also be turned off independently.
                 ShowDashboard = true;
-                DashboardPosition = HudCorner.BottomRight;
+                DashboardPosition = HudCorner.BottomLeft;
                 DashboardSize = GodZillaHudSize.Normal;
                 ShowControlPanel = true;
                 ControlPanelPosition = HudCorner.TopLeft;
+
+                ShowIndividualSignalStats = false;     // Default to Hidden
+                ShowGroupSignalTrackingStats = true;
 
                 EnableSignalTracking = true;
                 GroupTriggerSet1RequiredCount = 1;
@@ -459,6 +518,11 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
                 UseSUSignals = false;
                 SU_LongValue = 1;
                 SU_ShortValue = -1;
+                UseNCSignals = true;
+                NC_LongOperator = SignalComparisonOperator.Equal;
+                NC_LongValue = 1;
+                NC_ShortOperator = SignalComparisonOperator.Equal;
+                NC_ShortValue = -1;
 
                 KO_LongOperator = SignalComparisonOperator.Equal;
                 KO_ShortOperator = SignalComparisonOperator.Equal;
@@ -469,7 +533,7 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
                 SJ_LongOperator = SignalComparisonOperator.Equal;
                 SJ_ShortOperator = SignalComparisonOperator.Equal;
                 SU_LongOperator = SignalComparisonOperator.Equal;
-                SU_ShortOperator = SignalComparisonOperator.Equal;              
+                SU_ShortOperator = SignalComparisonOperator.Equal;
 
                 // Optional second same-bar group trigger set
                 EnableGroupTriggerSet2 = false;
@@ -489,6 +553,11 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
                 G2_UseSUSignals = false;
                 G2_SU_LongValue = 1;
                 G2_SU_ShortValue = -1;
+                G2_UseNCSignals = false;
+                G2_NC_LongOperator = SignalComparisonOperator.Equal;
+                G2_NC_LongValue = 1;
+                G2_NC_ShortOperator = SignalComparisonOperator.Equal;
+                G2_NC_ShortValue = -1;
 
                 G2_KO_LongOperator = SignalComparisonOperator.Equal;
                 G2_KO_ShortOperator = SignalComparisonOperator.Equal;
@@ -632,6 +701,24 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
                 SU_SignalSplitFirst = 15;
                 SU_SignalSplitSecond = 30;
 
+                // ── NobleCloud ──────────────────────────────────────────────────────────
+                NC_Sensitivity = 60.0;
+                NC_Smoothness = 1;
+                NC_BaselineMAType = gb_MAType.SMA;
+                NC_BaselinePeriod = 60;
+                NC_BaselineSmoothingEnabled = true;
+                NC_BaselineSmoothingMethod = gb_MAType.EMA;
+                NC_BaselineSmoothingPeriod = 60;
+                NC_KernelMAType = gb_MAType.SMA;
+                NC_KernelPeriod = 20;
+                NC_KernelSmoothingEnabled = true;
+                NC_KernelSmoothingMethod = gb_MAType.EMA;
+                NC_KernelSmoothingPeriod = 5;
+                NC_SignalSplit = 5;
+                NC_FilterEnabled = true;
+                NC_FilterBarMin = 10;
+                NC_FilterBarMax = 300;
+
                 // SuperJumpBoost indicator defaults (mirror gbSuperJumpBoost)
                 SJ_SensitiveModeEnabled = true;
                 SJ_OffsetLevel1 = 1.0;
@@ -652,23 +739,25 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
                 TH_Brush = Brushes.LimeGreen;
                 SJ_Brush = Brushes.Orange;
                 SU_Brush = Brushes.Magenta;
+                EnableGroupTriggerBackBrush = true;
+                GroupTriggerBackBrush = MakeFrozenBrush (55, 255, 215, 0);
                 GroupTriggerBrush = Brushes.Gold;
                 ArrowOffset = 5;
 
                 // Signal arrow defaults
                 ShowKOSignalArrows = false;
-                ShowPASignalArrows = true;
-                ShowTHSignalArrows = true;
-                ShowSJSignalArrows = true;
+                ShowPASignalArrows = false;
+                ShowTHSignalArrows = false;
+                ShowSJSignalArrows = false;
                 ShowSUSignalArrows = false;
                 ShowGroupTriggerArrows = true;
 
-                ShowKOSignalArrowLabels = true;
-                ShowPASignalArrowLabels = true;
-                ShowTHSignalArrowLabels = true;
-                ShowSJSignalArrowLabels = true;
-                ShowSUSignalArrowLabels = true;
-                ShowGroupTriggerArrowLabel = true;
+                ShowKOSignalArrowLabels = false;
+                ShowPASignalArrowLabels = false;
+                ShowTHSignalArrowLabels = false;
+                ShowSJSignalArrowLabels = false;
+                ShowSUSignalArrowLabels = false;
+                ShowGroupTriggerArrowLabel = false;
 
                 KOSignalArrowText = "KO";
                 PASignalArrowText = "PA";
@@ -683,9 +772,14 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
                 THSignalArrowBrush = Brushes.LimeGreen;
                 SJSignalArrowBrush = Brushes.Orange;
                 SUSignalArrowBrush = Brushes.Magenta;
+                ShowNCIndicator = false;
+                ShowNCSignalArrows = false;
+                ShowNCSignalArrowLabels = false;
+                NCSignalArrowText = "NC";
+                NC_Brush = Brushes.Cyan;
+                NCSignalArrowBrush = Brushes.Cyan;
 
-                EnableGroupTriggerBackBrush = true;
-                GroupTriggerBackBrush = MakeFrozenBrush (55, 255, 215, 0);
+
 
                 // Trade Markers - ATM mode only
                 ShowEntryExitMarkers = true;
@@ -694,6 +788,7 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
                 EntryExitLineWidth = 2;
                 ShowEntryExitLabels = true;
                 EntryExitTextSize = 8;
+                EntryExitTextOffsetTicks = 10;
 
                 // Audio Alerts
                 EnableSignalAudioAlerts = false;
@@ -774,6 +869,18 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
                     AddChartIndicator (_sumo);
                 _sumo.Name = "";
 
+                _nc = gbNobleCloud (
+                    NC_Sensitivity, NC_Smoothness,
+                    NC_BaselineMAType, NC_BaselinePeriod,
+                    NC_BaselineSmoothingEnabled, NC_BaselineSmoothingMethod, NC_BaselineSmoothingPeriod,
+                    NC_KernelMAType, NC_KernelPeriod,
+                    NC_KernelSmoothingEnabled, NC_KernelSmoothingMethod, NC_KernelSmoothingPeriod,
+                    NC_SignalSplit,
+                    NC_FilterEnabled, NC_FilterBarMin, NC_FilterBarMax);
+                if (UseNCSignals && ShowNCIndicator)
+                    AddChartIndicator (_nc);
+                _nc.Name = "";
+
                 _sjb = gbSuperJumpBoost (
                     SJ_SensitiveModeEnabled,
                     SJ_OffsetLevel1,
@@ -796,6 +903,7 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
                 _thSignalSeries = new Series<double> (this);
                 _sjSignalSeries = new Series<double> (this);
                 _suSignalSeries = new Series<double> (this);
+                _ncSignalSeries = new Series<double> (this);
 
                 // Optional EMA trade filter
                 if (EnableEmaFilter)
@@ -886,7 +994,7 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
                         "GodZilla_" + safeAccount + "_" + DateTime.Now.ToString("yyyyMMdd_HHmmss") + ".csv");
 
                     _logWriter = new StreamWriter (logPath, append: false, encoding: Encoding.UTF8);
-                    _logWriter.WriteLine ("OpenTime,Account,Instrument,OpenPrice,Qty,CloseTime,Trigger,Direction,AtmStrategy,RealizedPnL");
+                    _logWriter.WriteLine ("OpenTime,Account,Instrument,OpenPrice,Qty,CloseTime,Trigger,Direction,AtmStrategyName,RealizedPnL,SignalCombo,UsedSignals,TradeResult,LastTradeLine");
                     _logWriter.Flush ();
                 }
 
@@ -927,6 +1035,8 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
                 ResetMartingaleRecovery ();
                 ClearPendingSignalEntry ();
 
+                CaptureFixedPerformanceBaseline ();
+
                 RequestFixedPerformanceSync ();
                 _lastFixedPerfSyncUtc = DateTime.MinValue;
 
@@ -937,6 +1047,8 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
                 _armShort = true;
                 _autoArm = true;
                 _reverseOnAlternateSignal = true;
+
+                DrawPnlDisplay ();
 
                 if (EnableDebug)
                     Print ($"{Name} entered realtime. ATM mode active.");
@@ -1012,16 +1124,24 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
 
         protected override void OnBarUpdate ()
         {
-            if (_king == null || _pana == null || _thunder == null || _sjb == null || _sumo == null)
+            // 1. Indicator Initialization Check
+            if (_king == null || _pana == null || _thunder == null || _sjb == null || _sumo == null || _nc == null)
+            {
+                if (!_indicatorNullWarned && State == State.Realtime)
+                {
+                    _indicatorNullWarned = true;
+                    Print ($"[{Name}] INDICATOR NULL | One or more child indicators failed to load. KO={_king != null} PA={_pana != null} TH={_thunder != null} SJ={_sjb != null} SU={_sumo != null} NC={_nc != null}");
+                }
                 return;
+            }
 
+            // 2. Tick Series Management (BarsInProgress 1)
             if (BarsInProgress == 1)
             {
                 if (CurrentBars == null || CurrentBars.Length < 2 || CurrentBars[1] < 1)
                     return;
 
-                // Fresh-start mode: do not let historical tick-series processing build
-                // historical PnL before the strategy reaches realtime.
+                // Fresh-start mode: ignore historical ticks if enabled
                 if (StartFreshOnEnable && State == State.Historical)
                     return;
 
@@ -1029,20 +1149,17 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
                 ManageFixedBreakeven ();
                 SanityCheckFixedTicksState ();
                 ProcessPendingSessionPnlPrint ();
-
-                // Entries are queued by BIP 0 after the signal bar closes.
-                // BIP 1 executes them on the next available tick.
                 ProcessPendingEntriesOnTickSeries ();
 
                 return;
             }
 
-            if (BarsInProgress != 0)
+            // 3. Primary Series Initialization
+            if (BarsInProgress != 0 || CurrentBars[0] < BarsRequiredToTrade)
                 return;
 
-            if (CurrentBars[0] < BarsRequiredToTrade)
-                return;
-
+            // 4. Visuals & Signal Calculation
+            // We run these before the master gate so arrows still draw even when disarmed
             UpdateNormalizedSignalSeriesAndDrawSignalArrows ();
 
             if (OrderMode == OrderManagementMode.AtmStrategy)
@@ -1051,62 +1168,75 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
                 RedrawCompletedMarkers ();
             }
 
-            // Fresh-start mode blocks historical order processing even in FixedTicks mode.
-            // Signals/visuals can still update before this point, but no historical trades/PnL are created.
+            // 5. Management & Filter Checks
+            // Gate A: skip historical management calls for ATM mode (ATM is realtime-only)
+            // and for FixedTicks fresh-start (no historical replay wanted). FixedTicks
+            // non-fresh-start mode still needs these to run during backtest.
             if (State == State.Historical && (StartFreshOnEnable || OrderMode != OrderManagementMode.FixedTicks))
                 return;
 
-            // Flatten logic at end of TimeFrames
             int currentTime = ToTime(Time[0]);
             CheckFlattenTimeframes (currentTime);
-
-            // News filter management/flatten check
             ManageNewsFilter ();
-
             ManageFixedBreakeven ();
             SanityCheckFixedTicksState ();
             ProcessPendingSessionPnlPrint ();
 
+            // 6. THE MASTER KILL-SWITCH GATES
             if (dailyLimitHit)
                 return;
-
             if (martingaleRecoveryActive)
                 return;
 
-            bool isWithinTradingTime = CheckTradingTimeframes(currentTime);
-
-            MarketPosition preSignalPosition = GetCurrentTradePosition ();
-
-            if (preSignalPosition != MarketPosition.Flat && !_reverseOnAlternateSignal)
-                return; // Do not process entry/reversal logic while in a position unless REV is ON
-
-            if (!isWithinTradingTime)
+            // MASTER GATE: Honor the on-chart button AND the Auto-Arm toggle
+            // Also clears pending signals so they don't fire when you turn Auto-Arm back on
+            if (!_strategyEnabled || !_autoArm)
+            {
+                ClearPendingSignalEntry ();
+                ClearPendingReverse ();
                 return;
+            }
 
+            // SESSION GATE: Block entries if out of trading windows
+            bool isWithinTradingTime = CheckTradingTimeframes(currentTime);
+            if (!isWithinTradingTime)
+            {
+                ClearPendingSignalEntry ();
+                return;
+            }
+
+            // Gate B: belt-and-suspenders — block historical entry submission for ATM mode.
+            // Gate A above already returns earlier for this case; this is kept as a hard
+            // wall in case Gate A is ever loosened. Cheap, no behavior change.
             if (State != State.Realtime && OrderMode != OrderManagementMode.FixedTicks)
                 return;
 
-            // Honor the on-chart enable/disable button — block new entries when off.
-            if (!_strategyEnabled)
-                return;
-
-            // Block new entries during the active news warning/post-news window.
             if (IsNewsTradingBlocked ())
                 return;
 
-            // Entry Logic
-            double koRaw = (_king != null) ? _king.Signal_Trade[0] : 0;
-            double paRaw = (_pana != null) ? _pana.Signal_Trade[0] : 0;
-            double thRaw = (_thunder != null) ? _thunder.Signal_Trade[0] : 0;
-            double sjRaw = (_sjb != null) ? _sjb.Signal_Trade[0] : 0;
-            double suRaw = (_sumo != null) ? _sumo.Signal_Trade[0] : 0;
+            // 7. Position & Reversal (REV) Management
+            MarketPosition currentTradePosition = GetCurrentTradePosition();
 
-            int ko = ComputeSignal (UseKOSignals, koRaw, KO_LongOperator, KO_LongValue, KO_ShortOperator, KO_ShortValue);
-            int pa = ComputeSignal (UsePASignals, paRaw, PA_LongOperator, PA_LongValue, PA_ShortOperator, PA_ShortValue);
-            int th = ComputeSignal (UseTHSignals, thRaw, TH_LongOperator, TH_LongValue, TH_ShortOperator, TH_ShortValue);
-            int sj = ComputeSignal (UseSJSignals, sjRaw, SJ_LongOperator, SJ_LongValue, SJ_ShortOperator, SJ_ShortValue);
-            int su = ComputeSignal (UseSUSignals, suRaw, SU_LongOperator, SU_LongValue, SU_ShortOperator, SU_ShortValue);
+            // If already in a position, only proceed if Reversal (REV) is ON
+            if (currentTradePosition != MarketPosition.Flat && !_reverseOnAlternateSignal)
+                return;
 
+            // 8. Indicator Signal Processing
+            double koRaw = SafeSignalRead (() => _king.Signal_Trade[0], "KO");
+            double paRaw = SafeSignalRead (() => _pana.Signal_Trade[0], "PA");
+            double thRaw = SafeSignalRead (() => _thunder.Signal_Trade[0], "TH");
+            double sjRaw = SafeSignalRead (() => _sjb.Signal_Trade[0], "SJ");
+            double suRaw = SafeSignalRead (() => _sumo.Signal_Trade[0], "SU");
+            double ncRaw  = SafeSignalRead(() => _nc.Signal_Trade[0],  "NC");
+
+            int ko = ComputeSignal(UseKOSignals, koRaw, KO_LongOperator, KO_LongValue, KO_ShortOperator, KO_ShortValue);
+            int pa = ComputeSignal(UsePASignals, paRaw, PA_LongOperator, PA_LongValue, PA_ShortOperator, PA_ShortValue);
+            int th = ComputeSignal(UseTHSignals, thRaw, TH_LongOperator, TH_LongValue, TH_ShortOperator, TH_ShortValue);
+            int sj = ComputeSignal(UseSJSignals, sjRaw, SJ_LongOperator, SJ_LongValue, SJ_ShortOperator, SJ_ShortValue);
+            int su = ComputeSignal(UseSUSignals, suRaw, SU_LongOperator, SU_LongValue, SU_ShortOperator, SU_ShortValue);
+            int nc  = ComputeSignal(UseNCSignals,  ncRaw,  NC_LongOperator,  NC_LongValue,  NC_ShortOperator,  NC_ShortValue);
+
+            // Update Normalized Series for visuals/confluence
             if (_koSignalSeries != null)
                 _koSignalSeries[0] = ko;
             if (_paSignalSeries != null)
@@ -1117,207 +1247,140 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
                 _sjSignalSeries[0] = sj;
             if (_suSignalSeries != null)
                 _suSignalSeries[0] = su;
+            if (_ncSignalSeries != null)
+                _ncSignalSeries[0] = nc;
 
+            // Define Directional Booleans
             bool koLong = ko == 1 && UseKOSignals;
             bool paLong = pa == 1 && UsePASignals;
             bool thLong = th == 1 && UseTHSignals;
             bool sjLong = sj == 1 && UseSJSignals;
             bool suLong = su == 1 && UseSUSignals;
+            bool ncLong  = nc ==  1 && UseNCSignals;
+
             bool koShort = ko == -1 && UseKOSignals;
             bool paShort = pa == -1 && UsePASignals;
             bool thShort = th == -1 && UseTHSignals;
             bool sjShort = sj == -1 && UseSJSignals;
             bool suShort = su == -1 && UseSUSignals;
+            bool ncShort = nc == -1 && UseNCSignals;
 
-            bool goLong = false, goShort = false;
-            int  groupTriggeredSize = 0;       // 1/2/3/4/5 = required same-bar group count
-            string groupTriggeredName = string.Empty;
+            // 9. Confluence & Group Trigger Logic
+            GroupTriggerResult primaryGroup = EvaluatePrimaryGroupTriggerSet(koLong, paLong, thLong, sjLong, suLong, ncLong, koShort, paShort, thShort, sjShort, suShort, ncShort);
+            GroupTriggerResult secondaryGroup = EvaluateSecondaryGroupTriggerSet(koRaw, paRaw, thRaw, sjRaw, suRaw, ncRaw);
 
-            // Same-bar group consensus only. Use Required Count = 1 on either
-            // trigger set for a one-signal trigger.
-            GroupTriggerResult primaryGroup = EvaluatePrimaryGroupTriggerSet (koLong, paLong, thLong, sjLong, suLong, koShort, paShort, thShort, sjShort, suShort);
-            GroupTriggerResult secondaryGroup = EvaluateSecondaryGroupTriggerSet (koRaw, paRaw, thRaw, sjRaw, suRaw);
+            ProcessSignalAudioAlerts (ko, pa, th, sj, su, nc, primaryGroup, secondaryGroup);
 
-            ProcessSignalAudioAlerts (ko, pa, th, sj, su, primaryGroup, secondaryGroup);
+            bool goLong = (primaryGroup != null && primaryGroup.Long) || (secondaryGroup != null && secondaryGroup.Long);
+            bool goShort = (primaryGroup != null && primaryGroup.Short) || (secondaryGroup != null && secondaryGroup.Short);
 
-            goLong = (primaryGroup != null && primaryGroup.Long) || (secondaryGroup != null && secondaryGroup.Long);
-            goShort = (primaryGroup != null && primaryGroup.Short) || (secondaryGroup != null && secondaryGroup.Short);
+            GroupTriggerResult activeGroup = (primaryGroup != null && (primaryGroup.Long || primaryGroup.Short)) ? primaryGroup : secondaryGroup;
 
-            GroupTriggerResult activeGroup = null;
-
-            if (primaryGroup != null && (primaryGroup.Long || primaryGroup.Short))
-                activeGroup = primaryGroup;
-            else if (secondaryGroup != null && (secondaryGroup.Long || secondaryGroup.Short))
-                activeGroup = secondaryGroup;
-
+            // Conflict Safety: Don't trade if signals are contradictory
             if (goLong && goShort)
-            {
-                goLong = false;
-                goShort = false;
-                groupTriggeredSize = 0;
-                groupTriggeredName = string.Empty;
-                koLong = paLong = thLong = sjLong = suLong = false;
-                koShort = paShort = thShort = sjShort = suShort = false;
-            }
-            else if (activeGroup != null)
-            {
-                groupTriggeredSize = activeGroup.GroupSize;
-                groupTriggeredName = activeGroup.TriggerName;
+                return;
 
-                if (goLong)
-                {
-                    koLong = activeGroup.UsesKO;
-                    paLong = activeGroup.UsesPA;
-                    thLong = activeGroup.UsesTH;
-                    sjLong = activeGroup.UsesSJ;
-                    suLong = activeGroup.UsesSU;
-                }
+            int groupTriggeredSize = (activeGroup != null) ? activeGroup.GroupSize : 0;
+            string groupTriggeredName = (activeGroup != null) ? activeGroup.TriggerName : string.Empty;
 
-                if (goShort)
-                {
-                    koShort = activeGroup.UsesKO;
-                    paShort = activeGroup.UsesPA;
-                    thShort = activeGroup.UsesTH;
-                    sjShort = activeGroup.UsesSJ;
-                    suShort = activeGroup.UsesSU;
-                }
-            }
-
-            // Optional EMA trade filter: longs require short EMA > long EMA, shorts require short EMA < long EMA.
+            // 10. Optional EMA Filter
             if (EnableEmaFilter && _emaShortFilter != null && _emaLongFilter != null && CurrentBar >= Math.Max (EmaShortPeriod, EmaLongPeriod))
             {
-                bool bullishEmaAlignment = _emaShortFilter[0] > _emaLongFilter[0];
-                bool bearishEmaAlignment = _emaShortFilter[0] < _emaLongFilter[0];
-
-                if (goLong && !bullishEmaAlignment)
-                {
+                if (goLong && _emaShortFilter[0] <= _emaLongFilter[0])
                     goLong = false;
-                    koLong = paLong = thLong = suLong = sjLong = false;
-                }
-                if (goShort && !bearishEmaAlignment)
-                {
+                if (goShort && _emaShortFilter[0] >= _emaLongFilter[0])
                     goShort = false;
-                    koShort = paShort = thShort = suShort = sjShort = false;
-                }
             }
 
-            MarketPosition currentTradePosition = GetCurrentTradePosition ();
-
-            // Pending reverse entries are now consumed by BIP 1 on the next tick.
-            // Do not submit pending reverse entries from BIP 0, or they will wait for the next primary bar close.
-            if (pendingReverseActive && !CanUseReverseOnAlternateSignal ())
-                ClearPendingReverse ();
-
-            // If already in a position, optionally reverse on the opposite qualified signal.
+            // 11. Reversal Submission
             if (CanUseReverseOnAlternateSignal () && !pendingReverseActive && !HasPendingEntryOrder ())
             {
+                if (activeGroup == null)
+                    return;
+
                 if (currentTradePosition == MarketPosition.Long && goShort && _armShort)
                 {
-                    QueuePendingReverse (MarketPosition.Short, koShort, paShort, thShort, sjShort, suShort, groupTriggeredSize, groupTriggeredName);
+                    QueuePendingReverse (
+                        MarketPosition.Short,
+                        activeGroup.UsesKO,
+                        activeGroup.UsesPA,
+                        activeGroup.UsesTH,
+                        activeGroup.UsesSJ,
+                        activeGroup.UsesSU,
+                        activeGroup.UsesNC,
+                        groupTriggeredSize,
+                        groupTriggeredName);
+
                     FlattenEverything ("Reverse on alternate SHORT signal");
                     return;
                 }
 
                 if (currentTradePosition == MarketPosition.Short && goLong && _armLong)
                 {
-                    QueuePendingReverse (MarketPosition.Long, koLong, paLong, thLong, sjLong, suLong, groupTriggeredSize, groupTriggeredName);
+                    QueuePendingReverse (
+                        MarketPosition.Long,
+                        activeGroup.UsesKO,
+                        activeGroup.UsesPA,
+                        activeGroup.UsesTH,
+                        activeGroup.UsesSJ,
+                        activeGroup.UsesSU,
+                        activeGroup.UsesNC,
+                        groupTriggeredSize,
+                        groupTriggeredName);
+
                     FlattenEverything ("Reverse on alternate LONG signal");
                     return;
                 }
             }
 
-            // If still in a position and no reverse happened, do not stack entries.
             if (currentTradePosition != MarketPosition.Flat)
                 return;
 
-            // Normal flat-position entry logic.
-            // BIP 0 confirms the signal on the closed primary bar.
-            // BIP 1 submits the actual entry on the next tick after that close.
-            if (!HasActiveEntryState () && !HasPendingEntryOrder () && goLong && _armLong)
+            // 12. Standard Entry Submission
+            if (!HasActiveEntryState () && !HasPendingEntryOrder ())
             {
-                QueuePendingSignalEntry (
-                    MarketPosition.Long,
-                    koLong,
-                    paLong,
-                    thLong,
-                    sjLong,
-                    suLong,
-                    groupTriggeredSize,
-                    groupTriggeredName,
-                    "Normal long entry from confirmed signal bar close");
+                if (activeGroup == null)
+                    return;
+
+                if (goLong && _armLong)
+                {
+                    QueuePendingSignalEntry (
+                        MarketPosition.Long,
+                        activeGroup.UsesKO,
+                        activeGroup.UsesPA,
+                        activeGroup.UsesTH,
+                        activeGroup.UsesSJ,
+                        activeGroup.UsesSU,
+                        activeGroup.UsesNC,
+                        groupTriggeredSize,
+                        groupTriggeredName,
+                        "Normal long entry");
+                }
+                else if (goShort && _armShort)
+                {
+                    QueuePendingSignalEntry (
+                        MarketPosition.Short,
+                        activeGroup.UsesKO,
+                        activeGroup.UsesPA,
+                        activeGroup.UsesTH,
+                        activeGroup.UsesSJ,
+                        activeGroup.UsesSU,
+                        activeGroup.UsesNC,
+                        groupTriggeredSize,
+                        groupTriggeredName,
+                        "Normal short entry");
+                }
             }
-            else if (!HasActiveEntryState () && !HasPendingEntryOrder () && goShort && _armShort)
-            {
-                QueuePendingSignalEntry (
-                    MarketPosition.Short,
-                    koShort,
-                    paShort,
-                    thShort,
-                    sjShort,
-                    suShort,
-                    groupTriggeredSize,
-                    groupTriggeredName,
-                    "Normal short entry from confirmed signal bar close");
-            }
 
-            // FixedTicks uses NinjaTrader managed orders. Do not run ATM tracking logic.
-            if (OrderMode == OrderManagementMode.FixedTicks)
-                return;
-
-            if (!isAtmStrategyCreated)
-                return;
-
-            if (orderId.Length > 0)
+            // 13. ATM Strategy Tracking
+            if (OrderMode == OrderManagementMode.AtmStrategy && isAtmStrategyCreated && orderId.Length > 0)
             {
                 string[] status;
-
-                if (TryGetAtmEntryOrderStatusSafe (ref orderId, "Normal", out status)
-                    && status != null
-                    && status.Length >= 3)
+                if (TryGetAtmEntryOrderStatusSafe (ref orderId, "Normal", out status) && status != null && status[2] == "Filled")
                 {
-                    if (EnableDebug)
-                        Print ("The entry order average fill price is: " + status[0]);
-                    if (EnableDebug)
-                        Print ("The entry order filled amount is: " + status[1]);
-                    if (EnableDebug)
-                        Print ("The entry order order state is: " + status[2]);
-
-                    if (status[2] == "Filled")
-                    {
-                        CaptureFill (status);
-                        orderId = string.Empty;
-                    }
-                    else if (status[2] == "Cancelled" || status[2] == "Rejected")
-                    {
-                        orderId = string.Empty;
-                        ClearActiveTradeSignalSources ();
-                    }
+                    CaptureFill (status);
+                    orderId = string.Empty;
                 }
-            }
-
-            if (atmStrategyId.Length > 0 && EnableDebug)
-            {
-                MarketPosition atmMp;
-                double avgPrice;
-                double unrealized;
-                int qty;
-
-                if (TryGetAtmMarketPositionSafe (ref atmStrategyId, "Normal Debug", out atmMp))
-                    Print ("The current ATM Strategy market position is: " + atmMp);
-                else
-                {
-                    ClearNormalAtmState ("Normal ATM debug read failed");
-                    return;
-                }
-
-                if (TryGetAtmQuantitySafe (atmStrategyId, "Normal Debug", out qty))
-                    Print ("The current ATM Strategy position quantity is: " + qty);
-
-                if (TryGetAtmAveragePriceSafe (atmStrategyId, "Normal Debug", out avgPrice))
-                    Print ("The current ATM Strategy average price is: " + avgPrice);
-
-                if (TryGetAtmUnrealizedPnlSafe (atmStrategyId, "Normal Debug", out unrealized))
-                    Print ("The current ATM Strategy Unrealized PnL is: " + unrealized);
             }
         }
 
@@ -1384,7 +1447,7 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
                 }
             }
 
-            bool strategyFlat = IsFixedStrategyFlat ();
+            bool strategyFlat = IsFixedStrategyFlat () || IsFixedAccountFlatAndDone ();
 
             if (fixedPositionConfirmed
                 && !fixedTradeCloseProcessed
@@ -1404,6 +1467,65 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
                 ProcessFixedMartingaleClosed (GetFixedExitFallbackPrice (price), time);
                 RequestFixedPerformanceSync ();
                 return;
+            }
+        }
+
+        protected override void OnOrderUpdate (Order order, double limitPrice, double stopPrice, int quantity, int filled, double averageFillPrice, OrderState orderState, DateTime time, ErrorCode error, string nativeError)
+        {
+            if (order == null)
+                return;
+
+            string orderName = order.Name ?? string.Empty;
+
+            // Log every rejection in both modes — user preference for rejection diagnostics.
+            if (orderState == OrderState.Rejected)
+                Print ($"[{Name}] ORDER REJECTED | Mode={OrderMode} | Name={orderName} | Action={order.OrderAction} | Type={order.OrderType} | Qty={quantity} | Filled={filled} | Limit={limitPrice:F2} | Stop={stopPrice:F2} | Error={error} | Native={nativeError}");
+
+            // FixedTicks-specific rejection recovery (ATM mode handles its own bracket retries).
+            if (OrderMode != OrderManagementMode.FixedTicks)
+                return;
+
+            bool isFixedEntryOrder =
+                (!string.IsNullOrEmpty (fixedEntrySignalName) && orderName == fixedEntrySignalName)
+                || (!string.IsNullOrEmpty (fixedMartingaleSignalName) && orderName == fixedMartingaleSignalName);
+
+            bool isProtectiveOrder =
+                orderName.IndexOf ("Stop loss", StringComparison.OrdinalIgnoreCase) >= 0
+                || orderName.IndexOf ("Profit target", StringComparison.OrdinalIgnoreCase) >= 0
+                || orderName.IndexOf ("Stop", StringComparison.OrdinalIgnoreCase) >= 0
+                || orderName.IndexOf ("Target", StringComparison.OrdinalIgnoreCase) >= 0;
+
+            if (orderState == OrderState.Rejected)
+            {
+                if (isFixedEntryOrder)
+                {
+                    ClearPendingSignalEntry ();
+                    ClearPendingReverse ();
+                    ResetFixedOrderState ();
+                    ClearActiveTradeSignalSources ();
+                    return;
+                }
+
+                if (isProtectiveOrder)
+                {
+                    // ForceEmergencyFlatCheck doesn't exist in this version — derive state
+                    // inline and call FlattenNakedAccountPosition directly.
+                    try
+                    {
+                        NinjaTrader.Cbi.Position accountPos = GetAccountPositionForCurrentInstrument ();
+
+                        if (accountPos != null
+                            && accountPos.MarketPosition != MarketPosition.Flat
+                            && accountPos.Quantity > 0)
+                        {
+                            FlattenNakedAccountPosition (accountPos.MarketPosition, accountPos.Quantity, "Protective order rejected: " + orderName);
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        Print ($"[{Name}] OnOrderUpdate emergency-flat lookup failed: {ex.Message}");
+                    }
+                }
             }
         }
 
@@ -1582,6 +1704,9 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
             dailyUnrealizedPnL = 0.0;
             totalRunningPnL = 0.0;
 
+            fixedPerformanceRealizedBaseline = 0.0;
+            fixedPerformanceBaselineCaptured = false;
+
             dailyLimitHit = false;
             dailyPnlStatusMessage = string.Empty;
             lastTradeClosedSummary = string.Empty;
@@ -1598,9 +1723,10 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
             paStats = new SignalTradeStats ();
             thStats = new SignalTradeStats ();
             suStats = new SignalTradeStats ();
+            ncStats = new SignalTradeStats ();
             sjStats = new SignalTradeStats ();
-            groupSet1Stats = new SignalTradeStats ();
-            groupSet2Stats = new SignalTradeStats ();
+
+            confluenceStatsByKey.Clear ();
 
             ClearActiveTradeSignalSources ();
             ClearPendingSignalEntry ();
@@ -1704,6 +1830,7 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
             activeTradeUsesTH = false;
             activeTradeUsesSJ = false;
             activeTradeUsesSU = false;
+            activeTradeUsesNC = false;
 
             if (EnableDebug)
             {
@@ -1807,13 +1934,23 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
                 return;
 
             if (State == State.Historical && OrderMode != OrderManagementMode.FixedTicks)
+            {
+                BuildDashboardSnapshot ();
+                RequestHudRepaint ();
                 return;
+            }
 
             if (State != State.Historical && State != State.Realtime)
                 return;
 
             DateTime tickTime = Times[1][0];
             DateTime nowUtc = DateTime.UtcNow;
+
+            // Defense #3 + #8 — stale-ATM-ID backstop runs FIRST so that any phantom
+            // IDs are cleared (or any mid-trade-stale ATM is recovered via Account-level
+            // flatten) before the rest of the tick handler touches them. Cheap: two
+            // string checks + a DateTime subtract + at most one cheap try/catch poll.
+            EvictStaleAtmIdsIfTimedOut ();
 
             double normalUnrealizedPnL = 0.0;
             bool fixedTicksPnlSyncedFromPerformance = false;
@@ -1828,6 +1965,9 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
                         + $"PrevSessionMarker={lastPnlSessionDate} | "
                         + $"Bars.IsFirstBarOfSession={Bars.IsFirstBarOfSession} | "
                         + $"TotalRealizedBeforeReset={totalRealizedPnL:F2}");
+
+                if (OrderMode == OrderManagementMode.FixedTicks)
+                    totalRealizedPnL = Math.Round (GetSystemPerformanceCumProfitSafe () - GetFixedPerformanceBaseline (), 2);
 
                 sessionStartTotalRealizedPnL = totalRealizedPnL;
                 lastAtmRealizedPnL = 0.0;
@@ -1926,19 +2066,17 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
                         bool startMartingale = ShouldStartMartingaleRecovery (lastAtmRealizedPnL, closedDirection);
                         MarketPosition martingaleDirection = startMartingale ? GetOppositeDirection (closedDirection) : MarketPosition.Flat;
 
-                        totalRealizedPnL += lastAtmRealizedPnL;
+                        totalRealizedPnL = Math.Round (totalRealizedPnL + lastAtmRealizedPnL, 2);
+                        dailyRealizedPnL = Math.Round (totalRealizedPnL - sessionStartTotalRealizedPnL, 2);
+                        totalRunningPnL = Math.Round (totalRealizedPnL + (UseUnrealizedPnl ? dailyUnrealizedPnL : 0.0), 2);
+
                         UpdateSignalTrackingOnTradeClose (lastAtmRealizedPnL);
                         UpdateLastTradeClosedSummary (lastAtmRealizedPnL);
                         PrintSignalTrackingOnTradeClose (lastAtmRealizedPnL);
 
-                        if (_logWriter != null && _tradeMap.TryGetValue (atmStrategyId, out TradeRecord tr))
-                        {
-                            string acct = (Account != null && !string.IsNullOrEmpty (Account.Name)) ? Account.Name : "NoAccount";
-                            _logWriter.WriteLine ($"{tr.OpenTime:yyyy-MM-dd HH:mm:ss},{acct},{tr.Instrument},{tr.OpenPrice:F2},{tr.Qty},{tickTime:yyyy-MM-dd HH:mm:ss},{tr.Trigger},{tr.Direction},{tr.AtmStrategyName},{lastAtmRealizedPnL:F2}");
-                            _logWriter.Flush ();
-                        }
+                        WriteTradeLogRecord (atmStrategyId, tickTime, lastAtmRealizedPnL);
 
-                        _tradeMap.Remove (atmStrategyId);
+                        _tradeMap.TryRemove (atmStrategyId, out _);
                         ClearActiveTradeSignalSources ();
                         atmStrategyId = string.Empty;
                         orderId = string.Empty;
@@ -1973,11 +2111,14 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
             dailyUnrealizedPnL = normalUnrealizedPnL + GetMartingaleUnrealizedPnL ();
 
             if (!fixedTicksPnlSyncedFromPerformance)
-                dailyRealizedPnL = totalRealizedPnL - sessionStartTotalRealizedPnL;
+                dailyRealizedPnL = Math.Round (totalRealizedPnL - sessionStartTotalRealizedPnL, 2);
 
-            totalRunningPnL = totalRealizedPnL + (UseUnrealizedPnl ? dailyUnrealizedPnL : 0.0);
+            double openPnlForTotals = UseUnrealizedPnl ? dailyUnrealizedPnL : 0.0;
 
-            double dailyPnlToCheck = dailyRealizedPnL + (UseUnrealizedPnl ? dailyUnrealizedPnL : 0.0);
+            totalRunningPnL = Math.Round (totalRealizedPnL + openPnlForTotals, 2);
+
+            double dailyRunningPnL = Math.Round (dailyRealizedPnL + openPnlForTotals, 2);
+            double dailyPnlToCheck = dailyRunningPnL;
 
             if (EnableDebug)
                 Print ($"{tickTime:yyyy-MM-dd HH:mm:ss} | DAILY PNL CHECK | "
@@ -2051,49 +2192,104 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
             RequestHudRepaint ();
         }
 
+        private double GetSystemPerformanceCumProfitSafe ()
+        {
+            try
+            {
+                if (SystemPerformance == null || SystemPerformance.AllTrades == null)
+                    return 0.0;
+
+                return SystemPerformance.AllTrades.TradesPerformance.Currency.CumProfit;
+            }
+            catch
+            {
+                return 0.0;
+            }
+        }
+
+        private void CaptureFixedPerformanceBaseline ()
+        {
+            fixedPerformanceRealizedBaseline = 0.0;
+            fixedPerformanceBaselineCaptured = false;
+
+            if (!StartFreshOnEnable)
+                return;
+
+            if (OrderMode != OrderManagementMode.FixedTicks)
+                return;
+
+            fixedPerformanceRealizedBaseline = Math.Round (GetSystemPerformanceCumProfitSafe (), 2);
+            fixedPerformanceBaselineCaptured = true;
+
+            if (EnableDebug)
+            {
+                Print ($"[{Name}] FIXEDTICKS FRESH PERFORMANCE BASELINE | "
+                    + $"Baseline={fixedPerformanceRealizedBaseline:F2}");
+            }
+        }
+
+        private double GetFixedPerformanceBaseline ()
+        {
+            if (!StartFreshOnEnable)
+                return 0.0;
+
+            if (!fixedPerformanceBaselineCaptured)
+                CaptureFixedPerformanceBaseline ();
+
+            return fixedPerformanceRealizedBaseline;
+        }
+
         private void BuildDashboardSnapshot ()
         {
             try
             {
-                int displayTime = ToTime (Time[0]);
-
+                // 1. Calculate Session Status
+                int displayTime = ToTime(Time[0]);
                 bool timeFilterEnabled = EnableTF1 || EnableTF2 || EnableTF3 || EnableSkipTimeWindow;
-                bool inSession = !timeFilterEnabled || CheckTradingTimeframes (displayTime);
+                bool inSession = !timeFilterEnabled || CheckTradingTimeframes(displayTime);
+
                 _hudSessionOutside = timeFilterEnabled && !inSession;
                 _hudSession = timeFilterEnabled
                     ? (inSession ? "IN SESSION" : "OUT OF SESSION")
                     : "24H (filter off)";
 
+                // 2. Determine Master Active State
+                _hudIsMasterActive = _strategyEnabled && _autoArm && !dailyLimitHit && inSession;
+
                 _hudTitle = Name ?? "GodZilla";
                 _hudVersion = StrategyVersion ?? "";
 
-                _hudArm = _strategyEnabled
-                    ? "ENABLED  L:" + (_armLong ? "ON " : "OFF")
-                        + "  S:" + (_armShort ? "ON " : "OFF")
-                        + "  REV:" + (_reverseOnAlternateSignal ? "ON" : "OFF")
-                    : "DISABLED  REV:" + (_reverseOnAlternateSignal ? "ON" : "OFF");
+                // 3. Prepare the Master Status String
+                if (_hudIsMasterActive)
+                {
+                    _hudArm = "ENABLED";
+                }
+                else
+                {
+                    string reason = !inSession ? "[OUT OF SESSION]" :
+                            dailyLimitHit ? "[DAILY LIMIT HIT]" : "[AUTO-ARM OFF]";
+                    _hudArm = "DISABLED " + reason;
+                }
 
-                string targetStr = EnableDailyProfitTarget ? "+$" + DailyProfitTarget.ToString ("F0") : "off";
-                string lossStr   = EnableDailyLossLimit    ? "-$" + DailyLossLimit.ToString ("F0")   : "off";
+                // 4. Calculate PNL Values
+                string targetStr = EnableDailyProfitTarget ? "+$" + DailyProfitTarget.ToString("F0") : "off";
+                string lossStr   = EnableDailyLossLimit    ? "-$" + DailyLossLimit.ToString("F0")   : "off";
                 _hudTargets = "Target " + targetStr + "   MaxLoss " + lossStr;
 
                 double openPnl = UseUnrealizedPnl ? dailyUnrealizedPnL : 0.0;
+                double strategyPnl = totalRealizedPnL + openPnl;
+                double dailyPnl = dailyRealizedPnL + openPnl;
 
-                // Separate color states:
-                // Strategy PNL = totalRunningPnL
-                // Daily PNL    = dailyRealizedPnL
-                // Open PNL     = dailyUnrealizedPnL/openPnl
-                _hudStrategyPnlPositive = totalRunningPnL >= 0;
-                _hudDailyPnlPositive = dailyRealizedPnL >= 0;
+                _hudStrategyPnlPositive = strategyPnl >= 0;
+                _hudDailyPnlPositive = dailyPnl >= 0;
                 _hudOpenPnlPositive = openPnl >= 0;
+                _hudShowOpenPnl = UseUnrealizedPnl;
 
-                _hudStrategyPnl = "Strategy PNL " + FormatMoney (totalRunningPnL);
-                _hudDailyPnl = "Daily PNL " + FormatMoney (dailyRealizedPnL);
+                _hudStrategyPnl = "Strategy PNL " + FormatMoney (strategyPnl);
+                _hudDailyPnl = "Daily PNL    " + FormatMoney (dailyPnl);
+                _hudPnlOpen = UseUnrealizedPnl ? "Open PNL     " + FormatMoney (openPnl) : string.Empty;
 
-                _hudPnlOpen = UseUnrealizedPnl
-                    ? "Open PNL  " + FormatMoney (openPnl)
-                    : "";
-
+                // 5. Status & News
                 _hudKillHit = dailyLimitHit;
                 _hudKillProfit = dailyLimitHit
                     && !string.IsNullOrEmpty (dailyPnlStatusMessage)
@@ -2121,10 +2317,7 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
                 {
                     _hudNewsBlocked = IsNewsTradingBlocked ();
                 }
-                catch
-                {
-                    _hudNewsBlocked = false;
-                }
+                catch { _hudNewsBlocked = false; }
 
                 _hudLastTrade = string.IsNullOrEmpty (lastTradeClosedSummary) ? "Last: —" : lastTradeClosedSummary;
                 _hudLastTradeHasPnl = hasLastTradeClosedPnL;
@@ -2133,8 +2326,7 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
                 _hudShowSignals = EnableSignalTracking;
                 if (EnableSignalTracking)
                 {
-                    var lines = BuildSignalTrackingDisplayLines ();
-                    _hudSignalLines = lines ?? new List<string> ();
+                    _hudSignalLines = BuildSignalTrackingDisplayLines () ?? new List<string> ();
                 }
             }
             catch (Exception ex)
@@ -2496,13 +2688,11 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
             if (RenderTarget == null)
                 return;
 
-            // User-disabled the HUD entirely — skip all SharpDX work. Stability mode.
+            // Stability-mode short-circuit: skip if dashboard is disabled
             if (!ShowDashboard || DashboardPosition == HudCorner.Hidden)
                 return;
 
-            // Eager re-init: OnRenderTargetChanged may not have fired yet on
-            // some NT8 builds (notably during playback restart), so brushes
-            // can be null on the first frame. Build them now if missing.
+            // Eager re-init for SharpDX resources
             if (_dashFormat == null || _bTextWhite == null)
             {
                 try
@@ -2518,17 +2708,16 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
                             Print ("[" + Name + "] HUD lazy-init err: " + ex.Message);
                     }
                 }
-
                 if (_dashFormat == null)
                     return;
             }
 
             try
             {
-                // Snapshot copies.
+                // Snapshot local copies from data thread variables
                 string title       = _hudTitle;
                 string version     = _hudVersion;
-                string arm         = _hudArm;
+                string arm         = _hudArm; // Contains "ENABLED" or "DISABLED [REASON]"
                 string sess        = _hudSession;
                 string news        = _hudNews;
                 string strategyPnl = _hudStrategyPnl;
@@ -2539,6 +2728,7 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
                 string last        = _hudLastTrade;
                 string killBanner  = _hudKillBanner;
 
+                bool masterActive        = _hudIsMasterActive; // Master gate calculated in Snapshot
                 bool strategyPnlPositive = _hudStrategyPnlPositive;
                 bool dailyPnlPositive    = _hudDailyPnlPositive;
                 bool openPnlPositive     = _hudOpenPnlPositive;
@@ -2550,40 +2740,39 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
                 bool newsBlocked         = _hudNewsBlocked;
                 bool showNews            = _hudShowNews;
                 bool showSignals         = _hudShowSignals;
+                bool showOpenPnl         = _hudShowOpenPnl;
 
                 List<string> sigLines = _hudSignalLines;
 
                 EnsureDashboardFonts ();
 
-                const float PAD      = 8f;
-                const float SEP_H    = 4f;
-                const float MARGIN_X = 18f;
-                const float MARGIN_Y = 35f;
+                // Layout Constants
+                const float PAD              = 8f;
+                const float SEP_H            = 4f;
+                const float MARGIN_X         = 18f;
+                const float MARGIN_Y         = 35f;
+                const float RIGHT_AXIS_PAD   = 80f;
 
-                float ROW_H   = HudRowHeight ();
-                float TITLE_H = HudTitleHeight ();
-                float BOX_W   = HudBoxWidth ();
+                float ROW_H   = HudRowHeight();
+                float TITLE_H = HudTitleHeight();
+                float BOX_W   = HudBoxWidth();
 
-                // Count rows.
+                // Count rows for box sizing
                 int rows = 0;
                 rows++; // title
                 rows++; // separator
-                rows++; // arm
+                rows++; // arm row
                 rows++; // session
-
                 if (showNews && !string.IsNullOrEmpty (news))
                     rows++;
-
-                rows++; // strategy/daily pnl row
-
-                if (!string.IsNullOrEmpty (pnlOpen))
-                    rows++;
-
+                rows++; // strategy pnl
+                rows++; // daily pnl
+                if (showOpenPnl)
+                    rows++; // open pnl
                 rows++; // targets
                 rows++; // status
                 rows++; // last trade
-
-                if (showSignals && sigLines != null && sigLines.Count > 0)
+                if (showSignals && sigLines != null)
                     rows += sigLines.Count;
 
                 float boxH = PAD * 2f + TITLE_H + SEP_H + ROW_H * (rows - 1) + 4f;
@@ -2591,50 +2780,32 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
                 Size2F rtSize = RenderTarget.Size;
                 float bx, by;
 
+                // Positioning Logic
                 switch (DashboardPosition)
                 {
                     case HudCorner.TopLeft:
                         bx = MARGIN_X;
                         by = MARGIN_Y;
                         break;
-
                     case HudCorner.TopRight:
-                        bx = rtSize.Width - BOX_W - MARGIN_X;
+                        bx = rtSize.Width - BOX_W - MARGIN_X - RIGHT_AXIS_PAD;
                         by = MARGIN_Y;
                         break;
-
                     case HudCorner.BottomLeft:
                         bx = MARGIN_X;
                         by = rtSize.Height - boxH - MARGIN_Y;
                         break;
-
                     case HudCorner.Center:
                         bx = (rtSize.Width - BOX_W) * 0.5f;
                         by = (rtSize.Height - boxH) * 0.5f;
                         break;
-
-                    case HudCorner.BottomRight:
                     default:
-                        bx = rtSize.Width - BOX_W - MARGIN_X;
+                        bx = rtSize.Width - BOX_W - MARGIN_X - RIGHT_AXIS_PAD;
                         by = rtSize.Height - boxH - MARGIN_Y;
                         break;
                 }
 
-                // Clamp to chart bounds.
-                if (bx < 4f)
-                    bx = 4f;
-
-                if (by < 4f)
-                    by = 4f;
-
-                if (bx + BOX_W > rtSize.Width - 4f)
-                    bx = rtSize.Width - BOX_W - 4f;
-
-                if (by + boxH > rtSize.Height - 4f)
-                    by = rtSize.Height - boxH - 4f;
-
-                RectangleF box = new RectangleF (bx, by, BOX_W, boxH);
-
+                RectangleF box = new RectangleF(bx, by, BOX_W, boxH);
                 RenderTarget.FillRectangle (box, _bBackground);
                 RenderTarget.DrawRectangle (box, killHit ? _bBorderHot : _bBorder, killHit ? 2f : 1f);
 
@@ -2642,193 +2813,91 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
                 float y = by + PAD;
                 float w = BOX_W - PAD * 2f;
 
-                // Title row.
-                string titleLine = "🐲 " + title + (string.IsNullOrEmpty (version) ? "" : "  v" + version);
-                DrawHudLine (titleLine, x, y, w, TITLE_H, _bTextCyan, _dashTitleFormat);
+                // Title
+                DrawHudLine ("🐲 " + title + (string.IsNullOrEmpty (version) ? "" : "  v" + version), x, y, w, TITLE_H, _bTextCyan, _dashTitleFormat);
                 y += TITLE_H;
 
-                // Separator.
-                RenderTarget.DrawLine (
-                    new Vector2 (x, y + 1f),
-                    new Vector2 (x + w, y + 1f),
-                    _bBorder,
-                    1f);
-
+                // Separator
+                RenderTarget.DrawLine (new Vector2 (x, y + 1f), new Vector2 (x + w, y + 1f), _bBorder, 1f);
                 y += SEP_H;
 
-                // Arm line.
-                DrawHudLine (
-                    arm,
-                    x,
-                    y,
-                    w,
-                    ROW_H,
-                    _strategyEnabled ? _bTextGreen : _bTextRed,
-                    _dashFormat);
+                // --- MASTER ARM STATUS ROW (SEGMENTED COLORING) ---
+                // 1. Draw "ENABLED" or "DISABLED [REASON]"
+                DrawHudLine (arm, x, y, w, ROW_H, masterActive ? _bTextGreen : _bTextRed, _dashFormat);
 
+                // 2. Draw L, S, and REV status individually if Master is Active
+                if (masterActive)
+                {
+                    float segmentX = x + 85f; // Adjust X offset based on "ENABLED" width
+
+                    // Long Status
+                    DrawHudLine ("L:", segmentX, y, 20, ROW_H, _bTextWhite, _dashFormat);
+                    DrawHudLine (_armLong ? "ON" : "OFF", segmentX + 20, y, 30, ROW_H, _armLong ? _bTextGreen : _bTextRed, _dashFormat);
+                    segmentX += 60f;
+
+                    // Short Status
+                    DrawHudLine ("S:", segmentX, y, 20, ROW_H, _bTextWhite, _dashFormat);
+                    DrawHudLine (_armShort ? "ON" : "OFF", segmentX + 20, y, 30, ROW_H, _armShort ? _bTextGreen : _bTextRed, _dashFormat);
+                    segmentX += 65f;
+
+                    // Reverse Status
+                    DrawHudLine ("REV:", segmentX, y, 35, ROW_H, _bTextWhite, _dashFormat);
+                    DrawHudLine (_reverseOnAlternateSignal ? "ON" : "OFF", segmentX + 35, y, 30, ROW_H, _reverseOnAlternateSignal ? _bTextGreen : _bTextRed, _dashFormat);
+                }
                 y += ROW_H;
 
-                // Session.
-                DrawHudLine (
-                    "Session: " + sess,
-                    x,
-                    y,
-                    w,
-                    ROW_H,
-                    sessOutside ? _bTextOrange : _bTextGreen,
-                    _dashFormat);
-
+                // Session
+                DrawHudLine ("Session: " + sess, x, y, w, ROW_H, sessOutside ? _bTextOrange : _bTextGreen, _dashFormat);
                 y += ROW_H;
 
-                // News.
+                // News
                 if (showNews && !string.IsNullOrEmpty (news))
                 {
-                    DrawHudLine (
-                        news,
-                        x,
-                        y,
-                        w,
-                        ROW_H,
-                        newsBlocked ? _bTextRed : _bTextDim,
-                        _dashFormat);
-
+                    DrawHudLine (news, x, y, w, ROW_H, newsBlocked ? _bTextRed : _bTextDim, _dashFormat);
                     y += ROW_H;
                 }
 
-                // Strategy PNL and Daily PNL use separate colors on the same row.
-                float strategyWidth = w * 0.52f;
-                float dailyX        = x + strategyWidth;
-                float dailyWidth    = w - strategyWidth;
-
-                DrawHudLine (
-                    strategyPnl,
-                    x,
-                    y,
-                    strategyWidth,
-                    ROW_H,
-                    strategyPnlPositive ? _bTextGreen : _bTextRed,
-                    _dashFormat);
-
-                DrawHudLine (
-                    dailyPnl,
-                    dailyX,
-                    y,
-                    dailyWidth,
-                    ROW_H,
-                    dailyPnlPositive ? _bTextGreen : _bTextRed,
-                    _dashFormat);
-
+                // PNL Rows
+                DrawHudLine (strategyPnl, x, y, w, ROW_H, strategyPnlPositive ? _bTextGreen : _bTextRed, _dashFormat);
                 y += ROW_H;
-
-                // Open PNL.
-                if (!string.IsNullOrEmpty (pnlOpen))
+                DrawHudLine (dailyPnl, x, y, w, ROW_H, dailyPnlPositive ? _bTextGreen : _bTextRed, _dashFormat);
+                y += ROW_H;
+                if (showOpenPnl)
                 {
-                    DrawHudLine (
-                        pnlOpen,
-                        x,
-                        y,
-                        w,
-                        ROW_H,
-                        openPnlPositive ? _bTextGreen : _bTextRed,
-                        _dashFormat);
-
+                    DrawHudLine (pnlOpen, x, y, w, ROW_H, openPnlPositive ? _bTextGreen : _bTextRed, _dashFormat);
                     y += ROW_H;
                 }
 
-                // Targets.
-                DrawHudLine (
-                    targets,
-                    x,
-                    y,
-                    w,
-                    ROW_H,
-                    _bTextDim,
-                    _dashFormat);
-
+                // Risk & Status
+                DrawHudLine (targets, x, y, w, ROW_H, _bTextDim, _dashFormat);
                 y += ROW_H;
 
-                // Status.
-                SharpDX.Direct2D1.SolidColorBrush statusBrush;
-
-                if (killHit)
-                    statusBrush = killProfit ? _bTextGreen : _bTextRed;
-                else if (status != null && status.StartsWith ("IN POSITION", StringComparison.Ordinal))
-                    statusBrush = _bTextCyan;
-                else
-                    statusBrush = _bTextYellow;
-
-                DrawHudLine (
-                    status,
-                    x,
-                    y,
-                    w,
-                    ROW_H,
-                    statusBrush,
-                    _dashFormat);
-
+                SharpDX.Direct2D1.SolidColorBrush statusBrush = killHit ? (killProfit ? _bTextGreen : _bTextRed) : (status.StartsWith("IN POSITION") ? _bTextCyan : _bTextYellow);
+                DrawHudLine (status, x, y, w, ROW_H, statusBrush, _dashFormat);
                 y += ROW_H;
 
-                // Last trade.
-                SharpDX.Direct2D1.SolidColorBrush lastTradeBrush = _bTextDim;
-
-                if (lastTradeHasPnl)
-                    lastTradeBrush = lastTradePositive ? _bTextGreen : _bTextRed;
-
-                DrawHudLine (
-                    last,
-                    x,
-                    y,
-                    w,
-                    ROW_H,
-                    lastTradeBrush,
-                    _dashFormat);
-
+                // Last Trade
+                SharpDX.Direct2D1.SolidColorBrush lastBrush = lastTradeHasPnl ? (lastTradePositive ? _bTextGreen : _bTextRed) : _bTextDim;
+                DrawHudLine (last, x, y, w, ROW_H, lastBrush, _dashFormat);
                 y += ROW_H;
 
-                // Signal-tracking lines.
+                // Signal Stats
                 if (showSignals && sigLines != null)
                 {
-                    for (int i = 0; i < sigLines.Count; i++)
+                    foreach (string sigLine in sigLines)
                     {
-                        DrawHudLine (
-                            sigLines[i],
-                            x,
-                            y,
-                            w,
-                            ROW_H,
-                            _bTextWhite,
-                            _dashFormat);
-
+                        DrawHudLine (sigLine, x, y, w, ROW_H, _bTextWhite, _dashFormat);
                         y += ROW_H;
                     }
                 }
 
-                // Kill-switch banner overlay.
+                // Kill Banner Overlay
                 if (killHit && !string.IsNullOrEmpty (killBanner))
                 {
-                    RectangleF kb = new RectangleF (
-                rtSize.Width * 0.18f,
-                rtSize.Height * 0.42f,
-                rtSize.Width * 0.64f,
-                60f);
-
+                    RectangleF kb = new RectangleF(rtSize.Width * 0.18f, rtSize.Height * 0.42f, rtSize.Width * 0.64f, 60f);
                     RenderTarget.FillRectangle (kb, _bBackground);
                     RenderTarget.DrawRectangle (kb, killProfit ? _bTextGreen : _bTextRed, 2f);
-
-                    RenderTarget.DrawText (
-                        killBanner,
-                        _dashTitleFormat,
-                        new RectangleF (kb.X + 12f, kb.Y + 18f, kb.Width - 24f, kb.Height - 18f),
-                        killProfit ? _bTextGreen : _bTextRed,
-                        SharpDX.Direct2D1.DrawTextOptions.Clip,
-                        SharpDX.Direct2D1.MeasuringMode.Natural);
-                }
-
-                if (!_hudFirstRenderLogged && EnableDebug)
-                {
-                    _hudFirstRenderLogged = true;
-                    Print ("[" + Name + "] HUD: first frame rendered ("
-                        + rtSize.Width.ToString ("F0") + "x" + rtSize.Height.ToString ("F0") + ")");
+                    RenderTarget.DrawText (killBanner, _dashTitleFormat, new RectangleF (kb.X + 12f, kb.Y + 18f, kb.Width - 24f, kb.Height - 18f), killProfit ? _bTextGreen : _bTextRed, SharpDX.Direct2D1.DrawTextOptions.Clip, SharpDX.Direct2D1.MeasuringMode.Natural);
                 }
             }
             catch (Exception ex)
@@ -2836,7 +2905,6 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
                 if (_hudErrors < 3)
                 {
                     _hudErrors++;
-
                     if (EnableDebug)
                         Print ("[" + Name + "] HUD render err: " + ex.Message);
                 }
@@ -2862,12 +2930,14 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
                 double thRaw = _thunder != null ? SafeSignalRead (() => _thunder.Signal_Trade[0], "TH") : 0.0;
                 double sjRaw = _sjb != null ? SafeSignalRead (() => _sjb.Signal_Trade[0], "SJ") : 0.0;
                 double suRaw = _sumo != null ? SafeSignalRead (() => _sumo.Signal_Trade[0], "SU") : 0.0;
+                double ncRaw = _nc != null ? SafeSignalRead (() => _nc.Signal_Trade[0], "NC") : 0.0;
 
                 int ko = ComputeSignal (UseKOSignals, koRaw, KO_LongOperator, KO_LongValue, KO_ShortOperator, KO_ShortValue);
                 int pa = ComputeSignal (UsePASignals, paRaw, PA_LongOperator, PA_LongValue, PA_ShortOperator, PA_ShortValue);
                 int th = ComputeSignal (UseTHSignals, thRaw, TH_LongOperator, TH_LongValue, TH_ShortOperator, TH_ShortValue);
                 int sj = ComputeSignal (UseSJSignals, sjRaw, SJ_LongOperator, SJ_LongValue, SJ_ShortOperator, SJ_ShortValue);
                 int su = ComputeSignal (UseSUSignals, suRaw, SU_LongOperator, SU_LongValue, SU_ShortOperator, SU_ShortValue);
+                int nc = ComputeSignal (UseNCSignals, ncRaw, NC_LongOperator, NC_LongValue, NC_ShortOperator, NC_ShortValue);
 
                 if (_koSignalSeries != null)
                     _koSignalSeries[0] = ko;
@@ -2879,6 +2949,8 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
                     _sjSignalSeries[0] = sj;
                 if (_suSignalSeries != null)
                     _suSignalSeries[0] = su;
+                if (_ncSignalSeries != null)
+                    _ncSignalSeries[0] = nc;
 
                 if (!SignalVisualFilterPassed (ko))
                     ko = 0;
@@ -2895,14 +2967,18 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
                 if (!SignalVisualFilterPassed (su))
                     su = 0;
 
+                if (!SignalVisualFilterPassed (nc))
+                    nc = 0;
+
                 DrawSignalArrow ("GZ_KO_SIG_", ko, UseKOSignals && ShowKOSignalArrows, KOSignalArrowBrush, 0, ShowKOSignalArrowLabels, KOSignalArrowText);
                 DrawSignalArrow ("GZ_PA_SIG_", pa, UsePASignals && ShowPASignalArrows, PASignalArrowBrush, 2, ShowPASignalArrowLabels, PASignalArrowText);
                 DrawSignalArrow ("GZ_TH_SIG_", th, UseTHSignals && ShowTHSignalArrows, THSignalArrowBrush, 4, ShowTHSignalArrowLabels, THSignalArrowText);
                 DrawSignalArrow ("GZ_SJ_SIG_", sj, UseSJSignals && ShowSJSignalArrows, SJSignalArrowBrush, 6, ShowSJSignalArrowLabels, SJSignalArrowText);
                 DrawSignalArrow ("GZ_SU_SIG_", su, UseSUSignals && ShowSUSignalArrows, SUSignalArrowBrush, 8, ShowSUSignalArrowLabels, SUSignalArrowText);
+                DrawSignalArrow ("GZ_NC_SIG_", nc, UseNCSignals && ShowNCSignalArrows, NCSignalArrowBrush, 10, ShowNCSignalArrowLabels, NCSignalArrowText);
 
                 int groupSize = 0;
-                int groupSignal = GetSameBarGroupTriggerSignal (koRaw, paRaw, thRaw, sjRaw, suRaw, ko, pa, th, sj, su, out groupSize);
+                int groupSignal = GetSameBarGroupTriggerSignal (koRaw, paRaw, thRaw, sjRaw, suRaw, ncRaw, ko, pa, th, sj, su, nc, out groupSize);
 
                 SetSignalBackBrush (groupSignal);
 
@@ -2983,6 +3059,25 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
             string tag = tagPrefix + CurrentBar;
             string textTag = tagPrefix + "TXT_" + CurrentBar;
 
+            // Defense #4: rolling cleanup — each new draw evicts the corresponding
+            // tag from DRAW_TAG_KEEP bars ago. One RemoveDrawObject per side,
+            // runs only when we're actually drawing → bounds the chart's
+            // draw-object pool tightly. Per feedback_nt8_wpf_quota_prevention.md.
+            int oldBar = CurrentBar - DRAW_TAG_KEEP;
+            if (oldBar >= 0)
+            {
+                try
+                {
+                    RemoveDrawObject (tagPrefix + oldBar);
+                }
+                catch { }
+                try
+                {
+                    RemoveDrawObject (tagPrefix + "TXT_" + oldBar);
+                }
+                catch { }
+            }
+
             try
             {
                 if (signal > 0)
@@ -3041,12 +3136,12 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
             }
         }
 
-        private int GetSameBarGroupTriggerSignal (double koRaw, double paRaw, double thRaw, double sjRaw, double suRaw, double ko, double pa, double th, double sj, double su, out int groupSize)
+        private int GetSameBarGroupTriggerSignal (double koRaw, double paRaw, double thRaw, double sjRaw, double suRaw, double ncRaw, double ko, double pa, double th, double sj, double su, double nc, out int groupSize)
         {
             groupSize = 0;
 
-            GroupTriggerResult primaryGroup = EvaluatePrimaryGroupTriggerSet (ko == 1 && UseKOSignals, pa == 1 && UsePASignals, th == 1 && UseTHSignals, sj == 1 && UseSJSignals, su == 1 && UseSUSignals, ko == -1 && UseKOSignals, pa == -1 && UsePASignals, th == -1 && UseTHSignals, sj == -1 && UseSJSignals, su == -1 && UseSUSignals);
-            GroupTriggerResult secondaryGroup = EvaluateSecondaryGroupTriggerSet (koRaw, paRaw, thRaw, sjRaw, suRaw);
+            GroupTriggerResult primaryGroup = EvaluatePrimaryGroupTriggerSet (ko == 1 && UseKOSignals, pa == 1 && UsePASignals, th == 1 && UseTHSignals, sj == 1 && UseSJSignals, su == 1 && UseSUSignals, nc == 1 && UseNCSignals, ko == -1 && UseKOSignals, pa == -1 && UsePASignals, th == -1 && UseTHSignals, sj == -1 && UseSJSignals, su == -1 && UseSUSignals, nc == -1 && UseNCSignals);
+            GroupTriggerResult secondaryGroup = EvaluateSecondaryGroupTriggerSet (koRaw, paRaw, thRaw, sjRaw, suRaw, ncRaw);
 
             bool goLong = (primaryGroup != null && primaryGroup.Long) || (secondaryGroup != null && secondaryGroup.Long);
             bool goShort = (primaryGroup != null && primaryGroup.Short) || (secondaryGroup != null && secondaryGroup.Short);
@@ -3078,7 +3173,7 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
             return 0;
         }
 
-        private GroupTriggerResult EvaluatePrimaryGroupTriggerSet (bool koLong, bool paLong, bool thLong, bool sjLong, bool suLong, bool koShort, bool paShort, bool thShort, bool sjShort, bool suShort)
+        private GroupTriggerResult EvaluatePrimaryGroupTriggerSet (bool koLong, bool paLong, bool thLong, bool sjLong, bool suLong, bool ncLong, bool koShort, bool paShort, bool thShort, bool sjShort, bool suShort, bool ncShort)
         {
             GroupTriggerResult result = new GroupTriggerResult ();
             result.TriggerName = "SET1";
@@ -3092,45 +3187,54 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
 
             if (UseKOSignals)
             {
-                result.UsesKO = true;
                 if (koLong)
                     longAgree++;
                 else if (koShort)
                     shortAgree++;
             }
+
             if (UsePASignals)
             {
-                result.UsesPA = true;
                 if (paLong)
                     longAgree++;
                 else if (paShort)
                     shortAgree++;
             }
+
             if (UseTHSignals)
             {
-                result.UsesTH = true;
                 if (thLong)
                     longAgree++;
                 else if (thShort)
                     shortAgree++;
             }
+
             if (UseSJSignals)
             {
-                result.UsesSJ = true;
                 if (sjLong)
                     longAgree++;
                 else if (sjShort)
                     shortAgree++;
             }
+
             if (UseSUSignals)
             {
-                result.UsesSU = true;
                 if (suLong)
                     longAgree++;
                 else if (suShort)
                     shortAgree++;
             }
 
+            if (UseNCSignals && ncLong)
+            {
+                longAgree++;
+            }
+            if (UseNCSignals && ncShort)
+            {
+                shortAgree++;
+            }
+
+            // Conflict safety: do not trigger if both long and short qualify on same bar.
             if (longAgree >= needed && shortAgree >= needed)
                 return result;
 
@@ -3138,17 +3242,33 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
             {
                 result.Long = true;
                 result.GroupSize = needed;
+
+                // Only mark signals that actually agreed LONG on the entry bar.
+                result.UsesKO = UseKOSignals && koLong;
+                result.UsesPA = UsePASignals && paLong;
+                result.UsesTH = UseTHSignals && thLong;
+                result.UsesSJ = UseSJSignals && sjLong;
+                result.UsesSU = UseSUSignals && suLong;
+                result.UsesNC = UseNCSignals && ncLong;
             }
             else if (shortAgree >= needed)
             {
                 result.Short = true;
                 result.GroupSize = needed;
+
+                // Only mark signals that actually agreed SHORT on the entry bar.
+                result.UsesKO = UseKOSignals && koShort;
+                result.UsesPA = UsePASignals && paShort;
+                result.UsesTH = UseTHSignals && thShort;
+                result.UsesSJ = UseSJSignals && sjShort;
+                result.UsesSU = UseSUSignals && suShort;
+                result.UsesNC = UseNCSignals && ncShort;
             }
 
             return result;
         }
 
-        private GroupTriggerResult EvaluateSecondaryGroupTriggerSet (double koRaw, double paRaw, double thRaw, double sjRaw, double suRaw)
+        private GroupTriggerResult EvaluateSecondaryGroupTriggerSet (double koRaw, double paRaw, double thRaw, double sjRaw, double suRaw, double ncRaw)
         {
             GroupTriggerResult result = new GroupTriggerResult ();
             result.TriggerName = "SET2";
@@ -3160,61 +3280,79 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
             int needed = Math.Min (Math.Max (1, GroupTriggerSet2RequiredCount), enabledCount);
             int longAgree = 0, shortAgree = 0;
 
+            int koSignal = 0;
+            int paSignal = 0;
+            int thSignal = 0;
+            int sjSignal = 0;
+            int suSignal = 0;
+            int ncSignal = 0;
+
             if (G2_UseKOSignals)
             {
-                result.UsesKO = true;
-                int signal = ComputeSignal (true, koRaw, G2_KO_LongOperator, G2_KO_LongValue, G2_KO_ShortOperator, G2_KO_ShortValue);
+                koSignal = ComputeSignal (true, koRaw, G2_KO_LongOperator, G2_KO_LongValue, G2_KO_ShortOperator, G2_KO_ShortValue);
 
-                if (signal > 0)
+                if (koSignal > 0)
                     longAgree++;
-                else if (signal < 0)
+                else if (koSignal < 0)
                     shortAgree++;
             }
 
             if (G2_UsePASignals)
             {
-                result.UsesPA = true;
-                int signal = ComputeSignal (true, paRaw, G2_PA_LongOperator, G2_PA_LongValue, G2_PA_ShortOperator, G2_PA_ShortValue);
+                paSignal = ComputeSignal (true, paRaw, G2_PA_LongOperator, G2_PA_LongValue, G2_PA_ShortOperator, G2_PA_ShortValue);
 
-                if (signal > 0)
+                if (paSignal > 0)
                     longAgree++;
-                else if (signal < 0)
+                else if (paSignal < 0)
                     shortAgree++;
             }
 
             if (G2_UseTHSignals)
             {
-                result.UsesTH = true;
-                int signal = ComputeSignal (true, thRaw, G2_TH_LongOperator, G2_TH_LongValue, G2_TH_ShortOperator, G2_TH_ShortValue);
+                thSignal = ComputeSignal (true, thRaw, G2_TH_LongOperator, G2_TH_LongValue, G2_TH_ShortOperator, G2_TH_ShortValue);
 
-                if (signal > 0)
+                if (thSignal > 0)
                     longAgree++;
-                else if (signal < 0)
+                else if (thSignal < 0)
                     shortAgree++;
             }
 
             if (G2_UseSJSignals)
             {
-                result.UsesSJ = true;
-                int signal = ComputeSignal (true, sjRaw, G2_SJ_LongOperator, G2_SJ_LongValue, G2_SJ_ShortOperator, G2_SJ_ShortValue);
+                sjSignal = ComputeSignal (true, sjRaw, G2_SJ_LongOperator, G2_SJ_LongValue, G2_SJ_ShortOperator, G2_SJ_ShortValue);
 
-                if (signal > 0)
+                if (sjSignal > 0)
                     longAgree++;
-                else if (signal < 0)
+                else if (sjSignal < 0)
                     shortAgree++;
             }
 
             if (G2_UseSUSignals)
             {
-                result.UsesSU = true;
-                int signal = ComputeSignal (true, suRaw, G2_SU_LongOperator, G2_SU_LongValue, G2_SU_ShortOperator, G2_SU_ShortValue);
+                suSignal = ComputeSignal (true, suRaw, G2_SU_LongOperator, G2_SU_LongValue, G2_SU_ShortOperator, G2_SU_ShortValue);
 
-                if (signal > 0)
+                if (suSignal > 0)
                     longAgree++;
-                else if (signal < 0)
+                else if (suSignal < 0)
                     shortAgree++;
             }
 
+            if (G2_UseNCSignals)
+            {
+                ncSignal = ComputeSignal (G2_UseNCSignals, ncRaw, G2_NC_LongOperator, G2_NC_LongValue, G2_NC_ShortOperator, G2_NC_ShortValue);
+                if (ncSignal == 1)
+                {
+                    longAgree++;
+                    result.UsesNC = true;
+                }
+                if (ncSignal == -1)
+                {
+                    shortAgree++;
+                    result.UsesNC = true;
+                }
+            }
+
+            // Conflict safety: do not trigger if both long and short qualify on same bar.
             if (longAgree >= needed && shortAgree >= needed)
                 return result;
 
@@ -3222,11 +3360,27 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
             {
                 result.Long = true;
                 result.GroupSize = needed;
+
+                // Only mark Set 2 signals that actually agreed LONG on the entry bar.
+                result.UsesKO = G2_UseKOSignals && koSignal > 0;
+                result.UsesPA = G2_UsePASignals && paSignal > 0;
+                result.UsesTH = G2_UseTHSignals && thSignal > 0;
+                result.UsesSJ = G2_UseSJSignals && sjSignal > 0;
+                result.UsesSU = G2_UseSUSignals && suSignal > 0;
+                result.UsesNC = G2_UseNCSignals && ncSignal > 0;
             }
             else if (shortAgree >= needed)
             {
                 result.Short = true;
                 result.GroupSize = needed;
+
+                // Only mark Set 2 signals that actually agreed SHORT on the entry bar.
+                result.UsesKO = G2_UseKOSignals && koSignal < 0;
+                result.UsesPA = G2_UsePASignals && paSignal < 0;
+                result.UsesTH = G2_UseTHSignals && thSignal < 0;
+                result.UsesSJ = G2_UseSJSignals && sjSignal < 0;
+                result.UsesSU = G2_UseSUSignals && suSignal < 0;
+                result.UsesNC = G2_UseNCSignals && ncSignal < 0;
             }
 
             return result;
@@ -3306,13 +3460,14 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
             }
         }
 
-        private void SetActiveTradeSignalSources (bool useKO, bool usePA, bool useTH, bool useSJ, bool useSU, MarketPosition direction, int groupSize = 0, string groupName = "")
+        private void SetActiveTradeSignalSources (bool useKO, bool usePA, bool useTH, bool useSJ, bool useSU, bool useNC, MarketPosition direction, int groupSize = 0, string groupName = "")
         {
             activeTradeUsesKO = useKO;
             activeTradeUsesPA = usePA;
             activeTradeUsesTH = useTH;
             activeTradeUsesSJ = useSJ;
             activeTradeUsesSU = useSU;
+            activeTradeUsesNC = useNC;
             activeTradeDirection = direction;
             activeTradeGroupSize = groupSize;
             activeTradeGroupName = groupName ?? string.Empty;
@@ -3324,6 +3479,7 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
             activeTradeUsesPA = false;
             activeTradeUsesTH = false;
             activeTradeUsesSU = false;
+            activeTradeUsesNC = false;
             activeTradeUsesSJ = false;
             activeTradeDirection = MarketPosition.Flat;
             activeTradeGroupSize = 0;
@@ -3338,6 +3494,8 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
             bool isWinner = tradePnl > 0;
             bool isLoser = tradePnl < 0;
 
+            // Individual signal tracking.
+            // These count each indicator signal that actually participated in the trade.
             if (activeTradeUsesKO)
                 IncrementSignalStats (koStats, activeTradeDirection, isWinner, isLoser);
 
@@ -3347,16 +3505,77 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
             if (activeTradeUsesTH)
                 IncrementSignalStats (thStats, activeTradeDirection, isWinner, isLoser);
 
-            if (activeTradeUsesSU)
-                IncrementSignalStats (suStats, activeTradeDirection, isWinner, isLoser);
-
             if (activeTradeUsesSJ)
                 IncrementSignalStats (sjStats, activeTradeDirection, isWinner, isLoser);
 
-            if (activeTradeGroupSize > 0 && string.Equals (activeTradeGroupName, "SET1", StringComparison.OrdinalIgnoreCase))
-                IncrementSignalStats (groupSet1Stats, activeTradeDirection, isWinner, isLoser);
-            else if (activeTradeGroupSize > 0 && string.Equals (activeTradeGroupName, "SET2", StringComparison.OrdinalIgnoreCase))
-                IncrementSignalStats (groupSet2Stats, activeTradeDirection, isWinner, isLoser);
+            if (activeTradeUsesSU)
+                IncrementSignalStats (suStats, activeTradeDirection, isWinner, isLoser);
+
+            if (activeTradeUsesNC)
+                IncrementSignalStats (ncStats, activeTradeDirection, isWinner, isLoser);
+
+            // Exact confluence-combo tracking.
+            // Example: SET1-G3-KO+PA+SU
+            string confluenceKey = BuildActiveConfluenceStatsKey ();
+
+            if (!string.IsNullOrEmpty (confluenceKey))
+                IncrementConfluenceStats (confluenceKey, activeTradeDirection, isWinner, isLoser);
+        }
+
+        private string BuildActiveConfluenceStatsKey ()
+        {
+            if (string.IsNullOrEmpty (activeTradeGroupName))
+                return string.Empty;
+
+            List<string> parts = new List<string> ();
+
+            if (activeTradeUsesKO)
+                parts.Add ("KO");
+            if (activeTradeUsesPA)
+                parts.Add ("PA");
+            if (activeTradeUsesTH)
+                parts.Add ("TH");
+            if (activeTradeUsesSJ)
+                parts.Add ("SJ");
+            if (activeTradeUsesSU)
+                parts.Add ("SU");
+            if (activeTradeUsesNC)
+                parts.Add ("NC");
+
+            if (parts.Count <= 0)
+                return string.Empty;
+
+            // Example:
+            // SET1-G3-KO+PA+SU
+            // SET1-G4-KO+PA+TH+SU
+            // SET2-G5-KO+PA+TH+SJ+SU
+            return activeTradeGroupName.ToUpperInvariant ()
+                + "-G" + parts.Count.ToString ()
+                + "-" + string.Join ("+", parts);
+        }
+
+        private void IncrementConfluenceStats (string key, MarketPosition direction, bool isWinner, bool isLoser)
+        {
+            if (string.IsNullOrEmpty (key))
+                return;
+
+            SignalTradeStats stats;
+
+            if (!confluenceStatsByKey.TryGetValue (key, out stats) || stats == null)
+            {
+                stats = new SignalTradeStats ();
+                confluenceStatsByKey[key] = stats;
+            }
+
+            IncrementSignalStats (stats, direction, isWinner, isLoser);
+        }
+
+        private string FormatStatsLine (string label, SignalTradeStats stats)
+        {
+            if (stats == null)
+                stats = new SignalTradeStats ();
+
+            return $"{label} T:{stats.TotalTrades} Lg:{stats.LongTrades} Sh:{stats.ShortTrades} W:{stats.Winners} L:{stats.Losers}";
         }
 
         private void IncrementSignalStats (SignalTradeStats stats, MarketPosition direction, bool isWinner, bool isLoser)
@@ -3376,43 +3595,68 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
 
         private void UpdateLastTradeClosedSummary (double tradePnl)
         {
-            if (!EnableSignalTracking)
-                return;
-
             lastTradeClosedPnL = tradePnl;
             hasLastTradeClosedPnL = true;
 
-            string dir = activeTradeDirection == MarketPosition.Long
-            ? "Long"
-            : activeTradeDirection == MarketPosition.Short
-                ? "Short"
-                : "Flat";
-
-            string sig = BuildActiveSignalAbbreviationList ();
-            lastTradeClosedSummary = $"Last: {tradePnl:C} | {dir} | {sig}";
+            lastTradeClosedSummary = BuildTrackedLastTradeLine (tradePnl);
         }
 
         private void PrintSignalTrackingOnTradeClose (double tradePnl)
         {
-            if (!EnableSignalTracking)
-                return;
+            string tradeSignalText = BuildActiveSignalListForPrint ();
+            string statsText = EnableSignalTracking ? BuildSignalTrackingDisplayText () : string.Empty;
 
-            string tradeSignalText = BuildActiveSignalListForPrint();
-            string statsText = BuildSignalTrackingDisplayText();
+            var originalPrintTo = PrintTo;
 
-            // Removed the invalid .Replace("", Environment.NewLine) call
-            if (EnableDebug)
-                Print ($"Trade Closed | Last ATM P/L: {tradePnl:C} | Direction: {activeTradeDirection} | Signals: {tradeSignalText}{statsText}");
+            try
+            {
+                PrintTo = NinjaTrader.NinjaScript.PrintTo.OutputTab2;
+
+                Print ($"Trade Closed | PnL: {tradePnl:C} | "
+                    + $"Direction: {activeTradeDirection} | "
+                    + $"Signals: {tradeSignalText}"
+                    + statsText);
+            }
+            finally
+            {
+                PrintTo = originalPrintTo;
+            }
         }
 
         private string BuildActiveSignalListForPrint ()
         {
-            return BuildSignalTriggerName (activeTradeUsesKO, activeTradeUsesPA, activeTradeUsesTH, activeTradeUsesSJ, activeTradeUsesSU, activeTradeGroupSize, activeTradeGroupName);
+            string confluenceKey = BuildActiveConfluenceStatsKey ();
+
+            if (!string.IsNullOrEmpty (confluenceKey))
+                return confluenceKey;
+
+            return BuildSignalTriggerName (
+                activeTradeUsesKO,
+                activeTradeUsesPA,
+                activeTradeUsesTH,
+                activeTradeUsesSJ,
+                activeTradeUsesSU,
+                activeTradeUsesNC,
+                activeTradeGroupSize,
+                activeTradeGroupName);
         }
 
         private string BuildActiveSignalAbbreviationList ()
         {
-            return BuildSignalTriggerName (activeTradeUsesKO, activeTradeUsesPA, activeTradeUsesTH, activeTradeUsesSJ, activeTradeUsesSU, activeTradeGroupSize, activeTradeGroupName);
+            string confluenceKey = BuildActiveConfluenceStatsKey ();
+
+            if (!string.IsNullOrEmpty (confluenceKey))
+                return confluenceKey;
+
+            return BuildSignalTriggerName (
+                activeTradeUsesKO,
+                activeTradeUsesPA,
+                activeTradeUsesTH,
+                activeTradeUsesSJ,
+                activeTradeUsesSU,
+                activeTradeUsesNC,
+                activeTradeGroupSize,
+                activeTradeGroupName);
         }
 
         private string BuildSignalTrackingDisplayText ()
@@ -3429,69 +3673,80 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
 
         private List<string> BuildSignalTrackingDisplayLines ()
         {
-            List<string> enabledSignals = new List<string>();
-            List<string> enabledGroups = new List<string>();
-            List<string> lines = new List<string>();
+            List<string> enabledSignals = new List<string> ();
+            List<string> lines = new List<string> ();
 
-            if (UseKOSignals)
-            {
+            bool koEnabledAnywhere = UseKOSignals || (EnableGroupTriggerSet2 && G2_UseKOSignals);
+            bool paEnabledAnywhere = UsePASignals || (EnableGroupTriggerSet2 && G2_UsePASignals);
+            bool thEnabledAnywhere = UseTHSignals || (EnableGroupTriggerSet2 && G2_UseTHSignals);
+            bool sjEnabledAnywhere = UseSJSignals || (EnableGroupTriggerSet2 && G2_UseSJSignals);
+            bool suEnabledAnywhere = UseSUSignals || (EnableGroupTriggerSet2 && G2_UseSUSignals);
+            bool ncEnabledAnywhere = UseNCSignals || (EnableGroupTriggerSet2 && G2_UseNCSignals);
+
+            // 1. Always show total unique indicator signals enabled across Set 1 + active Set 2.
+            if (koEnabledAnywhere)
                 enabledSignals.Add ("KO");
-                lines.Add ($"KO T:{koStats.TotalTrades} Lg:{koStats.LongTrades} Sh:{koStats.ShortTrades} W:{koStats.Winners} L:{koStats.Losers}");
-            }
-
-            if (UsePASignals)
-            {
+            if (paEnabledAnywhere)
                 enabledSignals.Add ("PA");
-                lines.Add ($"PA T:{paStats.TotalTrades} Lg:{paStats.LongTrades} Sh:{paStats.ShortTrades} W:{paStats.Winners} L:{paStats.Losers}");
-            }
-
-            if (UseTHSignals)
-            {
+            if (thEnabledAnywhere)
                 enabledSignals.Add ("TH");
-                lines.Add ($"TH T:{thStats.TotalTrades} Lg:{thStats.LongTrades} Sh:{thStats.ShortTrades} W:{thStats.Winners} L:{thStats.Losers}");
-            }
-
-            if (UseSJSignals)
-            {
+            if (sjEnabledAnywhere)
                 enabledSignals.Add ("SJ");
-                lines.Add ($"SJ T:{sjStats.TotalTrades} Lg:{sjStats.LongTrades} Sh:{sjStats.ShortTrades} W:{sjStats.Winners} L:{sjStats.Losers}");
-            }
-
-            if (UseSUSignals)
-            {
+            if (suEnabledAnywhere)
                 enabledSignals.Add ("SU");
-                lines.Add ($"SU T:{suStats.TotalTrades} Lg:{suStats.LongTrades} Sh:{suStats.ShortTrades} W:{suStats.Winners} L:{suStats.Losers}");
+            if (ncEnabledAnywhere)
+                enabledSignals.Add ("NC");
+
+            lines.Add (enabledSignals.Count > 0
+                ? "Enabled Signals: " + string.Join (", ", enabledSignals)
+                : "Enabled Signals: None");
+
+            // 2. Individual Signal Stats (Show/Hide Toggle)
+            if (ShowIndividualSignalStats)
+            {
+                if (koEnabledAnywhere)
+                    lines.Add (FormatStatsLine ("KO", koStats));
+                if (paEnabledAnywhere)
+                    lines.Add (FormatStatsLine ("PA", paStats));
+                if (thEnabledAnywhere)
+                    lines.Add (FormatStatsLine ("TH", thStats));
+                if (sjEnabledAnywhere)
+                    lines.Add (FormatStatsLine ("SJ", sjStats));
+                if (suEnabledAnywhere)
+                    lines.Add (FormatStatsLine ("SU", suStats));
+                if (ncEnabledAnywhere)
+                    lines.Add (FormatStatsLine ("NC", ncStats));
             }
 
-            lines.Insert (0, enabledSignals.Count > 0 ? "Enabled Signals: " + string.Join (", ", enabledSignals) : "Enabled Signals: None");
-
-            if (IsPrimaryGroupModeActive ())
-                enabledGroups.Add ("SET1-G" + GroupTriggerSet1RequiredCount.ToString ());
-            if (IsSecondaryGroupModeActive ())
-                enabledGroups.Add ("SET2-G" + GroupTriggerSet2RequiredCount.ToString ());
-
-            if (enabledGroups.Count > 0)
+            // 3. Group/Confluence Stats (Show/Hide Toggle)
+            if (ShowGroupSignalTrackingStats)
             {
-                lines.Add ("Enabled Groups: " + string.Join (", ", enabledGroups));
-
-                if (IsPrimaryGroupModeActive ())
-                    lines.Add ($"SET1-G{GroupTriggerSet1RequiredCount} T:{groupSet1Stats.TotalTrades} Lg:{groupSet1Stats.LongTrades} Sh:{groupSet1Stats.ShortTrades} W:{groupSet1Stats.Winners} L:{groupSet1Stats.Losers}");
-
-                if (IsSecondaryGroupModeActive ())
-                    lines.Add ($"SET2-G{GroupTriggerSet2RequiredCount} T:{groupSet2Stats.TotalTrades} Lg:{groupSet2Stats.LongTrades} Sh:{groupSet2Stats.ShortTrades} W:{groupSet2Stats.Winners} L:{groupSet2Stats.Losers}");
+                if (confluenceStatsByKey != null && confluenceStatsByKey.Count > 0)
+                {
+                    lines.Add ("Group/Confluence Stats:");
+                    foreach (KeyValuePair<string, SignalTradeStats> kvp in confluenceStatsByKey.OrderBy (x => x.Key))
+                    {
+                        lines.Add (FormatStatsLine (kvp.Key, kvp.Value));
+                    }
+                }
+                else
+                {
+                    lines.Add ("Group Stats: No data yet");
+                }
             }
 
             return lines;
         }
 
         private void ProcessSignalAudioAlerts (
-    int ko,
-    int pa,
-    int th,
-    int sj,
-    int su,
-    GroupTriggerResult primaryGroup,
-    GroupTriggerResult secondaryGroup)
+            int ko,
+            int pa,
+            int th,
+            int sj,
+            int su,
+            int nc,
+            GroupTriggerResult primaryGroup,
+            GroupTriggerResult secondaryGroup)
         {
             if (!EnableSignalAudioAlerts)
                 return;
@@ -3521,6 +3776,9 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
 
                 if (UseSUSignals && su != 0)
                     TriggerSignalAudioAlert ("SU", su, "SumoPullback", IndividualSignalAlertSound);
+
+                if (UseNCSignals && nc != 0)
+                    TriggerSignalAudioAlert ("NC", nc, "NobleCloud", IndividualSignalAlertSound);
             }
 
             if (EnableGroupSignalAudioAlerts)
@@ -3706,6 +3964,88 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
             Print ("");
         }
 
+        private string CsvSafe (string value)
+        {
+            if (value == null)
+                value = string.Empty;
+
+            return "\"" + value.Replace ("\"", "\"\"") + "\"";
+        }
+
+        private string GetTradeResultText (double tradePnl)
+        {
+            if (tradePnl > 0)
+                return "WIN";
+
+            if (tradePnl < 0)
+                return "LOSS";
+
+            return "FLAT";
+        }
+
+        private string BuildTrackedLastTradeLine (double tradePnl)
+        {
+            string dir = activeTradeDirection == MarketPosition.Long
+        ? "Long"
+        : activeTradeDirection == MarketPosition.Short
+            ? "Short"
+            : "Flat";
+
+            string sig = BuildActiveSignalAbbreviationList ();
+
+            return $"Last: {tradePnl:C} | {dir} | {sig}";
+        }
+
+        private void WriteTradeLogRecord (string tradeKey, DateTime closeTime, double tradePnl)
+        {
+            if (_logWriter == null)
+                return;
+
+            if (string.IsNullOrEmpty (tradeKey))
+                return;
+
+            TradeRecord tr;
+
+            if (!_tradeMap.TryGetValue (tradeKey, out tr) || tr == null)
+                return;
+
+            string acct = (Account != null && !string.IsNullOrEmpty (Account.Name))
+        ? Account.Name
+        : "NoAccount";
+
+            string signalCombo = BuildActiveConfluenceStatsKey ();
+
+            if (string.IsNullOrEmpty (signalCombo))
+                signalCombo = BuildActiveSignalAbbreviationList ();
+
+            string usedSignals = BuildActiveSignalAbbreviationList ();
+            string result = GetTradeResultText (tradePnl);
+            string lastLine = BuildTrackedLastTradeLine (tradePnl);
+
+            tr.SignalCombo = signalCombo;
+            tr.UsedSignals = usedSignals;
+            tr.TradeResult = result;
+            tr.LastTradeLine = lastLine;
+
+            _logWriter.WriteLine (
+                $"{tr.OpenTime:yyyy-MM-dd HH:mm:ss},"
+                + $"{CsvSafe (acct)},"
+                + $"{CsvSafe (tr.Instrument)},"
+                + $"{tr.OpenPrice:F2},"
+                + $"{tr.Qty},"
+                + $"{closeTime:yyyy-MM-dd HH:mm:ss},"
+                + $"{CsvSafe (tr.Trigger)},"
+                + $"{CsvSafe (tr.Direction)},"
+                + $"{CsvSafe (tr.AtmStrategyName)},"
+                + $"{tradePnl:F2},"
+                + $"{CsvSafe (signalCombo)},"
+                + $"{CsvSafe (usedSignals)},"
+                + $"{CsvSafe (result)},"
+                + $"{CsvSafe (lastLine)}");
+
+            _logWriter.Flush ();
+        }
+
         private void CheckFlattenTimeframes (int currentTime)
         {
             // If no TF filters are enabled, do not do any TF-based flattening/session-end printing
@@ -3778,7 +4118,7 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
             return MarketPosition.Flat;
         }
 
-        private string BuildSignalTriggerName (bool useKO, bool usePA, bool useTH, bool useSJ, bool useSU, int groupSize, string groupName = "")
+        private string BuildSignalTriggerName (bool useKO, bool usePA, bool useTH, bool useSJ, bool useSU, bool useNC, int groupSize, string groupName = "")
         {
             string trigger = string.Join("+", new[] {
         useKO ? "KO" : null,
@@ -3786,6 +4126,7 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
         useTH ? "TH" : null,
         useSJ ? "SJ" : null,
         useSU ? "SU" : null,
+        useNC ? "NC" : null,
     }.Where(s => s != null));
 
             if (string.IsNullOrEmpty (trigger))
@@ -3807,6 +4148,7 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
     bool useTH,
     bool useSJ,
     bool useSU,
+    bool useNC,
     int groupSize,
     string groupName,
     string reason)
@@ -3821,6 +4163,7 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
             pendingSignalUsesTH = useTH;
             pendingSignalUsesSJ = useSJ;
             pendingSignalUsesSU = useSU;
+            pendingSignalUsesNC = useNC;
             pendingSignalGroupSize = groupSize;
             pendingSignalGroupName = groupName ?? string.Empty;
             pendingSignalReason = reason ?? "Pending signal entry";
@@ -3846,6 +4189,7 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
             pendingSignalUsesTH = false;
             pendingSignalUsesSJ = false;
             pendingSignalUsesSU = false;
+            pendingSignalUsesNC = false;
             pendingSignalGroupSize = 0;
             pendingSignalGroupName = string.Empty;
             pendingSignalReason = string.Empty;
@@ -3913,6 +4257,7 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
                             pendingReverseUsesTH,
                             pendingReverseUsesSJ,
                             pendingReverseUsesSU,
+                            pendingReverseUsesNC,
                             pendingReverseGroupSize,
                             pendingReverseGroupName,
                             "Pending reverse entry on next tick after signal bar close");
@@ -3930,6 +4275,7 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
                             pendingReverseUsesTH,
                             pendingReverseUsesSJ,
                             pendingReverseUsesSU,
+                            pendingReverseUsesNC,
                             pendingReverseGroupSize,
                             pendingReverseGroupName,
                             "Pending reverse entry on next tick after signal bar close");
@@ -3999,6 +4345,7 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
                         pendingSignalUsesTH,
                         pendingSignalUsesSJ,
                         pendingSignalUsesSU,
+                        pendingSignalUsesNC,
                         pendingSignalGroupSize,
                         pendingSignalGroupName,
                         pendingSignalReason + " - executed on next clean tick");
@@ -4026,6 +4373,7 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
                         pendingSignalUsesTH,
                         pendingSignalUsesSJ,
                         pendingSignalUsesSU,
+                        pendingSignalUsesNC,
                         pendingSignalGroupSize,
                         pendingSignalGroupName,
                         pendingSignalReason + " - executed on next clean tick");
@@ -4038,7 +4386,7 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
             ClearPendingSignalEntry ();
         }
 
-        private void QueuePendingReverse (MarketPosition direction, bool useKO, bool usePA, bool useTH, bool useSJ, bool useSU, int groupSize, string groupName)
+        private void QueuePendingReverse (MarketPosition direction, bool useKO, bool usePA, bool useTH, bool useSJ, bool useSU, bool useNC, int groupSize, string groupName)
         {
             pendingReverseActive = true;
             pendingReverseDirection = direction;
@@ -4047,11 +4395,12 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
             pendingReverseUsesTH = useTH;
             pendingReverseUsesSJ = useSJ;
             pendingReverseUsesSU = useSU;
+            pendingReverseUsesNC = useNC;
             pendingReverseGroupSize = groupSize;
             pendingReverseGroupName = groupName ?? string.Empty;
 
             if (EnableDebug)
-                Print ($"{Time[0]} | REVERSE QUEUED | Direction={direction} | Trigger={BuildSignalTriggerName (useKO, usePA, useTH, useSJ, useSU, groupSize, groupName)}");
+                Print ($"{Time[0]} | REVERSE QUEUED | Direction={direction} | Trigger={BuildSignalTriggerName (useKO, usePA, useTH, useSJ, useSU, useNC, groupSize, groupName)}");
         }
 
         private void ClearPendingReverse ()
@@ -4063,6 +4412,7 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
             pendingReverseUsesTH = false;
             pendingReverseUsesSJ = false;
             pendingReverseUsesSU = false;
+            pendingReverseUsesNC = false;
             pendingReverseGroupSize = 0;
             pendingReverseGroupName = string.Empty;
         }
@@ -4087,20 +4437,34 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
                 if (State == State.Historical)
                     return Position.MarketPosition != MarketPosition.Flat;
 
+                // Realtime FixedTicks safety:
+                // If the real account is flat and there are no working orders, do NOT let
+                // a stale Strategy Position row block the next trade.
+                if (IsFixedAccountFlatAndDone ()
+                    && string.IsNullOrEmpty (fixedEntrySignalName)
+                    && !fixedPositionConfirmed
+                    && string.IsNullOrEmpty (fixedMartingaleSignalName)
+                    && !fixedMartingalePositionConfirmed
+                    && !martingaleRecoveryActive)
+                    return false;
+
                 return !string.IsNullOrEmpty (fixedEntrySignalName)
                     || fixedPositionConfirmed
-                    || Position.MarketPosition != MarketPosition.Flat;
+                    || !string.IsNullOrEmpty (fixedMartingaleSignalName)
+                    || fixedMartingalePositionConfirmed
+                    || martingaleRecoveryActive
+                    || (!IsFixedAccountFlatAndDone () && Position.MarketPosition != MarketPosition.Flat);
             }
 
             return orderId.Length > 0 || atmStrategyId.Length > 0;
         }
 
-        private void SubmitTradeEntry (bool isLong, bool useKO, bool usePA, bool useTH, bool useSJ, bool useSU, int groupSize, string groupName, string reason)
+        private void SubmitTradeEntry (bool isLong, bool useKO, bool usePA, bool useTH, bool useSJ, bool useSU, bool useNC, int groupSize, string groupName, string reason)
         {
             if (OrderMode == OrderManagementMode.FixedTicks)
-                SubmitFixedEntry (isLong, useKO, usePA, useTH, useSJ, useSU, groupSize, groupName, reason);
+                SubmitFixedEntry (isLong, useKO, usePA, useTH, useSJ, useSU, useNC, groupSize, groupName, reason);
             else
-                SubmitAtmEntry (isLong, useKO, usePA, useTH, useSJ, useSU, groupSize, groupName, reason);
+                SubmitAtmEntry (isLong, useKO, usePA, useTH, useSJ, useSU, useNC, groupSize, groupName, reason);
         }
 
         private void SanityCheckFixedTicksState ()
@@ -4118,7 +4482,12 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
 
             lastFixedStateSanityCheckUtc = nowUtc;
 
-            if (!IsFixedStrategyFlat ())
+            bool fixedDone =
+        State == State.Historical
+        ? IsFixedStrategyFlat ()
+        : (IsFixedStrategyFlat () || IsFixedAccountFlatAndDone ());
+
+            if (!fixedDone)
                 return;
 
             bool fixedStateStale =
@@ -4154,7 +4523,13 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
                 && fallbackExitPrice > 0)
             {
                 if (EnableDebug)
-                    Print ($"[{Name}] FIXEDTICKS STALE CLOSE BOOKING | Signal={fixedEntrySignalName} | Direction={fixedEntryDirection} | Entry={fixedEntryAvgPrice:F2} | Exit={fallbackExitPrice:F2}");
+                    Print ($"[{Name}] FIXEDTICKS STALE CLOSE BOOKING | "
+                        + $"Signal={fixedEntrySignalName} | "
+                        + $"Direction={fixedEntryDirection} | "
+                        + $"Entry={fixedEntryAvgPrice:F2} | "
+                        + $"Exit={fallbackExitPrice:F2} | "
+                        + $"StrategyPos={(Position != null ? Position.MarketPosition.ToString () : "NULL")} | "
+                        + $"AccountFlatDone={IsFixedAccountFlatAndDone ()}");
 
                 ProcessFixedTradeClosed (fallbackExitPrice, fallbackExitTime);
             }
@@ -4167,7 +4542,13 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
                 && fallbackExitPrice > 0)
             {
                 if (EnableDebug)
-                    Print ($"[{Name}] FIXEDTICKS STALE MARTINGALE CLOSE BOOKING | Signal={fixedMartingaleSignalName} | Direction={fixedMartingaleDirection} | Entry={fixedMartingaleEntryAvgPrice:F2} | Exit={fallbackExitPrice:F2}");
+                    Print ($"[{Name}] FIXEDTICKS STALE MARTINGALE CLOSE BOOKING | "
+                        + $"Signal={fixedMartingaleSignalName} | "
+                        + $"Direction={fixedMartingaleDirection} | "
+                        + $"Entry={fixedMartingaleEntryAvgPrice:F2} | "
+                        + $"Exit={fallbackExitPrice:F2} | "
+                        + $"StrategyPos={(Position != null ? Position.MarketPosition.ToString () : "NULL")} | "
+                        + $"AccountFlatDone={IsFixedAccountFlatAndDone ()}");
 
                 ProcessFixedMartingaleClosed (fallbackExitPrice, fallbackExitTime);
             }
@@ -4194,6 +4575,8 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
 
             if (EnableDebug)
                 Print ($"[{Name}] FIXEDTICKS STALE STATE CLEARED | "
+                    + $"StrategyPos={(Position != null ? Position.MarketPosition.ToString () : "NULL")} | "
+                    + $"AccountFlatDone={IsFixedAccountFlatAndDone ()} | "
                     + $"FixedSignal={fixedEntrySignalName} | "
                     + $"FixedConfirmed={fixedPositionConfirmed} | "
                     + $"FixedClosedProcessed={fixedTradeCloseProcessed} | "
@@ -4207,7 +4590,7 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
             ClearActiveTradeSignalSources ();
         }
 
-        private void SubmitFixedEntry (bool isLong, bool useKO, bool usePA, bool useTH, bool useSJ, bool useSU, int groupSize, string groupName, string reason)
+        private void SubmitFixedEntry (bool isLong, bool useKO, bool usePA, bool useTH, bool useSJ, bool useSU, bool useNC, int groupSize, string groupName, string reason)
         {
             if (OrderMode != OrderManagementMode.FixedTicks)
                 return;
@@ -4232,14 +4615,18 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
                 return;
             }
 
+            // Do NOT skip the entry on bad BE config — only the breakeven move is disabled.
+            // ManageFixedBreakeven has its own (offset >= trigger) guard and will just no-op.
             if (EnableFixedBreakeven && FixedBreakevenOffsetTicks >= FixedBreakevenTriggerTicks)
             {
-                Print ($"[{Name}] FIXED ENTRY BLOCKED | Breakeven offset must be less than trigger ticks. Trigger={FixedBreakevenTriggerTicks} Offset={FixedBreakevenOffsetTicks}");
-                return;
+                Print ($"[{Name}] FIXED ENTRY WARNING | Breakeven offset >= trigger; BE disabled for this trade. Trigger={FixedBreakevenTriggerTicks} Offset={FixedBreakevenOffsetTicks}");
             }
 
-            string trigger = BuildSignalTriggerName (useKO, usePA, useTH, useSJ, useSU, groupSize, groupName);
-            string signalName = isLong ? "FixedLongEntry" : "FixedShortEntry";
+            string trigger = BuildSignalTriggerName (useKO, usePA, useTH, useSJ, useSU, useNC, groupSize, groupName);
+
+            fixedEntrySequence++;
+
+            string signalName = (isLong ? "FixedLongEntry_" : "FixedShortEntry_") + fixedEntrySequence.ToString ();
 
             fixedEntrySignalName = signalName;
             fixedEntryDirection = isLong ? MarketPosition.Long : MarketPosition.Short;
@@ -4249,7 +4636,7 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
             fixedTradeCloseProcessed = false;
             fixedBreakevenMoved = false;
 
-            SetActiveTradeSignalSources (useKO, usePA, useTH, useSJ, useSU, fixedEntryDirection, groupSize, groupName);
+            SetActiveTradeSignalSources (useKO, usePA, useTH, useSJ, useSU, useNC, fixedEntryDirection, groupSize, groupName);
 
             _tradeMap[fixedEntrySignalName] = new TradeRecord
             {
@@ -4393,7 +4780,6 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
                 return;
 
             double cumulativeClosed = 0.0;
-            double dailyClosed = 0.0;
             Trade lastTrade = null;
 
             try
@@ -4403,6 +4789,21 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
 
                 cumulativeClosed = SystemPerformance.AllTrades.TradesPerformance.Currency.CumProfit;
 
+                double baseline = GetFixedPerformanceBaseline ();
+                double adjustedCumulativeClosed = cumulativeClosed - baseline;
+
+                // Strategy PNL closed component.
+                // In StartFreshOnEnable mode, this ignores all historical trades before enable.
+                totalRealizedPnL = Math.Round (adjustedCumulativeClosed, 2);
+
+                // Daily/session closed PNL should be based on the session baseline,
+                // not calendar-date AllTrades scanning. This prevents flicker between
+                // historical same-day trades and fresh runtime PNL.
+                dailyRealizedPnL = Math.Round (totalRealizedPnL - sessionStartTotalRealizedPnL, 2);
+                totalRunningPnL = Math.Round (totalRealizedPnL + (UseUnrealizedPnl ? dailyUnrealizedPnL : 0.0), 2);
+
+                // Last trade display can still inspect trades, but do not use calendar-date
+                // totals to drive Daily PNL.
                 for (int i = 0; i < SystemPerformance.AllTrades.Count; i++)
                 {
                     Trade trade = SystemPerformance.AllTrades[i];
@@ -4410,25 +4811,28 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
                     if (trade == null || trade.Exit == null)
                         continue;
 
-                    if (trade.Exit.Time.Date == tickTime.Date)
+                    if (StartFreshOnEnable && freshStartInheritedCaptureTime != Core.Globals.MinDate)
                     {
-                        dailyClosed += trade.ProfitCurrency;
-
-                        if (lastTrade == null || trade.Exit.Time > lastTrade.Exit.Time)
-                            lastTrade = trade;
+                        if (trade.Exit.Time < freshStartInheritedCaptureTime)
+                            continue;
                     }
+
+                    if (lastTrade == null || trade.Exit.Time > lastTrade.Exit.Time)
+                        lastTrade = trade;
                 }
 
-                totalRealizedPnL = Math.Round (cumulativeClosed, 2);
-                dailyRealizedPnL = Math.Round (dailyClosed, 2);
-
-                if (lastTrade != null)
+                if (lastTrade != null && !hasLastTradeClosedPnL && string.IsNullOrEmpty (lastTradeClosedSummary))
                 {
-                    string result = lastTrade.ProfitCurrency >= 0 ? "WIN" : "LOSS";
+                    double lastPnl = Math.Round (lastTrade.ProfitCurrency, 2);
 
+                    lastTradeClosedPnL = lastPnl;
+                    hasLastTradeClosedPnL = true;
+
+                    // Historical/fallback only.
+                    // Do NOT overwrite the tracked runtime Last line created by ProcessFixedTradeClosed().
                     lastTradeClosedSummary =
-                        "Last: " + result
-                        + " | PnL " + lastTrade.ProfitCurrency.ToString ("C")
+                        "Last: " + GetTradeResultText (lastPnl)
+                        + " | PnL " + lastPnl.ToString ("C")
                         + " | Exit " + lastTrade.Exit.Time.ToString ("HH:mm:ss");
                 }
             }
@@ -4472,28 +4876,34 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
             fixedTradeCloseProcessed = true;
 
             double roundedExit = Instrument.MasterInstrument.RoundToTickSize (exitPrice);
-            double tradePnl = CalculateFixedTradePnl (fixedEntryDirection, fixedEntryAvgPrice, roundedExit, Math.Max (fixedEntryQty, FixedOrderQuantity));
+            int tradeQty = Math.Max (fixedEntryQty, FixedOrderQuantity);
+            double tradePnl = CalculateFixedTradePnl (fixedEntryDirection, fixedEntryAvgPrice, roundedExit, tradeQty);
+
             MarketPosition closedDirection = fixedEntryDirection;
             bool startMartingale = ShouldStartMartingaleRecovery (tradePnl, closedDirection);
             MarketPosition martingaleDirection = startMartingale ? GetOppositeDirection (closedDirection) : MarketPosition.Flat;
 
-            totalRealizedPnL += tradePnl;
+            totalRealizedPnL = Math.Round (totalRealizedPnL + tradePnl, 2);
+            dailyRealizedPnL = Math.Round (totalRealizedPnL - sessionStartTotalRealizedPnL, 2);
+            totalRunningPnL = Math.Round (totalRealizedPnL + (UseUnrealizedPnl ? dailyUnrealizedPnL : 0.0), 2);
             lastAtmRealizedPnL = tradePnl;
+
             UpdateSignalTrackingOnTradeClose (tradePnl);
             UpdateLastTradeClosedSummary (tradePnl);
             PrintSignalTrackingOnTradeClose (tradePnl);
 
-            if (_logWriter != null && _tradeMap.TryGetValue (fixedEntrySignalName, out TradeRecord tr))
-            {
-                string acct = (Account != null && !string.IsNullOrEmpty (Account.Name)) ? Account.Name : "NoAccount";
-                _logWriter.WriteLine ($"{tr.OpenTime:yyyy-MM-dd HH:mm:ss},{acct},{tr.Instrument},{tr.OpenPrice:F2},{tr.Qty},{closeTime:yyyy-MM-dd HH:mm:ss},{tr.Trigger},{tr.Direction},{tr.AtmStrategyName},{tradePnl:F2}");
-                _logWriter.Flush ();
-            }
+            WriteTradeLogRecord (fixedEntrySignalName, closeTime, tradePnl);
 
-            if (EnableDebug)
-                Print ($"[{Name}] FIXED TRADE CLOSED | Direction={closedDirection} | Entry={fixedEntryAvgPrice:F2} | Exit={roundedExit:F2} | Qty={Math.Max (fixedEntryQty, FixedOrderQuantity)} | PnL={tradePnl:F2}");
+            Print ($"[{Name}] FIXED TRADE CLOSED | "
+                + $"Direction={closedDirection} | "
+                + $"Entry={fixedEntryAvgPrice:F2} | "
+                + $"Exit={roundedExit:F2} | "
+                + $"Qty={tradeQty} | "
+                + $"PnL={tradePnl:F2} | "
+                + $"Signals={BuildActiveSignalAbbreviationList ()}");
 
-            _tradeMap.Remove (fixedEntrySignalName);
+            _tradeMap.TryRemove (fixedEntrySignalName, out _);
+
             fixedEntrySignalName = string.Empty;
             fixedEntryDirection = MarketPosition.Flat;
             fixedEntryAvgPrice = 0.0;
@@ -4503,6 +4913,7 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
             fixedBreakevenMoved = false;
             lastFixedExitCandidatePrice = 0.0;
             lastFixedExitCandidateTime = Core.Globals.MinDate;
+
             ClearActiveTradeSignalSources ();
 
             if (startMartingale && martingaleDirection != MarketPosition.Flat)
@@ -4523,19 +4934,22 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
                 return;
             }
 
+            // Do NOT skip the entry on bad BE config — only the breakeven move is disabled.
+            // ManageFixedBreakeven has its own (offset >= trigger) guard and will just no-op.
             if (EnableFixedBreakeven && FixedBreakevenOffsetTicks >= FixedBreakevenTriggerTicks)
             {
-                Print ($"[{Name}] FIXED MARTINGALE BLOCKED | Breakeven offset must be less than trigger ticks. Trigger={FixedBreakevenTriggerTicks} Offset={FixedBreakevenOffsetTicks}");
-                return;
+                Print ($"[{Name}] FIXED MARTINGALE WARNING | Breakeven offset >= trigger; BE disabled for this trade. Trigger={FixedBreakevenTriggerTicks} Offset={FixedBreakevenOffsetTicks}");
             }
 
             bool isLong = direction == MarketPosition.Long;
             int martingaleQty = Math.Max (1, FixedOrderQuantity * 2);
 
+            fixedMartingaleSequence++;
+
             martingaleRecoveryActive = true;
             martingaleRecoveryDirection = direction;
             martingaleLastRealizedPnL = 0.0;
-            fixedMartingaleSignalName = isLong ? "FixedMartingaleLongEntry" : "FixedMartingaleShortEntry";
+            fixedMartingaleSignalName = (isLong ? "FixedMartingaleLongEntry_" : "FixedMartingaleShortEntry_") + fixedMartingaleSequence.ToString ();
             fixedMartingaleDirection = direction;
             fixedMartingaleEntryAvgPrice = 0.0;
             fixedMartingaleEntryQty = 0;
@@ -4573,21 +4987,38 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
             fixedMartingaleCloseProcessed = true;
 
             double roundedExit = Instrument.MasterInstrument.RoundToTickSize (exitPrice);
-            double tradePnl = CalculateFixedTradePnl (fixedMartingaleDirection, fixedMartingaleEntryAvgPrice, roundedExit, Math.Max (fixedMartingaleEntryQty, FixedOrderQuantity * 2));
+            int tradeQty = Math.Max (fixedMartingaleEntryQty, FixedOrderQuantity * 2);
+            double tradePnl = CalculateFixedTradePnl (fixedMartingaleDirection, fixedMartingaleEntryAvgPrice, roundedExit, tradeQty);
+
             martingaleLastRealizedPnL = tradePnl;
-            totalRealizedPnL += tradePnl;
+            totalRealizedPnL = Math.Round (totalRealizedPnL + tradePnl, 2);
+            dailyRealizedPnL = Math.Round (totalRealizedPnL - sessionStartTotalRealizedPnL, 2);
+            totalRunningPnL = Math.Round (totalRealizedPnL + (UseUnrealizedPnl ? dailyUnrealizedPnL : 0.0), 2);
+
+            activeTradeDirection = fixedMartingaleDirection;
+            activeTradeGroupName = "MARTINGALE";
+            activeTradeGroupSize = 0;
+            activeTradeUsesKO = false;
+            activeTradeUsesPA = false;
+            activeTradeUsesTH = false;
+            activeTradeUsesSJ = false;
+            activeTradeUsesSU = false;
+            activeTradeUsesNC = false;
+
             UpdateLastTradeClosedSummary (tradePnl);
+            PrintSignalTrackingOnTradeClose (tradePnl);
 
-            if (_logWriter != null && _tradeMap.TryGetValue (fixedMartingaleSignalName, out TradeRecord tr))
-            {
-                string acct = (Account != null && !string.IsNullOrEmpty (Account.Name)) ? Account.Name : "NoAccount";
-                _logWriter.WriteLine ($"{tr.OpenTime:yyyy-MM-dd HH:mm:ss},{acct},{tr.Instrument},{tr.OpenPrice:F2},{tr.Qty},{closeTime:yyyy-MM-dd HH:mm:ss},{tr.Trigger},{tr.Direction},{tr.AtmStrategyName},{tradePnl:F2}");
-                _logWriter.Flush ();
-            }
+            WriteTradeLogRecord (fixedMartingaleSignalName, closeTime, tradePnl);
 
-            Print ($"[{Name}] FIXED MARTINGALE CLOSED | PnL={tradePnl:F2} | Recovery complete. Normal signal entries resumed.");
+            Print ($"[{Name}] FIXED MARTINGALE CLOSED | "
+                + $"Direction={fixedMartingaleDirection} | "
+                + $"Entry={fixedMartingaleEntryAvgPrice:F2} | "
+                + $"Exit={roundedExit:F2} | "
+                + $"Qty={tradeQty} | "
+                + $"PnL={tradePnl:F2} | "
+                + $"Recovery complete. Normal signal entries resumed.");
 
-            _tradeMap.Remove (fixedMartingaleSignalName);
+            _tradeMap.TryRemove (fixedMartingaleSignalName, out _);
             ResetMartingaleRecovery ();
         }
 
@@ -4601,6 +5032,84 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
             {
                 return true;
             }
+        }
+
+        private NinjaTrader.Cbi.Position GetAccountPositionForCurrentInstrument ()
+        {
+            try
+            {
+                if (Account == null || Instrument == null)
+                    return null;
+
+                foreach (NinjaTrader.Cbi.Position p in Account.Positions)
+                {
+                    if (p == null || p.Instrument == null)
+                        continue;
+
+                    if (p.Instrument.FullName == Instrument.FullName)
+                        return p;
+                }
+            }
+            catch { }
+
+            return null;
+        }
+
+        private bool IsAccountFlatForCurrentInstrument ()
+        {
+            try
+            {
+                NinjaTrader.Cbi.Position accountPos = GetAccountPositionForCurrentInstrument ();
+
+                if (accountPos == null)
+                    return true;
+
+                return accountPos.MarketPosition == MarketPosition.Flat || accountPos.Quantity == 0;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private bool HasWorkingAccountOrdersForCurrentInstrument ()
+        {
+            try
+            {
+                if (Account == null || Instrument == null)
+                    return false;
+
+                lock (Account.Orders)
+                {
+                    foreach (Order o in Account.Orders)
+                    {
+                        if (o == null || o.Instrument == null)
+                            continue;
+
+                        if (o.Instrument.FullName != Instrument.FullName)
+                            continue;
+
+                        string state = o.OrderState.ToString ();
+
+                        if (state == "Working"
+                            || state == "Accepted"
+                            || state == "Submitted"
+                            || state == "PartFilled"
+                            || state == "ChangePending"
+                            || state == "CancelPending"
+                            || state == "TriggerPending")
+                            return true;
+                    }
+                }
+            }
+            catch { }
+
+            return false;
+        }
+
+        private bool IsFixedAccountFlatAndDone ()
+        {
+            return IsAccountFlatForCurrentInstrument () && !HasWorkingAccountOrdersForCurrentInstrument ();
         }
 
         private double GetFixedExitFallbackPrice (double preferredPrice = 0.0)
@@ -4653,7 +5162,7 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
             return true;
         }
 
-        private void SubmitAtmEntry (bool isLong, bool useKO, bool usePA, bool useTH, bool useSJ, bool useSU, int groupSize, string groupName, string reason)
+        private void SubmitAtmEntry (bool isLong, bool useKO, bool usePA, bool useTH, bool useSJ, bool useSU, bool useNC, int groupSize, string groupName, string reason)
         {
             if (OrderMode != OrderManagementMode.AtmStrategy)
                 return;
@@ -4671,13 +5180,14 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
                 return;
             }
 
-            string trigger = BuildSignalTriggerName (useKO, usePA, useTH, useSJ, useSU, groupSize, groupName);
+            string trigger = BuildSignalTriggerName (useKO, usePA, useTH, useSJ, useSU, useNC, groupSize, groupName);
 
             isAtmStrategyCreated = false;
-            SetActiveTradeSignalSources (useKO, usePA, useTH, useSJ, useSU, isLong ? MarketPosition.Long : MarketPosition.Short, groupSize, groupName);
+            SetActiveTradeSignalSources (useKO, usePA, useTH, useSJ, useSU, useNC, isLong ? MarketPosition.Long : MarketPosition.Short, groupSize, groupName);
 
             atmStrategyId = GetAtmStrategyUniqueId ();
             orderId = GetAtmStrategyUniqueId ();
+            _atmIdsSetUtc = DateTime.UtcNow;   // defense #3: start registration-timeout clock
 
             _tradeMap[atmStrategyId] = new TradeRecord
             {
@@ -4870,12 +5380,13 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
             Print ($"[{Name}] CLEAR NORMAL ATM STATE | Reason={reason} | ATM={atmStrategyId} | Order={orderId}");
 
             if (!string.IsNullOrEmpty (atmStrategyId))
-                _tradeMap.Remove (atmStrategyId);
+                _tradeMap.TryRemove (atmStrategyId, out _);
 
             atmStrategyId = string.Empty;
             orderId = string.Empty;
             isAtmStrategyCreated = false;
             _atmPositionConfirmed = false;
+            _atmIdsSetUtc = DateTime.MinValue;     // defense #3: reset registration-timeout clock
             dailyUnrealizedPnL = 0.0;
 
             ClearActiveTradeSignalSources ();
@@ -4927,6 +5438,7 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
             martingaleOrderId = string.Empty;
             martingaleAtmStrategyCreated = false;
             martingalePositionConfirmed = false;
+            _martingaleIdsSetUtc = DateTime.MinValue;   // defense #3: reset registration-timeout clock
             fixedMartingaleSignalName = string.Empty;
             fixedMartingaleDirection = MarketPosition.Flat;
             fixedMartingaleEntryAvgPrice = 0.0;
@@ -4972,6 +5484,7 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
 
             martingaleAtmStrategyId = GetAtmStrategyUniqueId ();
             martingaleOrderId = GetAtmStrategyUniqueId ();
+            _martingaleIdsSetUtc = DateTime.UtcNow;   // defense #3: start registration-timeout clock
 
             Print ($"[{Name}] MARTINGALE ATM SUBMIT | Direction={direction} | Template={MartingaleAtmStrategy}");
 
@@ -5050,7 +5563,7 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
                     else if (status[2] == "Cancelled" || status[2] == "Rejected")
                     {
                         Print ($"[{Name}] MARTINGALE ENTRY {status[2]} | Resetting recovery state.");
-                        _tradeMap.Remove (martingaleAtmStrategyId);
+                        _tradeMap.TryRemove (martingaleAtmStrategyId, out _);
                         ResetMartingaleRecovery ();
                         return;
                     }
@@ -5102,17 +5615,145 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
                 totalRealizedPnL += martingaleLastRealizedPnL;
                 UpdateLastTradeClosedSummary (martingaleLastRealizedPnL);
 
-                if (_logWriter != null && _tradeMap.TryGetValue (martingaleAtmStrategyId, out TradeRecord tr))
-                {
-                    string acct = (Account != null && !string.IsNullOrEmpty (Account.Name)) ? Account.Name : "NoAccount";
-                    _logWriter.WriteLine ($"{tr.OpenTime:yyyy-MM-dd HH:mm:ss},{acct},{tr.Instrument},{tr.OpenPrice:F2},{tr.Qty},{tickTime:yyyy-MM-dd HH:mm:ss},{tr.Trigger},{tr.Direction},{tr.AtmStrategyName},{martingaleLastRealizedPnL:F2}");
-                    _logWriter.Flush ();
-                }
+                WriteTradeLogRecord (martingaleAtmStrategyId, tickTime, martingaleLastRealizedPnL);
 
                 Print ($"[{Name}] MARTINGALE CLOSED | PnL={martingaleLastRealizedPnL:F2} | Recovery complete. Normal signal entries resumed.");
 
-                _tradeMap.Remove (martingaleAtmStrategyId);
+                _tradeMap.TryRemove (martingaleAtmStrategyId, out _);
                 ResetMartingaleRecovery ();
+            }
+        }
+
+        private void EvictStaleAtmIdsIfTimedOut ()
+        {
+            DateTime nowUtc = DateTime.UtcNow;
+
+            // --- Normal ATM ID ---
+            if (!string.IsNullOrEmpty (atmStrategyId))
+            {
+                bool registrationTimedOut =
+                    !isAtmStrategyCreated
+                    && _atmIdsSetUtc != DateTime.MinValue
+                    && (nowUtc - _atmIdsSetUtc).TotalSeconds > ATM_REGISTRATION_TIMEOUT_SEC;
+
+                if (registrationTimedOut)
+                {
+                    Print ($"[{Name}] STALE ATM IDS CLEARED (registration timeout) — "
+                        + $"atmId={atmStrategyId} orderId={orderId} "
+                        + $"age={(nowUtc - _atmIdsSetUtc).TotalSeconds:F1}s — "
+                        + $"AtmStrategyCreate callback never confirmed.");
+                    atmStrategyId = string.Empty;
+                    orderId = string.Empty;
+                    isAtmStrategyCreated = false;
+                    _atmPositionConfirmed = false;
+                    _atmIdsSetUtc = DateTime.MinValue;
+                    ClearActiveTradeSignalSources ();
+                }
+                else if (_atmPositionConfirmed && IsAtmMidTradeStale (atmStrategyId))
+                {
+                    // Defense #8: NT8 lost the ATM ID for an actively-trading position.
+                    // FlattenEverything submits ExitLong/Short + Account.Cancel which
+                    // both work independently of the dead ATM ID.
+                    Print ($"[{Name}] MID-TRADE ATM STALENESS DETECTED — "
+                        + $"atmId={atmStrategyId} was confirmed valid (position was open), "
+                        + $"NT8 now reports Flat while Account still holds position. "
+                        + $"Likely HDS bounce. Triggering Account-level recovery.");
+
+                    // Salvage trade log BEFORE clearing state — _atmPositionConfirmed
+                    // will be false after this block, making WriteTradeLogRecord unreachable.
+                    string d8SavedId    = atmStrategyId;
+                    double d8ForcedPnl  = Instrument.MasterInstrument.RoundToTickSize (dailyUnrealizedPnL);
+                    if (EnableDebug)
+                        Print ($"[{Name}] DEFENSE #8 FORCED-CLOSE LOG | ATM={d8SavedId} | EstPnL={d8ForcedPnl:F2}");
+                    WriteTradeLogRecord (d8SavedId, nowUtc, d8ForcedPnl);
+                    _tradeMap.TryRemove (d8SavedId, out _);
+
+                    FlattenEverything ("Defense #8: mid-trade ATM ID went stale (HDS bounce recovery)");
+                    atmStrategyId = string.Empty;
+                    orderId = string.Empty;
+                    isAtmStrategyCreated = false;
+                    _atmPositionConfirmed = false;
+                    _atmIdsSetUtc = DateTime.MinValue;
+                    ClearActiveTradeSignalSources ();
+                }
+            }
+
+            // --- Martingale ATM ID (same two-tier check) ---
+            if (!string.IsNullOrEmpty (martingaleAtmStrategyId))
+            {
+                bool martingaleRegistrationTimedOut =
+                    !martingaleAtmStrategyCreated
+                    && _martingaleIdsSetUtc != DateTime.MinValue
+                    && (nowUtc - _martingaleIdsSetUtc).TotalSeconds > ATM_REGISTRATION_TIMEOUT_SEC;
+
+                if (martingaleRegistrationTimedOut)
+                {
+                    Print ($"[{Name}] STALE MARTINGALE ATM IDS CLEARED (registration timeout) — "
+                        + $"martingaleAtmId={martingaleAtmStrategyId} martingaleOrderId={martingaleOrderId} "
+                        + $"age={(nowUtc - _martingaleIdsSetUtc).TotalSeconds:F1}s");
+                    _tradeMap.TryRemove (martingaleAtmStrategyId, out _);
+                    ResetMartingaleRecovery ();
+                }
+                else if (martingalePositionConfirmed && IsAtmMidTradeStale (martingaleAtmStrategyId))
+                {
+                    Print ($"[{Name}] MID-TRADE MARTINGALE ATM STALENESS DETECTED — "
+                        + $"martingaleAtmId={martingaleAtmStrategyId}. Triggering Account-level recovery.");
+
+                    // Salvage trade log BEFORE clearing state.
+                    string d8MartSavedId   = martingaleAtmStrategyId;
+                    double d8MartForcedPnl = Instrument.MasterInstrument.RoundToTickSize (dailyUnrealizedPnL);
+                    if (EnableDebug)
+                        Print ($"[{Name}] DEFENSE #8 MARTINGALE FORCED-CLOSE LOG | ATM={d8MartSavedId} | EstPnL={d8MartForcedPnl:F2}");
+                    WriteTradeLogRecord (d8MartSavedId, nowUtc, d8MartForcedPnl);
+
+                    FlattenEverything ("Defense #8: mid-trade martingale ATM ID went stale");
+                    _tradeMap.TryRemove (d8MartSavedId, out _);
+                    ResetMartingaleRecovery ();
+                }
+            }
+        }
+
+        // Defense #8 helper — detects "ATM ID went stale while a position is still open".
+        // GetAtmStrategy* does NOT throw for missing IDs; it logs at level 3 and returns
+        // Flat. So we infer staleness by mismatch: ATM says Flat, Account says non-Flat.
+        // Returns false on any error (best-effort — we'd rather miss a stale detection
+        // than crash the tick handler).
+        private bool IsAtmMidTradeStale (string strategyId)
+        {
+            if (string.IsNullOrEmpty (strategyId) || Account == null || Instrument == null)
+                return false;
+
+            try
+            {
+                MarketPosition atmPos = GetAtmStrategyMarketPosition (strategyId);
+                if (atmPos != MarketPosition.Flat)
+                    return false;   // ATM still tracking → not stale
+
+                // ATM says flat. Is Account actually flat for our instrument? Use a
+                // snapshot to avoid holding lock during downstream lookups.
+                Cbi.Position accountPos = null;
+                lock (Account.Positions)
+                {
+                    foreach (Cbi.Position p in Account.Positions)
+                    {
+                        if (p != null && p.Instrument != null
+                            && p.Instrument.FullName == Instrument.FullName)
+                        {
+                            accountPos = p;
+                            break;
+                        }
+                    }
+                }
+
+                if (accountPos == null)
+                    return false;   // no position on account → no orphan to recover
+
+                return accountPos.MarketPosition != MarketPosition.Flat
+                    && Math.Abs (accountPos.Quantity) > 0;
+            }
+            catch
+            {
+                return false;
             }
         }
 
@@ -5682,24 +6323,56 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
                 int textSize = Math.Max (6, EntryExitTextSize);
                 SimpleFont font = new SimpleFont ("Arial", textSize);
 
+                double entryLabelPrice = GetMarkerLabelPrice (entryBarsAgo, data.IsLong);
+
+                if (entryLabelPrice <= 0.0)
+                    entryLabelPrice = data.IsLong
+                        ? data.EntryPrice + Math.Max (0, EntryExitTextOffsetTicks) * TickSize
+                        : data.EntryPrice - Math.Max (0, EntryExitTextOffsetTicks) * TickSize;
+
                 string entryText = string.Format ("{0} ENTRY\n{1:F2}", side, data.EntryPrice);
 
                 Draw.Text (this, data.EntryLabelTag, false, entryText,
-                    entryBarsAgo, data.EntryPrice, -15, brush, font,
+                    entryBarsAgo, entryLabelPrice, 0, brush, font,
                     System.Windows.TextAlignment.Center, Brushes.Transparent, Brushes.Transparent, 0);
 
-                // Exit label is suppressed while the trade is still open.
                 if (isLive)
                     return;
 
+                double exitLabelPrice = GetMarkerLabelPrice (exitBarsAgo, data.IsLong);
+
+                if (exitLabelPrice <= 0.0)
+                    exitLabelPrice = data.IsLong
+                        ? data.ExitPrice + Math.Max (0, EntryExitTextOffsetTicks) * TickSize
+                        : data.ExitPrice - Math.Max (0, EntryExitTextOffsetTicks) * TickSize;
+
                 string exitText = string.Format ("EXIT\nEntry: {0:F2}\nExit: {1:F2}",
-                    data.EntryPrice, data.ExitPrice);
+            data.EntryPrice, data.ExitPrice);
 
                 Draw.Text (this, data.ExitLabelTag, false, exitText,
-                    exitBarsAgo, data.ExitPrice, 15, brush, font,
+                    exitBarsAgo, exitLabelPrice, 0, brush, font,
                     System.Windows.TextAlignment.Center, Brushes.Transparent, Brushes.Transparent, 0);
             }
             catch { }
+        }
+
+        private double GetMarkerLabelPrice (int barsAgo, bool isLong)
+        {
+            double offset = Math.Max (0, EntryExitTextOffsetTicks) * TickSize;
+
+            try
+            {
+                if (barsAgo >= 0 && CurrentBar >= barsAgo)
+                {
+                    if (isLong)
+                        return High[barsAgo] + offset;
+
+                    return Low[barsAgo] - offset;
+                }
+            }
+            catch { }
+
+            return 0.0;
         }
         #endregion
 
@@ -5896,9 +6569,50 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
             {
                 try
                 {
+                    // Defense #5: unsubscribe each Click handler so the WPF dispatcher's
+                    // event table releases its strong refs to this strategy instance.
+                    // Without these `-=` lines, an enable→disable→enable cycle accumulates
+                    // click subscriptions and ghosted strategy instances stay rooted in
+                    // WPF memory. Per feedback_nt8_wpf_quota_prevention.md.
+                    try
+                    {
+                        if (_armLongBtn != null)
+                            _armLongBtn.Click -= ArmLongBtn_Click;
+                    }
+                    catch { }
+                    try
+                    {
+                        if (_armShortBtn != null)
+                            _armShortBtn.Click -= ArmShortBtn_Click;
+                    }
+                    catch { }
+                    try
+                    {
+                        if (_revBtn != null)
+                            _revBtn.Click -= RevBtn_Click;
+                    }
+                    catch { }
+                    try
+                    {
+                        if (_autoArmBtn != null)
+                            _autoArmBtn.Click -= AutoArmBtn_Click;
+                    }
+                    catch { }
+                    try
+                    {
+                        if (_closeBtn != null)
+                            _closeBtn.Click -= CloseBtn_Click;
+                    }
+                    catch { }
+
                     if (_controlPanel != null && UserControlCollection.Contains (_controlPanel))
                         UserControlCollection.Remove (_controlPanel);
 
+                    _armLongBtn = null;
+                    _armShortBtn = null;
+                    _revBtn = null;
+                    _autoArmBtn = null;
+                    _closeBtn = null;
                     _controlPanel = null;
                     _uiInitialized = false;
                 }
@@ -5932,12 +6646,23 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
             _autoArm = !_autoArm;
 
             if (_autoArm)
-                _armLong = _armShort = true;
-            // Note: disabling AutoArm does not force the individual arm toggles off —
-            // the user controls those independently.
+            {
+                _armLong = true;
+                _armShort = true;
+                _reverseOnAlternateSignal = true;
+                // Optional: you could force REV on here if desired, 
+                // but usually, it's safer to let the user toggle it back.
+            }
+            else
+            {
+                _armLong = false;
+                _armShort = false;
+                _reverseOnAlternateSignal = false;
+            }
 
             UpdateRBroButtons ();
             UpdateRBroStatusUI ();
+            BuildDashboardSnapshot (); // Refresh HUD immediately
         }
 
         private void CloseBtn_Click (object sender, RoutedEventArgs e)
@@ -6232,6 +6957,27 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
                 else if (!ShowSUSignalArrowLabels)
                     RemoveProperties (col, "SUSignalArrowText");
             }
+
+            if (!UseNCSignals)
+            {
+                RemoveProperties (col,
+                    "NC_LongOperator",
+                    "NC_LongValue",
+                    "NC_ShortOperator",
+                    "NC_ShortValue",
+                    "ShowNCIndicator",
+                    "ShowNCSignalArrows",
+                    "ShowNCSignalArrowLabels",
+                    "NCSignalArrowText",
+                    "NCSignalArrowBrush");
+            }
+            else
+            {
+                if (!ShowNCSignalArrows)
+                    RemoveProperties (col, "ShowNCSignalArrowLabels", "NCSignalArrowText", "NCSignalArrowBrush");
+                else if (!ShowNCSignalArrowLabels)
+                    RemoveProperties (col, "NCSignalArrowText");
+            }
         }
 
         private void ModifyIndicatorSettingsProperties (PropertyDescriptorCollection col)
@@ -6311,6 +7057,26 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
                     "SJ_SignalSplit",
                     "SJ_Brush");
 
+            if (!ShowIndicatorSettings || !UseNCSignals)
+                RemoveProperties (col,
+                    "NC_Sensitivity",
+                    "NC_Smoothness",
+                    "NC_BaselineMAType",
+                    "NC_BaselinePeriod",
+                    "NC_BaselineSmoothingEnabled",
+                    "NC_BaselineSmoothingMethod",
+                    "NC_BaselineSmoothingPeriod",
+                    "NC_KernelMAType",
+                    "NC_KernelPeriod",
+                    "NC_KernelSmoothingEnabled",
+                    "NC_KernelSmoothingMethod",
+                    "NC_KernelSmoothingPeriod",
+                    "NC_SignalSplit",
+                    "NC_FilterEnabled",
+                    "NC_FilterBarMin",
+                    "NC_FilterBarMax",
+                    "NC_Brush");
+
             if (!ShowIndicatorSettings)
                 RemoveProperties (col);
         }
@@ -6346,6 +7112,8 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
                 count++;
             if (UseSUSignals)
                 count++;
+            if (UseNCSignals)
+                count++;
 
             return count;
         }
@@ -6364,6 +7132,8 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
                 count++;
             if (G2_UseSUSignals)
                 count++;
+            if (G2_UseNCSignals)
+                count++;
 
             return count;
         }
@@ -6374,7 +7144,8 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
                 || UsePASignals
                 || UseTHSignals
                 || UseSJSignals
-                || UseSUSignals;
+                || UseSUSignals
+                || UseNCSignals;
         }
 
         private bool AnyIndividualSignalArrowEnabled ()
@@ -6383,7 +7154,8 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
                 || (UsePASignals && ShowPASignalArrows)
                 || (UseTHSignals && ShowTHSignalArrows)
                 || (UseSJSignals && ShowSJSignalArrows)
-                || (UseSUSignals && ShowSUSignalArrows);
+                || (UseSUSignals && ShowSUSignalArrows)
+                || (UseNCSignals && ShowNCSignalArrows);
         }
 
         private bool AnySignalArrowEnabled ()
@@ -6437,7 +7209,13 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
                     "G2_SU_LongOperator",
                     "G2_SU_LongValue",
                     "G2_SU_ShortOperator",
-                    "G2_SU_ShortValue");
+                    "G2_SU_ShortValue",
+
+                    "G2_UseNCSignals",
+                    "G2_NC_LongOperator",
+                    "G2_NC_LongValue",
+                    "G2_NC_ShortOperator",
+                    "G2_NC_ShortValue");
             }
             else
             {
@@ -6455,6 +7233,9 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
 
                 if (!G2_UseSUSignals)
                     RemoveProperties (col, "G2_SU_LongOperator", "G2_SU_LongValue", "G2_SU_ShortOperator", "G2_SU_ShortValue");
+
+                if (!G2_UseNCSignals)
+                    RemoveProperties (col, "G2_NC_LongOperator", "G2_NC_LongValue", "G2_NC_ShortOperator", "G2_NC_ShortValue");
             }
 
             bool anyVisibleGroupEnabled = IsPrimaryGroupModeActive () || IsSecondaryGroupModeActive ();
@@ -6526,7 +7307,7 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
             }
 
             if (!ShowEntryExitLabels)
-                RemoveProperties (col, "EntryExitTextSize");
+                RemoveProperties (col, "EntryExitTextSize", "EntryExitTextOffsetTicks");
         }
 
         private void ModifyAudioAlertProperties (PropertyDescriptorCollection col)
@@ -6714,7 +7495,7 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
 
         // -------------------- Trigger Set 1 --------------------
         [NinjaScriptProperty]
-        [Range (1, 5)]
+        [Range (1, 6)]
         [Display (Name = "Set 1 Required Count", Order = 10, GroupName = "Signals",
             Description = "Number of enabled Set 1 signals that must align on the same bar. Use 1 for a one-signal trigger.")]
         public int GroupTriggerSet1RequiredCount
@@ -6932,6 +7713,46 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
             get; set;
         }
 
+        // ══════════════════════════ Set 1 · NobleCloud ══════════════════════════
+        [NinjaScriptProperty]
+        [Display (Name = "Set 1 Use NobleCloud", Order = 70, GroupName = "Signals",
+            Description = "Use gbNobleCloud Signal_Trade as a Set 1 entry source. +1 = bullish, -1 = bearish.")]
+        [RefreshProperties (RefreshProperties.All)]
+        public bool UseNCSignals
+        {
+            get; set;
+        }
+
+        [NinjaScriptProperty]
+        [Display (Name = "Set 1 NobleCloud Long Operator", Order = 71, GroupName = "Signals")]
+        public SignalComparisonOperator NC_LongOperator
+        {
+            get; set;
+        }
+
+        [NinjaScriptProperty]
+        [Display (Name = "Set 1 NobleCloud Long Value", Order = 72, GroupName = "Signals",
+            Description = "Bullish threshold. Recommended: 1 (only valid value for NobleCloud).")]
+        public int NC_LongValue
+        {
+            get; set;
+        }
+
+        [NinjaScriptProperty]
+        [Display (Name = "Set 1 NobleCloud Short Operator", Order = 73, GroupName = "Signals")]
+        public SignalComparisonOperator NC_ShortOperator
+        {
+            get; set;
+        }
+
+        [NinjaScriptProperty]
+        [Display (Name = "Set 1 NobleCloud Short Value", Order = 74, GroupName = "Signals",
+            Description = "Bearish threshold. Recommended: -1 (only valid value for NobleCloud).")]
+        public int NC_ShortValue
+        {
+            get; set;
+        }
+
         // -------------------- Trigger Set 2 --------------------
         [NinjaScriptProperty]
         [Display (Name = "Set 2 Enable Group Trigger", Order = 100, GroupName = "Signals",
@@ -7132,6 +7953,43 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
         [NinjaScriptProperty]
         [Display (Name = "Set 2 SumoPullback Short Value", Order = 154, GroupName = "Signals")]
         public int G2_SU_ShortValue
+        {
+            get; set;
+        }
+
+        // ══════════════════════════ Set 2 · NobleCloud ══════════════════════════
+        [NinjaScriptProperty]
+        [Display (Name = "Set 2 Use NobleCloud", Order = 160, GroupName = "Signals")]
+        [RefreshProperties (RefreshProperties.All)]
+        public bool G2_UseNCSignals
+        {
+            get; set;
+        }
+
+        [NinjaScriptProperty]
+        [Display (Name = "Set 2 NobleCloud Long Operator", Order = 161, GroupName = "Signals")]
+        public SignalComparisonOperator G2_NC_LongOperator
+        {
+            get; set;
+        }
+
+        [NinjaScriptProperty]
+        [Display (Name = "Set 2 NobleCloud Long Value", Order = 162, GroupName = "Signals")]
+        public int G2_NC_LongValue
+        {
+            get; set;
+        }
+
+        [NinjaScriptProperty]
+        [Display (Name = "Set 2 NobleCloud Short Operator", Order = 163, GroupName = "Signals")]
+        public SignalComparisonOperator G2_NC_ShortOperator
+        {
+            get; set;
+        }
+
+        [NinjaScriptProperty]
+        [Display (Name = "Set 2 NobleCloud Short Value", Order = 164, GroupName = "Signals")]
+        public int G2_NC_ShortValue
         {
             get; set;
         }
@@ -7641,7 +8499,7 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
         public bool EnableMartingaleOnStopLoss
         {
             get; set;
-        }      
+        }
 
         // ==================== Session Parameters ====================
         [Display (Name = "Enable TF 1", Order = 1, GroupName = "Session Parameters")]
@@ -8192,10 +9050,132 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
             get; set;
         }
 
+        // ==================== NobleCloud ====================
+        [NinjaScriptProperty]
+        [Range (0.0, double.MaxValue)]
+        [Display (Name = "Sensitivity", Order = 0, GroupName = "Indicator: NobleCloud")]
+        public double NC_Sensitivity
+        {
+            get; set;
+        }
+
+        [NinjaScriptProperty]
+        [Range (1, int.MaxValue)]
+        [Display (Name = "Smoothness", Order = 1, GroupName = "Indicator: NobleCloud")]
+        public int NC_Smoothness
+        {
+            get; set;
+        }
+
+        [NinjaScriptProperty]
+        [Display (Name = "Baseline: MA Type", Order = 10, GroupName = "Indicator: NobleCloud")]
+        public gb_MAType NC_BaselineMAType
+        {
+            get; set;
+        }
+
+        [NinjaScriptProperty]
+        [Range (1, int.MaxValue)]
+        [Display (Name = "Baseline: Period", Order = 11, GroupName = "Indicator: NobleCloud")]
+        public int NC_BaselinePeriod
+        {
+            get; set;
+        }
+
+        [NinjaScriptProperty]
+        [Display (Name = "Baseline: Smoothing Enabled", Order = 12, GroupName = "Indicator: NobleCloud")]
+        public bool NC_BaselineSmoothingEnabled
+        {
+            get; set;
+        }
+
+        [NinjaScriptProperty]
+        [Display (Name = "Baseline: Smoothing Method", Order = 13, GroupName = "Indicator: NobleCloud")]
+        public gb_MAType NC_BaselineSmoothingMethod
+        {
+            get; set;
+        }
+
+        [NinjaScriptProperty]
+        [Range (1, int.MaxValue)]
+        [Display (Name = "Baseline: Smoothing Period", Order = 14, GroupName = "Indicator: NobleCloud")]
+        public int NC_BaselineSmoothingPeriod
+        {
+            get; set;
+        }
+
+        [NinjaScriptProperty]
+        [Display (Name = "Kernel: MA Type", Order = 20, GroupName = "Indicator: NobleCloud")]
+        public gb_MAType NC_KernelMAType
+        {
+            get; set;
+        }
+
+        [NinjaScriptProperty]
+        [Range (1, int.MaxValue)]
+        [Display (Name = "Kernel: Period", Order = 21, GroupName = "Indicator: NobleCloud")]
+        public int NC_KernelPeriod
+        {
+            get; set;
+        }
+
+        [NinjaScriptProperty]
+        [Display (Name = "Kernel: Smoothing Enabled", Order = 22, GroupName = "Indicator: NobleCloud")]
+        public bool NC_KernelSmoothingEnabled
+        {
+            get; set;
+        }
+
+        [NinjaScriptProperty]
+        [Display (Name = "Kernel: Smoothing Method", Order = 23, GroupName = "Indicator: NobleCloud")]
+        public gb_MAType NC_KernelSmoothingMethod
+        {
+            get; set;
+        }
+
+        [NinjaScriptProperty]
+        [Range (1, int.MaxValue)]
+        [Display (Name = "Kernel: Smoothing Period", Order = 24, GroupName = "Indicator: NobleCloud")]
+        public int NC_KernelSmoothingPeriod
+        {
+            get; set;
+        }
+
+        [NinjaScriptProperty]
+        [Range (0, int.MaxValue)]
+        [Display (Name = "Signal Split (Bars)", Order = 30, GroupName = "Indicator: NobleCloud")]
+        public int NC_SignalSplit
+        {
+            get; set;
+        }
+
+        [NinjaScriptProperty]
+        [Display (Name = "Filter: Enabled", Order = 40, GroupName = "Indicator: NobleCloud")]
+        public bool NC_FilterEnabled
+        {
+            get; set;
+        }
+
+        [NinjaScriptProperty]
+        [Range (1, int.MaxValue)]
+        [Display (Name = "Filter: Bar Min", Order = 41, GroupName = "Indicator: NobleCloud")]
+        public int NC_FilterBarMin
+        {
+            get; set;
+        }
+
+        [NinjaScriptProperty]
+        [Range (1, int.MaxValue)]
+        [Display (Name = "Filter: Bar Max", Order = 42, GroupName = "Indicator: NobleCloud")]
+        public int NC_FilterBarMax
+        {
+            get; set;
+        }
+
         // ==================== Display ====================
         [NinjaScriptProperty]
         [Display (Name = "Show Dashboard", Order = 0, GroupName = "Display",
-            Description = "Show the SharpDX info panel (PnL/session/status). Turn off for stability mode — disables all dashboard rendering and dispatcher invalidate work. Position can be set via Dashboard Position; setting Position = Hidden has the same effect.")]
+            Description = "Show the SharpDX info panel (PnL/session/status). Turn off for stability mode — disables all dashboard rendering and dispatcher invalidate work.")]
         public bool ShowDashboard
         {
             get; set;
@@ -8211,7 +9191,7 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
 
         [NinjaScriptProperty]
         [Display (Name = "Dashboard Size", Order = 2, GroupName = "Display",
-            Description = "Tiny / Small / Normal / Large / Huge. Drives both font size AND box width — the box tightens to fit the actual text at each preset, no empty real-estate. Changes apply on the next frame (free to tweak at runtime).")]
+            Description = "Tiny / Small / Normal / Large / Huge. Changes apply on the next frame.")]
         public GodZillaHudSize DashboardSize
         {
             get; set;
@@ -8219,7 +9199,7 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
 
         [NinjaScriptProperty]
         [Display (Name = "Show Control Panel", Order = 3, GroupName = "Display",
-            Description = "Show the WPF arm/auto-arm/close-all button panel. Disable if you only need automated entries and don't want manual override controls.")]
+            Description = "Show the WPF arm/auto-arm/close-all button panel.")]
         public bool ShowControlPanel
         {
             get; set;
@@ -8227,15 +9207,31 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
 
         [NinjaScriptProperty]
         [Display (Name = "Control Panel Position", Order = 4, GroupName = "Display",
-            Description = "Where to anchor the button panel on the chart. Position changes apply on next strategy enable. Hidden = same as Show Control Panel = false.")]
+            Description = "Where to anchor the button panel on the chart.")]
         public HudCorner ControlPanelPosition
+        {
+            get; set;
+        }
+
+        [NinjaScriptProperty]
+        [Display (Name = "Show Individual Signal Stats", Order = 5, GroupName = "Display",
+            Description = "When enabled, displays individual tracking (T/Lg/Sh/W/L) for each indicator on the dashboard.")]
+        public bool ShowIndividualSignalStats
+        {
+            get; set;
+        }
+
+        [NinjaScriptProperty]
+        [Display (Name = "Show Group Signal Stats", Order = 6, GroupName = "Display",
+            Description = "When enabled, displays the confluence/group signal tracking (T/Lg/Sh/W/L) on the dashboard.")]
+        public bool ShowGroupSignalTrackingStats
         {
             get; set;
         }
 
         // -------------------- Display: KingOrderBlock --------------------
         [NinjaScriptProperty]
-        [Display (Name = "KingOrderBlock: Show Indicator", Order = 5, GroupName = "Display")]
+        [Display (Name = "KingOrderBlock: Show Indicator", Order = 7, GroupName = "Display")]
         [RefreshProperties (RefreshProperties.All)]
         public bool ShowKOIndicator
         {
@@ -8243,7 +9239,7 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
         }
 
         [NinjaScriptProperty]
-        [Display (Name = "KingOrderBlock: Show Signal Arrows", Order = 6, GroupName = "Display")]
+        [Display (Name = "KingOrderBlock: Show Signal Arrows", Order = 8, GroupName = "Display")]
         [RefreshProperties (RefreshProperties.All)]
         public bool ShowKOSignalArrows
         {
@@ -8251,7 +9247,7 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
         }
 
         [NinjaScriptProperty]
-        [Display (Name = "KingOrderBlock: Show Signal Arrow Label", Order = 7, GroupName = "Display")]
+        [Display (Name = "KingOrderBlock: Show Signal Arrow Label", Order = 9, GroupName = "Display")]
         [RefreshProperties (RefreshProperties.All)]
         public bool ShowKOSignalArrowLabels
         {
@@ -8259,14 +9255,14 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
         }
 
         [NinjaScriptProperty]
-        [Display (Name = "KingOrderBlock: Signal Arrow Text", Order = 8, GroupName = "Display")]
+        [Display (Name = "KingOrderBlock: Signal Arrow Text", Order = 10, GroupName = "Display")]
         public string KOSignalArrowText
         {
             get; set;
         }
 
         [XmlIgnore]
-        [Display (Name = "KingOrderBlock: Indicator Color", Order = 9, GroupName = "Display")]
+        [Display (Name = "KingOrderBlock: Indicator Color", Order = 11, GroupName = "Display")]
         public Brush KO_Brush
         {
             get; set;
@@ -8286,7 +9282,7 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
         }
 
         [XmlIgnore]
-        [Display (Name = "KingOrderBlock: Signal Arrow Color", Order = 10, GroupName = "Display")]
+        [Display (Name = "KingOrderBlock: Signal Arrow Color", Order = 12, GroupName = "Display")]
         public Brush KOSignalArrowBrush
         {
             get; set;
@@ -8307,7 +9303,7 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
 
         // -------------------- Display: PA --------------------
         [NinjaScriptProperty]
-        [Display (Name = "PA: Show Indicator", Order = 11, GroupName = "Display")]
+        [Display (Name = "PanaKanal: Show Indicator", Order = 13, GroupName = "Display")]
         [RefreshProperties (RefreshProperties.All)]
         public bool ShowPAIndicator
         {
@@ -8315,7 +9311,7 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
         }
 
         [NinjaScriptProperty]
-        [Display (Name = "PA: Show Signal Arrows", Order = 12, GroupName = "Display")]
+        [Display (Name = "PanaKanal: Show Signal Arrows", Order = 14, GroupName = "Display")]
         [RefreshProperties (RefreshProperties.All)]
         public bool ShowPASignalArrows
         {
@@ -8323,7 +9319,7 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
         }
 
         [NinjaScriptProperty]
-        [Display (Name = "PA: Show Signal Arrow Label", Order = 13, GroupName = "Display")]
+        [Display (Name = "PanaKanal: Show Signal Arrow Label", Order = 15, GroupName = "Display")]
         [RefreshProperties (RefreshProperties.All)]
         public bool ShowPASignalArrowLabels
         {
@@ -8331,14 +9327,14 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
         }
 
         [NinjaScriptProperty]
-        [Display (Name = "PA: Signal Arrow Text", Order = 14, GroupName = "Display")]
+        [Display (Name = "PanaKanal: Signal Arrow Text", Order = 16, GroupName = "Display")]
         public string PASignalArrowText
         {
             get; set;
         }
 
         [XmlIgnore]
-        [Display (Name = "PA: Indicator Color", Order = 15, GroupName = "Display")]
+        [Display (Name = "PanaKanal: Indicator Color", Order = 17, GroupName = "Display")]
         public Brush PA_Brush
         {
             get; set;
@@ -8358,7 +9354,7 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
         }
 
         [XmlIgnore]
-        [Display (Name = "PA: Signal Arrow Color", Order = 16, GroupName = "Display")]
+        [Display (Name = "PanaKanal: Signal Arrow Color", Order = 18, GroupName = "Display")]
         public Brush PASignalArrowBrush
         {
             get; set;
@@ -8379,7 +9375,7 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
 
         // -------------------- Display: ThunderZilla --------------------
         [NinjaScriptProperty]
-        [Display (Name = "ThunderZilla: Show Indicator", Order = 17, GroupName = "Display")]
+        [Display (Name = "ThunderZilla: Show Indicator", Order = 19, GroupName = "Display")]
         [RefreshProperties (RefreshProperties.All)]
         public bool ShowTHIndicator
         {
@@ -8387,7 +9383,7 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
         }
 
         [NinjaScriptProperty]
-        [Display (Name = "ThunderZilla: Show Signal Arrows", Order = 18, GroupName = "Display")]
+        [Display (Name = "ThunderZilla: Show Signal Arrows", Order = 20, GroupName = "Display")]
         [RefreshProperties (RefreshProperties.All)]
         public bool ShowTHSignalArrows
         {
@@ -8395,7 +9391,7 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
         }
 
         [NinjaScriptProperty]
-        [Display (Name = "ThunderZilla: Show Signal Arrow Label", Order = 19, GroupName = "Display")]
+        [Display (Name = "ThunderZilla: Show Signal Arrow Label", Order = 21, GroupName = "Display")]
         [RefreshProperties (RefreshProperties.All)]
         public bool ShowTHSignalArrowLabels
         {
@@ -8403,14 +9399,14 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
         }
 
         [NinjaScriptProperty]
-        [Display (Name = "ThunderZilla: Signal Arrow Text", Order = 20, GroupName = "Display")]
+        [Display (Name = "ThunderZilla: Signal Arrow Text", Order = 22, GroupName = "Display")]
         public string THSignalArrowText
         {
             get; set;
         }
 
         [XmlIgnore]
-        [Display (Name = "ThunderZilla: Indicator Color", Order = 21, GroupName = "Display")]
+        [Display (Name = "ThunderZilla: Indicator Color", Order = 23, GroupName = "Display")]
         public Brush TH_Brush
         {
             get; set;
@@ -8430,7 +9426,7 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
         }
 
         [XmlIgnore]
-        [Display (Name = "ThunderZilla: Signal Arrow Color", Order = 22, GroupName = "Display")]
+        [Display (Name = "ThunderZilla: Signal Arrow Color", Order = 24, GroupName = "Display")]
         public Brush THSignalArrowBrush
         {
             get; set;
@@ -8451,7 +9447,7 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
 
         // -------------------- Display: SuperJumpBoost --------------------
         [NinjaScriptProperty]
-        [Display (Name = "SuperJumpBoost: Show Indicator", Order = 23, GroupName = "Display")]
+        [Display (Name = "SuperJumpBoost: Show Indicator", Order = 25, GroupName = "Display")]
         [RefreshProperties (RefreshProperties.All)]
         public bool ShowSJIndicator
         {
@@ -8459,7 +9455,7 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
         }
 
         [NinjaScriptProperty]
-        [Display (Name = "SuperJumpBoost: Show Signal Arrows", Order = 24, GroupName = "Display")]
+        [Display (Name = "SuperJumpBoost: Show Signal Arrows", Order = 26, GroupName = "Display")]
         [RefreshProperties (RefreshProperties.All)]
         public bool ShowSJSignalArrows
         {
@@ -8467,7 +9463,7 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
         }
 
         [NinjaScriptProperty]
-        [Display (Name = "SuperJumpBoost: Show Signal Arrow Label", Order = 25, GroupName = "Display")]
+        [Display (Name = "SuperJumpBoost: Show Signal Arrow Label", Order = 27, GroupName = "Display")]
         [RefreshProperties (RefreshProperties.All)]
         public bool ShowSJSignalArrowLabels
         {
@@ -8475,14 +9471,14 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
         }
 
         [NinjaScriptProperty]
-        [Display (Name = "SuperJumpBoost: Signal Arrow Text", Order = 26, GroupName = "Display")]
+        [Display (Name = "SuperJumpBoost: Signal Arrow Text", Order = 28, GroupName = "Display")]
         public string SJSignalArrowText
         {
             get; set;
         }
 
         [XmlIgnore]
-        [Display (Name = "SuperJumpBoost: Indicator Color", Order = 27, GroupName = "Display")]
+        [Display (Name = "SuperJumpBoost: Indicator Color", Order = 29, GroupName = "Display")]
         public Brush SJ_Brush
         {
             get; set;
@@ -8502,7 +9498,7 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
         }
 
         [XmlIgnore]
-        [Display (Name = "SuperJumpBoost: Signal Arrow Color", Order = 28, GroupName = "Display")]
+        [Display (Name = "SuperJumpBoost: Signal Arrow Color", Order = 30, GroupName = "Display")]
         public Brush SJSignalArrowBrush
         {
             get; set;
@@ -8523,7 +9519,7 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
 
         // -------------------- Display: SumoPullback --------------------
         [NinjaScriptProperty]
-        [Display (Name = "SumoPullback: Show Indicator", Order = 29, GroupName = "Display")]
+        [Display (Name = "SumoPullback: Show Indicator", Order = 31, GroupName = "Display")]
         [RefreshProperties (RefreshProperties.All)]
         public bool ShowSUIndicator
         {
@@ -8531,7 +9527,7 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
         }
 
         [NinjaScriptProperty]
-        [Display (Name = "SumoPullback: Show Signal Arrows", Order = 30, GroupName = "Display")]
+        [Display (Name = "SumoPullback: Show Signal Arrows", Order = 32, GroupName = "Display")]
         [RefreshProperties (RefreshProperties.All)]
         public bool ShowSUSignalArrows
         {
@@ -8539,7 +9535,7 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
         }
 
         [NinjaScriptProperty]
-        [Display (Name = "SumoPullback: Show Signal Arrow Label", Order = 31, GroupName = "Display")]
+        [Display (Name = "SumoPullback: Show Signal Arrow Label", Order = 33, GroupName = "Display")]
         [RefreshProperties (RefreshProperties.All)]
         public bool ShowSUSignalArrowLabels
         {
@@ -8547,14 +9543,14 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
         }
 
         [NinjaScriptProperty]
-        [Display (Name = "SumoPullback: Signal Arrow Text", Order = 32, GroupName = "Display")]
+        [Display (Name = "SumoPullback: Signal Arrow Text", Order = 34, GroupName = "Display")]
         public string SUSignalArrowText
         {
             get; set;
         }
 
         [XmlIgnore]
-        [Display (Name = "SumoPullback: Indicator Color", Order = 33, GroupName = "Display")]
+        [Display (Name = "SumoPullback: Indicator Color", Order = 35, GroupName = "Display")]
         public Brush SU_Brush
         {
             get; set;
@@ -8574,7 +9570,7 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
         }
 
         [XmlIgnore]
-        [Display (Name = "SumoPullback: Signal Arrow Color", Order = 34, GroupName = "Display")]
+        [Display (Name = "SumoPullback: Signal Arrow Color", Order = 36, GroupName = "Display")]
         public Brush SUSignalArrowBrush
         {
             get; set;
@@ -8593,9 +9589,79 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
             }
         }
 
+        // ── NobleCloud display ──────────────────────────────────────────────────────────
+        [NinjaScriptProperty]
+        [Display (Name = "NobleCloud: Show Indicator", Order = 37, GroupName = "Display")]
+        [RefreshProperties (RefreshProperties.All)]
+        public bool ShowNCIndicator
+        {
+            get; set;
+        }
+
+        [NinjaScriptProperty]
+        [Display (Name = "NobleCloud: Show Signal Arrows", Order = 38, GroupName = "Display")]
+        [RefreshProperties (RefreshProperties.All)]
+        public bool ShowNCSignalArrows
+        {
+            get; set;
+        }
+
+        [NinjaScriptProperty]
+        [Display (Name = "NobleCloud: Show Signal Arrow Labels", Order = 39, GroupName = "Display")]
+        [RefreshProperties (RefreshProperties.All)]
+        public bool ShowNCSignalArrowLabels
+        {
+            get; set;
+        }
+
+        [NinjaScriptProperty]
+        [Display (Name = "NobleCloud: Signal Arrow Text", Order = 40, GroupName = "Display")]
+        public string NCSignalArrowText
+        {
+            get; set;
+        }
+
+        [XmlIgnore]
+        [Display (Name = "NobleCloud: Indicator Color", Order = 41, GroupName = "Display")]
+        public Brush NC_Brush
+        {
+            get; set;
+        }
+        [Browsable (false)]
+        public string NC_Brush_Serialize
+        {
+            get
+            {
+                return Serialize.BrushToString (NC_Brush);
+            }
+            set
+            {
+                NC_Brush = Serialize.StringToBrush (value);
+            }
+        }
+
+        [XmlIgnore]
+        [Display (Name = "NobleCloud: Signal Arrow Color", Order = 42, GroupName = "Display")]
+        public Brush NCSignalArrowBrush
+        {
+            get; set;
+        }
+        [Browsable (false)]
+        public string NCSignalArrowBrush_Serialize
+        {
+            get
+            {
+                return Serialize.BrushToString (NCSignalArrowBrush);
+            }
+            set
+            {
+                NCSignalArrowBrush = Serialize.StringToBrush (value);
+            }
+        }
+
         // -------------------- Display: Group Trigger --------------------
         [NinjaScriptProperty]
-        [Display (Name = "Group: Show Trigger Arrows", Order = 35, GroupName = "Display")]
+        [Display (Name = "Group: Show Trigger Arrows", Order = 43, GroupName = "Display")]
         [RefreshProperties (RefreshProperties.All)]
         public bool ShowGroupTriggerArrows
         {
@@ -8603,7 +9669,7 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
         }
 
         [NinjaScriptProperty]
-        [Display (Name = "Group: Show Trigger Arrow Label", Order = 36, GroupName = "Display")]
+        [Display (Name = "Group: Show Trigger Arrow Label", Order = 44, GroupName = "Display")]
         [RefreshProperties (RefreshProperties.All)]
         public bool ShowGroupTriggerArrowLabel
         {
@@ -8611,14 +9677,14 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
         }
 
         [NinjaScriptProperty]
-        [Display (Name = "Group: Trigger Arrow Text", Order = 37, GroupName = "Display")]
+        [Display (Name = "Group: Trigger Arrow Text", Order = 45, GroupName = "Display")]
         public string GroupTriggerArrowText
         {
             get; set;
         }
 
         [XmlIgnore]
-        [Display (Name = "Group: Trigger Arrow Color", Order = 38, GroupName = "Display")]
+        [Display (Name = "Group: Trigger Arrow Color", Order = 46, GroupName = "Display")]
         public Brush GroupTriggerBrush
         {
             get; set;
@@ -8640,7 +9706,7 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
         // -------------------- Display: Global Arrow Settings --------------------
         [NinjaScriptProperty]
         [Range (0, int.MaxValue)]
-        [Display (Name = "Arrow Offset (Ticks)", Order = 39, GroupName = "Display")]
+        [Display (Name = "Arrow Offset (Ticks)", Order = 47, GroupName = "Display")]
         public int ArrowOffset
         {
             get; set;
@@ -8648,14 +9714,14 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
 
         [NinjaScriptProperty]
         [Range (1, int.MaxValue)]
-        [Display (Name = "Signal Arrow Text Offset From Arrow (Ticks)", Order = 40, GroupName = "Display")]
+        [Display (Name = "Signal Arrow Text Offset From Arrow (Ticks)", Order = 48, GroupName = "Display")]
         public int SignalArrowTextOffsetTicks
         {
             get; set;
         }
 
         [NinjaScriptProperty]
-        [Display (Name = "Enable Group Trigger BackBrush", Order = 41, GroupName = "Display")]
+        [Display (Name = "Enable Group Trigger BackBrush", Order = 49, GroupName = "Display")]
         [RefreshProperties (RefreshProperties.All)]
         public bool EnableGroupTriggerBackBrush
         {
@@ -8663,7 +9729,7 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
         }
 
         [XmlIgnore]
-        [Display (Name = "Group Trigger BackBrush", Order = 42, GroupName = "Display")]
+        [Display (Name = "Group Trigger BackBrush", Order = 50, GroupName = "Display")]
         public Brush GroupTriggerBackBrush
         {
             get; set;
@@ -8684,7 +9750,7 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
 
         // ==================== Trade Markers - ATMPlotMarkers integration ====================
         [NinjaScriptProperty]
-        [Display (Name = "Show Entry/Exit Markers", Order = 43, GroupName = "Display", Description = "ATM mode only. Draw lines from entry to exit on every closed or scaled-out trade leg.")]
+        [Display (Name = "Show Entry/Exit Markers", Order = 51, GroupName = "Display", Description = "ATM mode only. Draw lines from entry to exit on every closed or scaled-out trade leg.")]
         [RefreshProperties (RefreshProperties.All)]
         public bool ShowEntryExitMarkers
         {
@@ -8693,14 +9759,14 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
 
         [NinjaScriptProperty]
         [Range (1, int.MaxValue)]
-        [Display (Name = "Line Width", Order = 44, GroupName = "Display", Description = "Width of the entry-to-exit line.")]
+        [Display (Name = "Line Width", Order = 52, GroupName = "Display", Description = "Width of the entry-to-exit line.")]
         public int EntryExitLineWidth
         {
             get; set;
         }
 
         [XmlIgnore]
-        [Display (Name = "Long Color", Order = 45, GroupName = "Display", Description = "Line and label color for long ATM trades.")]
+        [Display (Name = "Long Color", Order = 53, GroupName = "Display", Description = "Line and label color for long ATM trades.")]
         public Brush EntryExitLongColor
         {
             get; set;
@@ -8720,7 +9786,7 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
         }
 
         [XmlIgnore]
-        [Display (Name = "Short Color", Order = 46, GroupName = "Display", Description = "Line and label color for short ATM trades.")]
+        [Display (Name = "Short Color", Order = 54, GroupName = "Display", Description = "Line and label color for short ATM trades.")]
         public Brush EntryExitShortColor
         {
             get; set;
@@ -8740,7 +9806,7 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
         }
 
         [NinjaScriptProperty]
-        [Display (Name = "Show Text Labels", Order = 47, GroupName = "Display", Description = "Show entry and exit price labels next to the line endpoints.")]
+        [Display (Name = "Show Text Labels", Order = 55, GroupName = "Display", Description = "Show entry and exit price labels next to the line endpoints.")]
         [RefreshProperties (RefreshProperties.All)]
         public bool ShowEntryExitLabels
         {
@@ -8749,8 +9815,17 @@ namespace NinjaTrader.NinjaScript.Strategies.Playr101
 
         [NinjaScriptProperty]
         [Range (6, 24)]
-        [Display (Name = "Text Size", Order = 48, GroupName = "Display", Description = "Font size of the entry/exit price labels.")]
+        [Display (Name = "Text Size", Order = 56, GroupName = "Display", Description = "Font size of the entry/exit price labels.")]
         public int EntryExitTextSize
+        {
+            get; set;
+        }
+
+        [NinjaScriptProperty]
+        [Range (0, int.MaxValue)]
+        [Display (Name = "Entry/Exit Text Offset Ticks", Order = 57, GroupName = "Display",
+            Description = "Tick offset for ATM trade marker text. Long labels draw above bars; short labels draw below bars.")]
+        public int EntryExitTextOffsetTicks
         {
             get; set;
         }
