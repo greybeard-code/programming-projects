@@ -67,20 +67,29 @@ stop, 1 contract.
 
 | Metric | Value |
 |---|---|
-| Net P&L | **$22,409** (gross $23,439, commission $1,030) |
-| Trades / win rate | 990 / 33.1% |
+| Net P&L | **$22,422** (gross $23,456, commission $1,034) |
+| Trades / win rate | 994 / 32.7% |
 | Profit factor | 1.69 |
-| Avg win / avg loss | $167 / −$49 |
-| Sharpe / Sortino / Calmar | 3.90 / 11.20 / 9.49 |
-| Max drawdown | −$1,488 (−2.55%) |
+| Avg win / avg loss | $170 / −$49 |
+| Sharpe / Sortino / Calmar | 3.89 / 11.09 / 9.50 |
+| Max drawdown | −$1,487 (−2.55%) |
 | Best / worst day | +$1,797 / −$479 |
 | Consistency (largest day % of profit) | 8.0% |
-| Prop-firm trailing threshold ($2,000 real Apex floor) | survived, min headroom **$678** |
+| Prop-firm trailing threshold ($2,000 real Apex floor) | survived, min headroom **$677** |
 
 Tested against the **real $2,000** Apex trailing drawdown (the project default
 was corrected from $2,500 to $2,000 on 2026-07-09). The actual 400-day
-sequence survives with $678 of headroom to spare; Monte Carlo breach
+sequence survives with $677 of headroom to spare; Monte Carlo breach
 probability is in §4.
+
+**2026-07-11 renko-fix re-verification:** a bar-construction bug was found
+and fixed (see `strategy/GodZillaKilla.md` §2 for the full writeup) —
+`build_renko_bars` was resetting its brick anchor at every midnight-ET
+day-file boundary even though this strategy's overnight session trades
+straight through midnight with no real gap. Re-ran the champion on the
+corrected bars: net moved **$22,409 → $22,422** (+$13, +4 trades), headroom
+**$678 → $677**, MC P(breach) **1.4% → 2.05%** (§4). The SAR is robust to
+this level of bar perturbation — numbers above are now current/corrected.
 
 **Compliance verified directly:** 0 of 990 trades have any entry or exit
 timestamp inside the 17:00–18:00 ET daily maintenance halt.
@@ -92,15 +101,27 @@ rule does not remove profit (see §7 item 2 and CLAUDE.md).
 
 ## 4. Monte Carlo (2,000 resamples, iid resampling)
 
+Re-run on the renko-fix-corrected trades (2026-07-11):
+
 | | Value |
 |---|---|
-| Final P&L 5% / median / 95% | $15,143 / $22,559 / $30,036 |
+| Final P&L 5% / median / 95% | $14,639 / $22,278 / $29,791 |
 | P(profitable) | 100% |
-| Max drawdown median / 5%-worst | −$1,513 / −$2,314 |
-| **P(breach $2,000 trailing)** | **1.4%** |
-| **P(pass $3,000 eval before breach)** | **98.7%** |
+| Max drawdown median / 5%-worst | −$1,521 / −$2,294 |
+| **P(breach $2,000 trailing)** | **2.05%** (was 1.4% pre-fix) |
+
+`P(pass $3,000 eval)` not re-run this pass; expect ~97-98%, similar to the
+pre-fix 98.7%.
 
 ## 5. Robustness
+
+**Note (2026-07-11):** the sub-sections below (split-half, parameter
+sensitivity, slippage stress, walk-forward) were computed on the pre-renko-
+fix bars and have not been individually re-run. Given the corrected champion
+moved only $22,409 → $22,422 (+0.06%) and MC breach probability moved a
+modest 1.4% → 2.05%, these are expected to shift by a similarly small
+amount — but re-run before citing exact figures from this section if
+precision matters.
 
 - **Split-half:** H1 (Dec 2024–Sep 2025) net $8,465, Sharpe 2.89; H2 (Oct
   2025–Jul 2026) net $13,848, Sharpe 4.84 — both halves profitable,
@@ -156,10 +177,12 @@ daily halt).
 Both prior open items are now resolved; one live-account question remains
 (item 2, for the user to confirm with Apex):
 1. ~~Re-run against the real $2,000 Apex trailing threshold~~ **DONE
-   (2026-07-09):** survives the actual sequence with $678 headroom; MC
-   P(breach $2,000) = 1.4%. Still comfortably safe.
+   (2026-07-09, re-verified 2026-07-11 post renko-fix):** survives the
+   actual sequence with $677 headroom; MC P(breach $2,000) = 2.05%. Still
+   comfortably safe.
 2. **30-second minimum trade duration** — modeled and measured
-   (2026-07-09). Enforcing the rule (deferring the strategy's own reversal
+   (2026-07-09, pre-renko-fix; not re-run, expect a negligible shift).
+   Enforcing the rule (deferring the strategy's own reversal
    exits until the position is 30s old; engine `min_hold_s=30`) moves the
    headline by only **−$78 (0.3%)**: net $22,331, Sharpe 3.89, same max
    drawdown, still survives ($678 headroom). **The edge does not depend on

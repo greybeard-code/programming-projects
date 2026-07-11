@@ -119,6 +119,28 @@ plotly, tzdata, pytest — no pandas/polars, keep it that way unless needed).
   irreproducible by any backtest. compare_bars matching is one-to-one
   monotonic (gap sweeps emit same-ts bars; feeds skew ~6 s, so
   --tolerance-s 10 for small-T settings).
+- **Renko day-boundary fix (2026-07-11, major):** the five settings above
+  were validated on single-session exports and missed a real bug — day
+  files are ET calendar days, but an overnight session (18:00-16:55 ET;
+  GodZillaKilla AND the Terminator champion both use this shape) trades
+  straight through midnight ET with no real gap there, while
+  `build_renko_bars` reset its brick anchor at the start of every file
+  regardless. Confirmed via a fresh NT8 export (MNQ r60-3): mismatch rate
+  0-7% right after the real 17:00-18:00 halt reset, jumping to 45-69% at
+  midnight ET, broken until the next real halt. Fixed: `build_renko_bars`
+  takes optional `carry_anchor`/`carry_dir` (backward compatible; default
+  = original fresh-start), and `Catalog.load_bars_sequence` threads that
+  state across a contiguous day range, resetting ONLY on a genuine gap
+  (>30 min) — never merely because a new file started. `engine.py`,
+  `tools/compare_bars.py`, `tools/compare_signals.py` all use the
+  sequence-aware loader now; BARS_VERSION bumped (rebuilds the bar cache
+  transparently). Verified: identical-OHLC 61.1% → 99.8% on the r60-3
+  export. Headline numbers barely moved (Terminator champion $22,409 →
+  $22,422; see strategy/TerminatorV2.md and strategy/GodZillaKilla.md for
+  full before/after) — the bug was real but the champion's SAR signal
+  turned out robust to it. If you see this bug pattern again (bar mismatch
+  clustering right at midnight ET) on some OTHER as-yet-untested renko
+  setting, this is the fix, not a new investigation.
 - **CME trading day**: runs **18:00 ET (prior calendar day) → 17:00 ET**,
   with the 17:00–18:00 ET daily maintenance halt marking the boundary
   between one trading day and the next (verified across all 3 DST
@@ -210,11 +232,19 @@ templates in `nt8 code/GodZillaKilla/`). Pieces:
   from strategy attrs.
 - sweep_confluence.py — league table over engine subsets x required-count x
   require flags (the user's stated research focus).
-REMAINING (Phase 5, needs user's NT8 side): compile tools/gbSignalExporter.cs
-on the MNQ r60-3 chart -> tools/compare_signals.py per-engine parity; then a
-Strategy Analyzer trade export -> tools/compare_nt8.py; then write
-strategy/GodZillaKilla.md with the full battery. Until parity passes, treat
-Python GZK results as directionally correct but not NT8-certified.
+Phase 5 signal-parity DONE 2026-07-11 (tools/gbSignalExporter.cs on MNQ
+r60-3, 2026-04-30..05-19, via tools/compare_signals.py): 5/6 engines
+(KO/PA/SJ/SU/NC) at 97-99% signal-bar match. TH sits at 82% with one
+isolated residual (its OBOS overbought-exit code -2 at 13.8% vs mirror +2 at
+98.9%; every other TH code 96.5%+) — narrowed to an MFI overbought-detection
+gap, not yet root-caused, not blocking. This pass also SURFACED AND FIXED the
+renko day-boundary reset bug above — most of what first looked like signal-
+port bugs was actually that. Full-sample re-run (OneSet_3ofAll_BestTime,
+$2,000 floor): 3-of-6 net -$10,411 (was -$10,363 pre-fix), 3-of-5 control
+net -$19,246 (was -$16,246) — both still decisive losers, breach either way;
+see strategy/GodZillaKilla.md for the full writeup. REMAINING: a Strategy
+Analyzer trade export -> tools/compare_nt8.py for full trade-list
+certification.
 
 Next (order per research/22_Books_Summary.md, distilled from the 22-book
 docx in research/):

@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import os
 import re
+import time
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -21,6 +22,22 @@ from zoneinfo import ZoneInfo
 import numpy as np
 import pyarrow as pa
 import pyarrow.parquet as pq
+
+
+def _atomic_replace(tmp: Path, dst: Path, retries: int = 8,
+                    delay_s: float = 0.05) -> None:
+    """os.replace with a short retry — Windows can transiently deny a
+    rename over a path another handle (antivirus, indexer, a just-closed
+    pyarrow read) touched microseconds earlier; POSIX never needs this."""
+    for attempt in range(retries):
+        try:
+            os.replace(tmp, dst)
+            return
+        except PermissionError:
+            if attempt == retries - 1:
+                raise
+            time.sleep(delay_s)
+
 
 DEFAULT_DATA_ROOT = Path(os.environ.get(
     "BACKTESTER_DATA_ROOT", r"M:\NinjaTrader_DataRepo\RawData\Parquet"))
@@ -252,6 +269,7 @@ class Catalog:
             if (set(BAR_COLS).issubset(t.column_names)
                     and meta.get(b"btcache") == BARS_VERSION):
                 return BarDay(*(t.column(c).to_numpy() for c in BAR_COLS))
+            del t   # release the read handle before we replace this path
         if day is None:
             day = self.load_day(symbol, date)
         bars = build_bars(day, spec, tick_size)
@@ -260,7 +278,7 @@ class Catalog:
         pq.write_table(pa.table({c: getattr(bars, c) for c in BAR_COLS})
                        .replace_schema_metadata({b"btcache": BARS_VERSION}),
                        tmp, compression="zstd")
-        os.replace(tmp, bp)
+        _atomic_replace(tmp, bp)
         return bars
 
     def load_bars_sequence(self, symbol: str, dates: list[str], spec,
@@ -331,6 +349,7 @@ class Catalog:
                 bars = BarDay(*(t.column(c).to_numpy() for c in BAR_COLS))
                 return (bars, float(meta[b"end_anchor"]),
                         int(meta[b"end_dir"]))
+            del t   # release the read handle before we replace this path
         bars = build_renko_bars(day, spec.brick_ticks * tick_size,
                                 spec.trend_ticks * tick_size,
                                 carry_anchor=carry_anchor, carry_dir=carry_dir)
@@ -344,7 +363,7 @@ class Catalog:
                            b"end_anchor": repr(float(bars.end_anchor)).encode(),
                            b"end_dir": str(bars.end_dir).encode(),
                        }), tmp, compression="zstd")
-        os.replace(tmp, bp)
+        _atomic_replace(tmp, bp)
         return bars, float(bars.end_anchor), int(bars.end_dir)
 
 
