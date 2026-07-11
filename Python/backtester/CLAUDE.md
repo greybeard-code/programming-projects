@@ -188,12 +188,36 @@ bar types (time/tick/ninZaRenko per the published manual), order-flow data
 (aggressor delta, cum_delta, quote sizes), parameter sweep + sensitivity,
 walk-forward runner, Carver sizing, 53 unit tests.
 
+GodZillaKilla port — LANDED 2026-07-10 (Phases 0-4+6 of the plan; 136 tests).
+Authoritative source: Documents\NinjaTrader 8\bin\Custom\Strategies\Playr101\
+GodZillaKilla.cs v1.10.0 (repo snapshot + six gb indicator sources + reference
+templates in `nt8 code/GodZillaKilla/`). Pieces:
+- backtester/nt8config.py — parses ATM template XML (brackets/BE/trail; Ticks
+  only) and NT8 strategy-template XML (flat <Strategy> block; BarsPeriod
+  type id 12345 = ninZaRenko -> r{brick}-{trend}; missing props = compiled
+  defaults, faithful to NT8 load — old presets silently enable NC).
+- backtester/atm.py + broker StopPlan — multi-bracket scale-out, per-leg OCO,
+  auto-breakeven, tiered auto-trail (vectorized cummax in span resolution;
+  champion re-run bit-identical after the change).
+- backtester/gbsignals/ — six Signal_Trade engine ports (KO order blocks,
+  PA Keltner, TH trend+OBOS, SJ zones, SU multi-MA, NC cloud), NT8-exact
+  primitives in nt8math.py (EMA first-value seed, partial-window SMA/StdDev,
+  ApproxCompare 1e-10) — deliberately NOT indicators.py semantics.
+- strategies/godzilla_killa.py — two trigger sets w/ operators + require
+  veto, ConfirmationBars, EMA filter, TF1-3 + skip windows (entries-only;
+  per-window flatten), reversal, `from_template()`. Engine gained
+  daily_profit_target (tag "dpt") mirroring daily_loss_limit; both resolve
+  from strategy attrs.
+- sweep_confluence.py — league table over engine subsets x required-count x
+  require flags (the user's stated research focus).
+REMAINING (Phase 5, needs user's NT8 side): compile tools/gbSignalExporter.cs
+on the MNQ r60-3 chart -> tools/compare_signals.py per-engine parity; then a
+Strategy Analyzer trade export -> tools/compare_nt8.py; then write
+strategy/GodZillaKilla.md with the full battery. Until parity passes, treat
+Python GZK results as directionally correct but not NT8-certified.
+
 Next (order per research/22_Books_Summary.md, distilled from the 22-book
 docx in research/):
-1. Port a real user strategy (GodZillaKilla-style). Prereqs now DONE:
-   multi-timeframe bars (`secondary_periods`/`on_secondary_bar`/`secondary()`)
-   and `on_tick` both landed 2026-07-09 (strategies/mtf_example.py is the
-   template; tests/test_multiseries.py). Remaining: the actual port.
 2. ~~Per-day trade chart~~ DONE: tools/plot_day.py (candles + entry/exit
    markers + entry-window shading, ET; warm-up lead-in so signals match a
    full run). Note: small-T renko (r100-4) prints thousands of overlapping
