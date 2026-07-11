@@ -52,7 +52,9 @@ def _eastern_offset_ns(date: str) -> int:
 
 
 CACHE_VERSION = b"3"   # reduced: v3 = trust replay_importer UTC tag, else ET->UTC
-BARS_VERSION = b"6"    # bars: v6 = renko breakout tick belongs to next bar (H/L parity)
+BARS_VERSION = b"7"    # bars: v7 = renko brick state carries across day-file
+                       # boundaries (see load_bars_sequence); v6 = breakout
+                       # tick belongs to next bar (H/L parity)
 
 # The replay_importer (v>=2) stamps output Parquet with these keys and stores
 # true UTC. Files carrying timestamps=UTC skip the _eastern_offset_ns
@@ -97,6 +99,11 @@ class BarDay:
     sell_volume: np.ndarray  # aggressor-sell volume (trades at/below the bid)
     i0: np.ndarray           # int64, first DayL1 index of the bar
     i1: np.ndarray           # int64, one past the last DayL1 index
+    # Renko-only: the still-forming brick's anchor/direction at end-of-day,
+    # to carry into the next day's build_renko_bars (see load_bars_sequence).
+    # Meaningless (0.0/0) for time/tick bars.
+    end_anchor: float = 0.0
+    end_dir: int = 0
 
     def __len__(self) -> int:
         return len(self.ts_end)
@@ -256,6 +263,90 @@ class Catalog:
         os.replace(tmp, bp)
         return bars
 
+    def load_bars_sequence(self, symbol: str, dates: list[str], spec,
+                           tick_size: float,
+                           days: list[DayL1] | None = None) -> list[BarDay]:
+        """Bars for a contiguous run of days, threading renko brick state
+        across calendar-day FILE boundaries.
+
+        Day files are ET calendar days, but an overnight session (e.g.
+        18:00-16:55 ET) keeps trading straight through midnight ET with no
+        real market gap there — `load_bars` alone would reset the brick
+        anchor at every file boundary regardless, corrupting the geometry
+        for the rest of that trading day (verified against an NT8 chart
+        export: bar mismatches were ~0% right after the real 17:00-18:00
+        halt reset, then jumped to 45-69% immediately at midnight ET). This
+        resets ONLY on a genuine gap (> RENKO_RESET_GAP_NS) between the last
+        tick of one day and the first tick of the next — the same rule
+        already used for gaps *within* a single day file.
+
+        Non-renko bar kinds are day-independent; this is equivalent to
+        calling `load_bars` per day for those.
+        """
+        if spec.kind != "renko":
+            return [self.load_bars(symbol, date, spec, tick_size,
+                                   days[i] if days is not None else None)
+                    for i, date in enumerate(dates)]
+        out: list[BarDay] = []
+        carry_anchor: float | None = None
+        carry_dir = 0
+        prev_last_ts: int | None = None
+        for i, date in enumerate(dates):
+            day = days[i] if days is not None else self.load_day(symbol, date)
+            if len(day) == 0:
+                out.append(_empty_bars())
+                continue
+            if (prev_last_ts is not None
+                    and int(day.ts[0]) - prev_last_ts > RENKO_RESET_GAP_NS):
+                carry_anchor, carry_dir = None, 0
+            bars, carry_anchor, carry_dir = self._load_renko_cached(
+                symbol, date, spec, tick_size, day, carry_anchor, carry_dir)
+            out.append(bars)
+            prev_last_ts = int(day.ts[-1])
+        return out
+
+    def _load_renko_cached(self, symbol: str, date: str, spec,
+                           tick_size: float, day: DayL1,
+                           carry_anchor: float | None, carry_dir: int
+                           ) -> tuple[BarDay, float, int]:
+        """load_bars_sequence's per-day cache lookup/build for renko specs.
+
+        The cache key is (symbol, spec.key, date) same as `load_bars`, but a
+        hit additionally requires the stored carry-in to match what THIS
+        call needs — otherwise the day was cached under a different
+        carry-in (e.g. built via plain `load_bars`, or from a sequence that
+        started elsewhere) and must be rebuilt.
+        """
+        bp = self._bars_path(symbol, date, spec.key)
+        want_a = (b"None" if carry_anchor is None
+                 else repr(float(carry_anchor)).encode())
+        want_d = str(carry_dir).encode()
+        if bp.exists():
+            t = pq.read_table(bp)
+            meta = t.schema.metadata or {}
+            if (set(BAR_COLS).issubset(t.column_names)
+                    and meta.get(b"btcache") == BARS_VERSION
+                    and meta.get(b"carry_anchor") == want_a
+                    and meta.get(b"carry_dir") == want_d):
+                bars = BarDay(*(t.column(c).to_numpy() for c in BAR_COLS))
+                return (bars, float(meta[b"end_anchor"]),
+                        int(meta[b"end_dir"]))
+        bars = build_renko_bars(day, spec.brick_ticks * tick_size,
+                                spec.trend_ticks * tick_size,
+                                carry_anchor=carry_anchor, carry_dir=carry_dir)
+        bp.parent.mkdir(parents=True, exist_ok=True)
+        tmp = bp.with_suffix(f".{os.getpid()}.tmp")
+        pq.write_table(pa.table({c: getattr(bars, c) for c in BAR_COLS})
+                       .replace_schema_metadata({
+                           b"btcache": BARS_VERSION,
+                           b"carry_anchor": want_a,
+                           b"carry_dir": want_d,
+                           b"end_anchor": repr(float(bars.end_anchor)).encode(),
+                           b"end_dir": str(bars.end_dir).encode(),
+                       }), tmp, compression="zstd")
+        os.replace(tmp, bp)
+        return bars, float(bars.end_anchor), int(bars.end_dir)
+
 
 def _empty_bars() -> BarDay:
     z = np.array([], dtype="int64")
@@ -341,7 +432,9 @@ def build_tick_bars(day: DayL1, ticks_per_bar: int) -> BarDay:
 RENKO_RESET_GAP_NS = 30 * 60 * 1_000_000_000   # trade gap that resets the anchor
 
 
-def build_renko_bars(day: DayL1, brick: float, trend: float) -> BarDay:
+def build_renko_bars(day: DayL1, brick: float, trend: float,
+                     carry_anchor: float | None = None,
+                     carry_dir: int = 0) -> BarDay:
     """ninZaRenko bars, per the published trader manual.
 
     Parameters (price units here; ticks at the BarSpec level):
@@ -367,6 +460,16 @@ def build_renko_bars(day: DayL1, brick: float, trend: float) -> BarDay:
     ninZa restarts its geometry each session rather than running a
     continuous grid.
 
+    `carry_anchor`/`carry_dir` continue an in-progress brick from a PRIOR
+    day's ending state (see Catalog.load_bars_sequence) — this matters
+    because day FILES are ET calendar days, but an overnight session (e.g.
+    18:00-16:55 ET) keeps trading straight through midnight ET with no real
+    gap there. Defaults (None, 0) reproduce the original fresh-start-each-
+    call behavior; the caller is responsible for deciding whether to reset
+    (pass None/0) vs carry over, by comparing the actual cross-day tick gap
+    against RENKO_RESET_GAP_NS — this function has no visibility into the
+    previous day's data to make that call itself.
+
     NOTE: signal timing on these bars is realistic; the engine still fills
     orders on real ticks, so none of NT8's Renko fantasy-fill problem applies.
     """
@@ -387,8 +490,8 @@ def build_renko_bars(day: DayL1, brick: float, trend: float) -> BarDay:
     walk = np.unique(np.concatenate([[0], chg, gap_starts]))
     gap_set = set(gap_starts.tolist())
 
-    anchor = prices[0]      # close of the last emitted bar
-    d = 0                   # current trend: +1 / -1 / 0 (no bar yet)
+    anchor = prices[0] if carry_anchor is None else carry_anchor
+    d = carry_dir            # current trend: +1 / -1 / 0 (no bar yet)
     span_start = 0          # first tick index of the bar being built
 
     def emit(close: float, direction: int, k: int,
@@ -473,4 +576,6 @@ def build_renko_bars(day: DayL1, brick: float, trend: float) -> BarDay:
         np.asarray(svols, dtype="int64"),
         np.asarray(i0s, dtype="int64"),
         np.asarray(i1s, dtype="int64"),
+        end_anchor=anchor,
+        end_dir=d,
     )

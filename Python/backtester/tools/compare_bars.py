@@ -72,12 +72,12 @@ def main() -> None:
     dates = np.arange(d0, d1 + np.timedelta64(2, "D")).astype(str)
     catalog = Catalog()
     have = set(catalog.days(args.symbol))
+    use_dates = [d.replace("-", "") for d in dates if d.replace("-", "") in have]
+    bars_seq = catalog.load_bars_sequence(args.symbol, use_dates, spec, tick)
     ts, o, h, l, c = [], [], [], [], []
-    for d in dates:
-        date = d.replace("-", "")
-        if date not in have:
+    for b in bars_seq:
+        if len(b) == 0:
             continue
-        b = catalog.load_bars(args.symbol, date, spec, tick)
         ts.append(b.ts_end)
         o.append(b.open)
         h.append(b.high)

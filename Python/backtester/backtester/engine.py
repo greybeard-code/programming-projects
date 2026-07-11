@@ -184,6 +184,15 @@ class Backtest:
             raise FileNotFoundError(
                 f"No {self.symbol} days in range {self.start}..{self.end}")
 
+        # Sequence-aware: renko brick state carries across day-file
+        # boundaries (reset only on a genuine gap), rather than resetting at
+        # every calendar-day file start regardless of real market continuity.
+        bars_seq = self.catalog.load_bars_sequence(
+            self.symbol, days, self.barspec, self.spec.tick_size)
+        sec_bars_seq = {p: self.catalog.load_bars_sequence(
+                            self.symbol, days, sec_specs[p], self.spec.tick_size)
+                        for p in sec_periods}
+
         hist = BarHistory()
         eq_ts, eq, floor = [], [], []
         daily: dict[str, float] = {}
@@ -201,14 +210,10 @@ class Backtest:
             day = self.catalog.load_day(self.symbol, date)
             if len(day) == 0:
                 continue
-            bars = self.catalog.load_bars(self.symbol, date, self.barspec,
-                                          self.spec.tick_size, day)
+            bars = bars_seq[di]
             if len(bars) == 0:
                 continue
-            sec_bars = {p: self.catalog.load_bars(self.symbol, date,
-                                                  sec_specs[p],
-                                                  self.spec.tick_size, day)
-                        for p in sec_periods}
+            sec_bars = {p: sec_bars_seq[p][di] for p in sec_periods}
             sec_cursor = {p: 0 for p in sec_periods}
             self.broker.begin_day(day)
 

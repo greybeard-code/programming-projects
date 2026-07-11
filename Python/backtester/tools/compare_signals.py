@@ -46,6 +46,7 @@ def load_nt8(path: str, tz: ZoneInfo) -> list[dict]:
             t = datetime.strptime(row["time"], "%Y-%m-%d %H:%M:%S.%f")
             rows.append({
                 "ts": int(t.replace(tzinfo=tz).timestamp() * 1e9),
+                "c": float(row["close"]),
                 **{e: int(row[e]) for e in ENGINES if e in row},
             })
     rows.sort(key=lambda r: r["ts"])
@@ -66,16 +67,14 @@ def run_ports(symbol: str, period: str, start: str, end: str):
         "nc": NobleCloud(),
     }
     out = []
-    for date in cat.days(symbol, start, end):
-        day = cat.load_day(symbol, date)
-        if len(day) == 0:
-            continue
-        bars = cat.load_bars(symbol, date, barspec, spec.tick_size, day)
+    dates = cat.days(symbol, start, end)
+    bars_seq = cat.load_bars_sequence(symbol, dates, barspec, spec.tick_size)
+    for bars in bars_seq:
         for j in range(len(bars)):
             o, h = float(bars.open[j]), float(bars.high[j])
             l, c = float(bars.low[j]), float(bars.close[j])
             v = float(bars.volume[j])
-            row = {"ts": int(bars.ts_end[j])}
+            row = {"ts": int(bars.ts_end[j]), "c": c}
             for name, eng in engines.items():
                 row[name] = (eng.update(o, h, l, c, v) if name == "th"
                              else eng.update(o, h, l, c))
@@ -83,20 +82,37 @@ def run_ports(symbol: str, period: str, start: str, end: str):
     return out
 
 
-def match(nt8: list[dict], ours: list[dict], tol_ns: int):
-    """One-to-one monotonic timestamp matching (compare_bars convention)."""
+def match(nt8: list[dict], ours: list[dict], tol_ns: int, tick: float):
+    """One-to-one alignment, ported from compare_bars.py's proven matcher.
+
+    Renko gap sweeps emit several bars on the SAME timestamp, and the two
+    tick feeds skew by a few seconds — nearest-time matching alone
+    double-counts sweep bars and drifts one bar out of sync for the rest of
+    the burst (each subsequent signal reads as a mismatch shifted by one
+    bar). Within the tolerance window, prefer the first unused bar whose
+    close price agrees; otherwise take the nearest-time unused bar.
+    """
     pairs = []
-    i = j = 0
-    while i < len(nt8) and j < len(ours):
-        d = nt8[i]["ts"] - ours[j]["ts"]
-        if abs(d) <= tol_ns:
-            pairs.append((nt8[i], ours[j]))
-            i += 1
+    lo = 0
+    n_ours = len(ours)
+    for i in range(len(nt8)):
+        t = nt8[i]["ts"]
+        while lo < n_ours and ours[lo]["ts"] < t - tol_ns:
+            lo += 1
+        best, best_dt = -1, tol_ns + 1
+        j = lo
+        while j < n_ours and ours[j]["ts"] <= t + tol_ns:
+            dt = abs(ours[j]["ts"] - t)
+            if abs(ours[j]["c"] - nt8[i]["c"]) < tick / 2:
+                best, best_dt = j, dt
+                break                        # earliest close-equal bar wins
+            if dt < best_dt:
+                best, best_dt = j, dt
             j += 1
-        elif d < 0:
-            i += 1
-        else:
-            j += 1
+        if best < 0 or best_dt > tol_ns:
+            continue
+        lo = best + 1                        # consume: never reuse a bar
+        pairs.append((nt8[i], ours[best]))
     return pairs
 
 
@@ -127,7 +143,8 @@ def main() -> None:
     ours = run_ports(args.symbol, args.period, d0, d1)
     print(f"backtester: {len(ours)} bars ({args.period})")
 
-    pairs = match(nt8, ours, int(args.tolerance_s * 1e9))
+    tick = get_spec(args.symbol).tick_size
+    pairs = match(nt8, ours, int(args.tolerance_s * 1e9), tick)
     print(f"matched: {len(pairs)} bars "
           f"({100 * len(pairs) / max(1, len(nt8)):.1f}% of export)")
     pairs = pairs[args.skip_warmup:]

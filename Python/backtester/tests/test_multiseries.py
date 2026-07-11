@@ -22,6 +22,9 @@ class _StubCatalog:
     def load_bars(self, symbol, date, spec, tick_size, day=None):
         return build_time_bars(self._day, spec.seconds)
 
+    def load_bars_sequence(self, symbol, dates, spec, tick_size, days=None):
+        return [self.load_bars(symbol, d, spec, tick_size) for d in dates]
+
 
 # ---------------- secondary series ----------------
 
