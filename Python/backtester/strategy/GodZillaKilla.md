@@ -31,6 +31,10 @@ skip 09:28–09:35, daily PT $500 / LL $200.
 | Config | Net | Trades | WR | PF | Sharpe | maxDD | Breach |
 |---|---|---|---|---|---|---|---|
 | As NT8 loads it (**3-of-6**, NC silently enabled) | **−$10,363** | 1776 | 78.0% | 0.91 | −1.29 | −$15,403 | **YES** |
+| As designed (**3-of-5**, NC off — control) | −$16,246 | 1506 | 76.7% | 0.84 | −2.21 | −$19,642 | YES |
+
+The NC silent-enable is not the problem — the extra NobleCloud vote actually
+*improved* the preset by ~$5.9k. Both variants lose across the full sample.
 
 Daily brackets dominated the shape of the run: the $200 loss limit fired on
 **202 of ~510 days** (40%), the $500 profit target on 64. High win rate with
@@ -43,9 +47,7 @@ churn fast; this config would also have Apex 30-second-rule friction live.
 days (2026-05-06 → 05-11) — this configuration looks tuned to a specific
 week, and it does not generalize across the 510-day sample under the real
 $2,000 trailing floor. That is precisely the question the confluence sweep
-exists to answer properly (§5). An NC-disabled control (the 3-of-5 the
-preset was designed as, before v1.10 added NobleCloud) is being measured to
-size the silent-enable effect.
+exists to answer properly (§5).
 
 ## 3. Faithfulness notes
 
