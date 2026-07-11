@@ -68,6 +68,27 @@ Bar type only changes *when the strategy is asked to decide*. Orders always
 fill against the real tick stream, so none of NT8's Renko fantasy-fill
 problem applies — a Renko strategy backtested here gets honest fills.
 
+**Fixed (2026-07-11): renko bars reset incorrectly at midnight ET.** Raw
+data is stored as one file per ET calendar day, and the renko builder used
+to reset its brick anchor at the start of every file — correct behavior for
+a real session gap (e.g. the daily 17:00–18:00 ET halt), but *wrong* for an
+overnight session (e.g. `("18:00", "16:55")`) that keeps trading straight
+through midnight ET with no actual gap there. The result: renko geometry
+was correct for the evening leg of each session but silently wrong for the
+rest of the day, every day, for any strategy spanning midnight. Confirmed
+against a real NT8 chart export — bar mismatches were ~0% right after the
+real halt reset, then jumped to 45–69% at midnight and stayed wrong until
+the next halt. Fixed by carrying the brick state across day-file boundaries
+and resetting only on a genuine gap (`Catalog.load_bars_sequence` in
+`backtester/data.py`); verified back up to 99.8% bar-for-bar match on the
+same export. If you pulled this repo before that fix and have a populated
+`.cache\bars\`, no action needed — the cache version bump forces a
+transparent rebuild on next use. Headline strategy results computed before
+the fix should be treated as approximate for any renko-bar strategy using
+an overnight session; see `strategy/TerminatorV2.md` and
+`strategy/GodZillaKilla.md` for the specific before/after numbers on this
+project's two reference strategies (both moved only slightly).
+
 ## Order flow (what NT8 backtests can't see)
 
 Every trade in the reduced cache is classified by aggressor side (at/above
