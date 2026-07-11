@@ -39,6 +39,7 @@ class Result:
     strategy_name: str = ""
     halted_on: str | None = None
     dll_days: list[str] = field(default_factory=list)
+    dpt_days: list[str] = field(default_factory=list)
 
 
 def _session_bounds_utc(date: str,
@@ -96,6 +97,7 @@ class Backtest:
                  prop: PropFirmConfig | None = PropFirmConfig(),
                  slippage_ticks: float = 0.0,
                  daily_loss_limit: float | None = None,
+                 daily_profit_target: float | None = None,
                  max_position: int | None = None,
                  data_root=None, cache_root=None,
                  progress: bool = True):
@@ -119,7 +121,13 @@ class Backtest:
                                 self.prop, slippage_ticks,
                                 on_fill=self._notify_fill,
                                 max_position=mp)
+        # daily limits: explicit arg > strategy attribute (mirrors max_position)
+        if daily_loss_limit is None:
+            daily_loss_limit = getattr(strategy, "daily_loss_limit", None)
+        if daily_profit_target is None:
+            daily_profit_target = getattr(strategy, "daily_profit_target", None)
         self.daily_loss_limit = daily_loss_limit
+        self.daily_profit_target = daily_profit_target
         self.progress = progress
         self._in_bar_cb = False
 
@@ -180,6 +188,7 @@ class Backtest:
         eq_ts, eq, floor = [], [], []
         daily: dict[str, float] = {}
         dll_days: list[str] = []
+        dpt_days: list[str] = []
         bar_index = 0
         halted_on = None
         day_start_balance = self.account.balance
@@ -255,6 +264,18 @@ class Backtest:
                             dll_days.append(date)
                             dll_pending = True
                             break
+                        # daily profit target: lock in the day, stand down
+                        if (self.daily_profit_target is not None
+                                and self.account.equity(bar.close)
+                                - day_start_balance
+                                >= self.daily_profit_target):
+                            self.broker.cancel_all()
+                            self.broker.flatten(int(bars.i1[j]) - 1,
+                                                tag="dpt")
+                            eq[-1] = self.account.equity(bar.close)
+                            dpt_days.append(date)
+                            dll_pending = True   # shared stand-down-to-flush
+                            break
 
                 if day_end:
                     # trading-day flush: cancel orders, flatten, book P&L
@@ -304,4 +325,5 @@ class Backtest:
             strategy_name=type(self.strategy).__name__,
             halted_on=halted_on,
             dll_days=dll_days,
+            dpt_days=dpt_days,
         )
