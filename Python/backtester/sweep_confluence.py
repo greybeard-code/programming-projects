@@ -22,6 +22,10 @@ def main() -> None:
     ap = argparse.ArgumentParser(description="Confluence sweep")
     ap.add_argument("strategy", help="strategies\\godzilla_killa.py")
     ap.add_argument("--template", help="NT8 strategy template XML (base config)")
+    ap.add_argument("--symbol",
+                    help="override the run symbol (some templates save an "
+                         "empty instrument field, in which case the class "
+                         "default silently applies without this)")
     ap.add_argument("--sources", default="KO,PA,TH,SJ,SU,NC",
                     help="comma list of engines to consider")
     ap.add_argument("--counts", default="all",
@@ -48,7 +52,8 @@ def main() -> None:
               else [int(c) for c in args.counts.split(",")])
 
     rows = sc.run_confluence(
-        args.strategy, template=args.template, sources=sources,
+        args.strategy, template=args.template, symbol=args.symbol,
+        sources=sources,
         counts=counts, requires=args.requires, min_size=args.min_size,
         start=args.start, end=args.end, start_balance=args.balance,
         prop_threshold=args.prop_threshold if args.prop_threshold > 0 else None,

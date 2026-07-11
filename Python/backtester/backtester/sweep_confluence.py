@@ -35,6 +35,11 @@ def _load_gzk(strategy_path: str, template: str | None):
 def _run_one(payload: dict) -> dict:
     """Worker (module-level for Windows spawn)."""
     strat = _load_gzk(payload["strategy_path"], payload["template"])
+    if payload.get("symbol"):
+        strat.symbol = payload["symbol"]     # explicit override wins; some
+        # saved templates have an empty InstrumentOrInstrumentList, in which
+        # case from_template() can't infer it and the class default (MNQ)
+        # would otherwise silently apply.
     for k, v in payload["overrides"].items():
         setattr(strat, k, v)
     prop = (PropFirmConfig(threshold=payload["prop_threshold"])
@@ -89,6 +94,7 @@ def enumerate_combos(sources=SOURCES, counts: str | list[int] = "all",
 
 
 def run_confluence(strategy_path: str, template: str | None = None,
+                   symbol: str | None = None,
                    sources=SOURCES, counts="all", requires: str = "none",
                    min_size: int = 1,
                    start: str | None = None, end: str | None = None,
@@ -100,6 +106,7 @@ def run_confluence(strategy_path: str, template: str | None = None,
     payloads = [{
         "strategy_path": str(Path(strategy_path).resolve()),
         "template": str(Path(template).resolve()) if template else None,
+        "symbol": symbol,
         "label": label, "overrides": ov, "start": start, "end": end,
         "start_balance": start_balance, "prop_threshold": prop_threshold,
         "slippage_ticks": slippage_ticks,
