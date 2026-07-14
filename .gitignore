@@ -1,2 +1,8 @@
 # Claude Code worktrees (temporary agent workspaces)
 **/.claude/worktrees/
+
+# Claude Code local settings (machine-specific, not shared)
+**/.claude/settings.local.json
+
+# Licensed third-party vendor binaries -- not our IP, don't redistribute via git
+NinjaScript/uai_wrapper/nt8 code/*.dll
