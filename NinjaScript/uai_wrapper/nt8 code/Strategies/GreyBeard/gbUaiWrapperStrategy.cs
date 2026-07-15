@@ -51,7 +51,7 @@ namespace NinjaTrader.NinjaScript.Strategies.GreyBeard
 		public string Author => "GreyBeard";
 
 		[Display(Name = "Version", Order = 1, GroupName = "0. Developer")]
-		public string Version => "1.0.0";
+		public string Version => "1.0.1";
 
 		[NinjaScriptProperty]
 		[Range(1, int.MaxValue)]
@@ -74,26 +74,32 @@ namespace NinjaTrader.NinjaScript.Strategies.GreyBeard
 		[NinjaScriptProperty]
 		[Range(0, int.MaxValue)]
 		[Display(Name = "Confirmation Bars", Order = 4, GroupName = "1. Risk Management",
-			Description = "Bars to wait after a signal appears before trading it. Since UltimateAI2 can revise (repaint) a signal's value after the fact, re-reading it N bars later both delays entry and re-validates the signal is still standing before acting on it. 0 = act immediately on the signal bar's close.")]
+			Description = "Bars to wait after a signal appears before trading it. Since UltimateAI2 can revise (repaint) a signal's value after the fact, re-reading it N bars later both delays entry and re-validates the signal is still standing before acting on it. Every one of those N bars must also close in the signal's own direction (green for long, red for short) or the entry is skipped. 0 = act immediately on the signal bar's close (no direction check).")]
 		public int ConfirmationBars
 		{ get; set; }
 
 		[NinjaScriptProperty]
-		[Display(Name = "Enable Indicator Alerts", Order = 5, GroupName = "1. Risk Management",
+		[Display(Name = "Reversing Signal", Order = 5, GroupName = "1. Risk Management",
+			Description = "Requires the bar immediately before the signal bar to close in the opposite direction of the signal (e.g. a red/bearish bar, then a bullish signal, then a bullish confirmation bar). Checked in addition to Confirmation Bars. Default off.")]
+		public bool ReversingSignal
+		{ get; set; }
+
+		[NinjaScriptProperty]
+		[Display(Name = "Enable Indicator Alerts", Order = 6, GroupName = "1. Risk Management",
 			Description = "Turns UltimateAI2's own upSignal/dnSignal/long/short sound alerts on or off (all four together).")]
 		public bool EnableIndicatorAlerts
 		{ get; set; }
 
 		[NinjaScriptProperty]
 		[Range(-500, 500)]
-		[Display(Name = "Manual BE Offset Ticks", Order = 6, GroupName = "1. Risk Management",
+		[Display(Name = "Manual BE Offset Ticks", Order = 7, GroupName = "1. Risk Management",
 			Description = "Signed offset for the MOVE SL TO BE button. Long stop = entry + offset ticks; short stop = entry - offset ticks. 0 = exact entry.")]
 		public int ManualBeOffsetTicks
 		{ get; set; }
 
 		[NinjaScriptProperty]
 		[Range(1, 500)]
-		[Display(Name = "Manual Nudge Ticks", Order = 7, GroupName = "1. Risk Management",
+		[Display(Name = "Manual Nudge Ticks", Order = 8, GroupName = "1. Risk Management",
 			Description = "Ticks each SL/TP nudge button click moves the price. Rapid clicks accumulate into a single order change.")]
 		public int ManualNudgeTicks
 		{ get; set; }
@@ -157,6 +163,7 @@ namespace NinjaTrader.NinjaScript.Strategies.GreyBeard
 				StopLossTicks								= 80;
 				ContractQty									= 1;
 				ConfirmationBars							= 1;
+				ReversingSignal								= false;
 				EnableIndicatorAlerts						= false;
 				ManualBeOffsetTicks							= 0;
 				ManualNudgeTicks							= 4;
@@ -196,7 +203,7 @@ namespace NinjaTrader.NinjaScript.Strategies.GreyBeard
 		{
 			UpdateDashboard();
 
-			if (CurrentBar < BarsRequiredToTrade + ConfirmationBars)
+			if (CurrentBar < BarsRequiredToTrade + ConfirmationBars + (ReversingSignal ? 1 : 0))
 				return;
 
 			if (!IsWithinTimeWindow())
@@ -206,8 +213,27 @@ namespace NinjaTrader.NinjaScript.Strategies.GreyBeard
 			// non-zero at the moment a bar closes and later read back as 0 on that same bar.
 			// Re-reading at lookback index ConfirmationBars, rather than acting immediately,
 			// both delays entry and re-validates the signal is still standing before trading it.
-			bool longSignal  = uai2.longS[ConfirmationBars]  != 0;
-			bool shortSignal = uai2.shortS[ConfirmationBars] != 0;
+			// On top of that, every one of the ConfirmationBars candles since the signal bar must
+			// also close in the signal's own direction (green bars confirming a long signal, red
+			// bars confirming a short signal) -- a signal followed by opposite-colored candles is
+			// not considered confirmed even if the raw signal value itself never went back to 0.
+			// ReversingSignal adds one more check: the bar immediately BEFORE the signal bar must
+			// have closed in the opposite direction of the signal (a reversal setup), e.g. a red
+			// bar, then the bullish signal fires, then the bullish confirmation bar(s).
+			bool rawLong  = uai2.longS[ConfirmationBars]  != 0;
+			bool rawShort = uai2.shortS[ConfirmationBars] != 0;
+			bool longConfirmOk  = ConfirmationBarsMatchDirection(true);
+			bool shortConfirmOk = ConfirmationBarsMatchDirection(false);
+			bool longReverseOk  = ReversingBarConfirmed(true);
+			bool shortReverseOk = ReversingBarConfirmed(false);
+
+			if (rawLong)
+				PrintSignalDebug("LONG", longConfirmOk, longReverseOk);
+			if (rawShort)
+				PrintSignalDebug("SHORT", shortConfirmOk, shortReverseOk);
+
+			bool longSignal  = rawLong  && longConfirmOk  && longReverseOk;
+			bool shortSignal = rawShort && shortConfirmOk && shortReverseOk;
 
 			if (longSignal && Position.MarketPosition != MarketPosition.Long)
 			{
@@ -219,6 +245,47 @@ namespace NinjaTrader.NinjaScript.Strategies.GreyBeard
 				Print(string.Format("{0} Bar={1} SHORT ENTRY, triggered by shortS[{2}]={3}", Time[0], CurrentBar, ConfirmationBars, uai2.shortS[ConfirmationBars]));
 				EnterShort(ContractQty, EntrySignalShort);
 			}
+		}
+
+		// Debug line showing the pass/fail status of every gate a raw signal has to clear before
+		// it becomes a trade: the raw signal itself (always YES here, since this is only called
+		// when it fired), the confirmation-bar direction check, and the reversing-bar check
+		// (N/A when ReversingSignal is off). Printed for both taken and skipped signals so a
+		// skipped entry's reason is visible in the Output window.
+		private void PrintSignalDebug(string direction, bool confirmOk, bool reverseOk)
+		{
+			string reverseText = ReversingSignal ? (reverseOk ? "PASS" : "FAIL") : "N/A";
+			Print(string.Format("{0} Bar={1} {2} signal check -- Signal=YES  ConfirmBars({3})={4}  ReversingBar={5}",
+				Time[0], CurrentBar, direction, ConfirmationBars, confirmOk ? "PASS" : "FAIL", reverseText));
+		}
+
+		// Checks that every confirmation candle between the signal bar and the current bar
+		// (lookback indices 0..ConfirmationBars-1) closed in the signal's direction -- green
+		// (Close > Open) for a long signal, red (Close < Open) for a short signal. With
+		// ConfirmationBars = 0 there are no confirmation candles to check, so this is trivially true.
+		private bool ConfirmationBarsMatchDirection(bool isLong)
+		{
+			for (int i = 0; i < ConfirmationBars; i++)
+			{
+				bool barIsGreen = Close[i] > Open[i];
+				if (isLong != barIsGreen)
+					return false;
+			}
+			return true;
+		}
+
+		// When ReversingSignal is on, requires the bar immediately before the signal bar
+		// (lookback index ConfirmationBars + 1) to have closed opposite the signal's direction --
+		// a red/bearish bar ahead of a bullish signal, or a green/bullish bar ahead of a bearish
+		// signal. Off by default; returns true unconditionally when disabled.
+		private bool ReversingBarConfirmed(bool isLong)
+		{
+			if (!ReversingSignal)
+				return true;
+
+			int idx = ConfirmationBars + 1;
+			bool barIsGreen = Close[idx] > Open[idx];
+			return isLong ? !barIsGreen : barIsGreen;
 		}
 
 		protected override void OnMarketData(MarketDataEventArgs marketDataUpdate)
