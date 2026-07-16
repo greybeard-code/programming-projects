@@ -1,7 +1,29 @@
 // ============================================================================
-//  Terminator_V2 — v2.4.0  (2026-07-14)
+//  Terminator_V2 — v2.4.1  (2026-07-16)
 //  ATR trailing-stop stop-and-reverse strategy with full risk/exit/filter
 //  controls, an on-chart dashboard, and engine plots.
+//
+//  v2.4.1: (1) manual live brackets, completing the v2.4.0 buttons-only cut:
+//  draggable SL/TP horizontal chart lines (drag = a real SetStopLoss/
+//  SetProfitTarget(Price) move, same OCO-safe path as the nudge buttons and
+//  MOVE SL TO BE) and the "Manual Stop Mode" setting (ManualTakesOver —
+//  auto BE/trail stops managing a hand-moved stop; AutoKeepsTightening —
+//  auto can still ratchet tighter past it; ManualTightenOnly — a manual
+//  move may only tighten). New "Enable Manual Brackets" toggle gates both
+//  the nudge buttons and the lines (default on); TP line/nudge still stay
+//  off under Use Scale-Out Targets, same as v2.4.0. The TP line is now
+//  seeded at entry (not just after the first manual touch) so it's
+//  draggable immediately for single-target trades.
+//  (2) SECOND TIME WINDOW (Use Time Filter 2 + Start/End Time 2). Entries
+//  are allowed when in EITHER window, so two entry blocks can each stay on
+//  one side of the daily close without a single window spanning it. Being
+//  flat at the actual session close remains the SESSION TEMPLATE's job
+//  (flatten at session end), independent of these entry windows. Default
+//  off — existing templates behave exactly as before. Each window has its
+//  OWN Flatten At Window End toggle (Flatten At Window End / Flatten At
+//  Window 2 End) — window 1 force-flattens the instant IT ends regardless
+//  of whether window 2 is currently active, and vice versa; it's not one
+//  shared flag gating the combined (OR'd) window.
 //
 //  v2.4.0: (1) manual SL/TP nudge buttons on the dashboard (SL ▼/▲, TP ▼/▲,
 //  step = Manual Nudge Ticks). Ported from the v2.4.x manual-brackets branch,
@@ -174,6 +196,11 @@ namespace NinjaTrader.NinjaScript
 	public enum TtVwmaMode { Off, TrendGate, SignalSource }
 	public enum TtSizingMode { Fixed, RiskBased }
 	public enum TtPanelCorner { TopLeft, TopRight, BottomLeft, BottomRight }
+	// How a manual SL move interacts with auto BE/trail (see ManageStops / ApplyManualStop):
+	//   ManualTakesOver     — once the stop is moved by hand, auto BE/trail stop managing it.
+	//   AutoKeepsTightening — manual applies now; auto can still ratchet tighter past it later.
+	//   ManualTightenOnly   — a manual move may only tighten (never loosen); auto runs normally.
+	public enum TtManualStopConflict { ManualTakesOver, AutoKeepsTightening, ManualTightenOnly }
 }
 
 namespace NinjaTrader.NinjaScript.Strategies
@@ -235,12 +262,24 @@ namespace NinjaTrader.NinjaScript.Strategies
 		// Live price for marking PnL between bar closes (Calculate.OnBarClose primary)
 		private double _lastTradePrice;
 
-		// Manual SL/TP nudge buttons (single-target mode only for TP — see ApplyManualTarget).
-		// A line == a real working order: ApplyManualStop/ApplyManualTarget go through the same
-		// SetStopLoss/SetProfitTarget(Price) path as MOVE SL TO BE and the auto trail.
+		// Manual live brackets — nudge buttons + draggable chart lines (single-target mode only for
+		// TP — see ApplyManualTarget). A line == a real working order: ApplyManualStop/
+		// ApplyManualTarget go through the same SetStopLoss/SetProfitTarget(Price) path as MOVE SL
+		// TO BE and the auto trail.
 		private double currentTargetPrice;      // tracked TP price (0 = none/unknown), non-scale-out only
 		private int _pendingStopNudgeTicks;     // UI thread accumulates via Interlocked; strategy thread drains
 		private int _pendingTargetNudgeTicks;
+		private bool _stopManuallyMoved;        // latch: stop moved by hand this trade (ManualTakesOver / "(M)" marker)
+		private bool _targetManuallyMoved;
+		private double _slLineLastPrice;        // shadow of what WE last wrote to each line (drag-detection baseline)
+		private double _tpLineLastPrice;
+		private double _slPendingPx;            // 1-cycle debounce of an in-progress drag (0 = none)
+		private double _tpPendingPx;
+		private bool _manualLinesPresent;       // gate so we don't RemoveDrawObject every flat tick
+		private DateTime _lastManualSvcUtc = DateTime.MinValue;
+		private const int MANUAL_SVC_MIN_MS = 150;  // wall-clock throttle for drag read-back (playback-lockup rule)
+		private const string SL_LINE_TAG = "TtManualSL";
+		private const string TP_LINE_TAG = "TtManualTP";
 
 		// Plot indexes
 		private const int PLOT_TRAIL    = 0;
@@ -503,6 +542,23 @@ namespace NinjaTrader.NinjaScript.Strategies
 		public bool FlattenAtEnd { get; set; }
 
 		[NinjaScriptProperty]
+		[Display(Name = "Use Time Filter 2", GroupName = "10. Session", Order = 4)]
+		[RefreshProperties(RefreshProperties.All)]
+		public bool UseWindow2 { get; set; }
+
+		[NinjaScriptProperty]
+		[Display(Name = "Start Time 2 (HHMMSS)", GroupName = "10. Session", Order = 5)]
+		public int StartTime2 { get; set; }
+
+		[NinjaScriptProperty]
+		[Display(Name = "End Time 2 (HHMMSS)", GroupName = "10. Session", Order = 6)]
+		public int EndTime2 { get; set; }
+
+		[NinjaScriptProperty]
+		[Display(Name = "Flatten At Window 2 End", GroupName = "10. Session", Order = 7)]
+		public bool FlattenAtEnd2 { get; set; }
+
+		[NinjaScriptProperty]
 		[Display(Name = "Cooldown Bars", GroupName = "11. Misc", Order = 0)]
 		public int CooldownBars { get; set; }
 
@@ -540,15 +596,24 @@ namespace NinjaTrader.NinjaScript.Strategies
 		public bool ShowFilterMarkers { get; set; }
 
 		[NinjaScriptProperty]
-		[Display(Name = "Manual Nudge Ticks", GroupName = "14. Manual Control", Order = 0)]
+		[Display(Name = "Enable Manual Brackets", GroupName = "14. Manual Control", Order = 0)]
+		[RefreshProperties(RefreshProperties.All)]
+		public bool EnableManualBrackets { get; set; }
+
+		[NinjaScriptProperty]
+		[Display(Name = "Manual Nudge Ticks", GroupName = "14. Manual Control", Order = 1)]
 		public int ManualNudgeTicks { get; set; }
+
+		[NinjaScriptProperty]
+		[Display(Name = "Manual Stop Mode", GroupName = "14. Manual Control", Order = 2)]
+		public TtManualStopConflict ManualStopMode { get; set; }
 
 		// Read-only build stamp — shows in the settings grid, never serialized (no setter,
 		// no [NinjaScriptProperty]). Keep in sync with the header banner and CHANGELOG.md.
 		[Display(Name = "Version", GroupName = "ZZ. About", Order = 0)]
 		public string Version
 		{
-			get { return "2.4.0"; }
+			get { return "2.4.1"; }
 		}
 		#endregion
 
@@ -655,6 +720,10 @@ namespace NinjaTrader.NinjaScript.Strategies
 				StartTime = 93000;
 				EndTime = 160000;
 				FlattenAtEnd = true;
+				UseWindow2 = false;
+				StartTime2 = 180000;
+				EndTime2 = 225500;
+				FlattenAtEnd2 = true;
 
 				CooldownBars = 0;
 				ShowMarkers = true;
@@ -668,7 +737,9 @@ namespace NinjaTrader.NinjaScript.Strategies
 				ShowVwmaPlot = true;
 				ShowFilterMarkers = true;
 
+				EnableManualBrackets = true;
 				ManualNudgeTicks = 4;
+				ManualStopMode = TtManualStopConflict.ManualTakesOver;
 
 				// Engine plots (rendered on the price panel). Unused lines are NaN-gapped.
 				AddPlot(new Stroke(Brushes.DodgerBlue, 2), PlotStyle.Line, "ATR Trail");
@@ -730,6 +801,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 			}
 			else if (State == State.Terminated)
 			{
+				RemoveManualLines();
 				RemoveDashboard();
 			}
 		}
@@ -756,11 +828,35 @@ namespace NinjaTrader.NinjaScript.Strategies
 			return (VwmaMode == TtVwmaMode.SignalSource && outVwma != null) ? outVwma[barsAgo] : Close[barsAgo];
 		}
 
+		// Entries are allowed when in EITHER window — so two entry blocks can each stay on one side
+		// of the daily close without a single window spanning it. Being flat at the actual session
+		// close is the SESSION TEMPLATE's job (flatten at session end), independent of these entry
+		// windows. Flatten-at-window-end is handled separately per window (ShouldFlattenAtWindowEnd)
+		// since each window has its own Flatten At Window [N] End toggle.
 		private bool InWindow()
 		{
 			int t = ToTime(Time[0]);
-			if (StartTime <= EndTime) return t >= StartTime && t <= EndTime;
-			return t >= StartTime || t <= EndTime;
+			if (InOneWindow(t, StartTime, EndTime)) return true;
+			if (UseWindow2 && InOneWindow(t, StartTime2, EndTime2)) return true;
+			return false;
+		}
+
+		private static bool InOneWindow(int t, int start, int end)
+		{
+			if (start <= end) return t >= start && t <= end;
+			return t >= start || t <= end;
+		}
+
+		// Each window's Flatten At Window [N] End is independent: window 1 force-flattens the instant
+		// it ends regardless of whether window 2 is currently active (and vice versa) — this is NOT
+		// "outside the combined window", it's "this specific window's own end time has passed".
+		private bool ShouldFlattenAtWindowEnd()
+		{
+			if (!UseTimeFilter) return false;
+			int t = ToTime(Time[0]);
+			if (FlattenAtEnd && !InOneWindow(t, StartTime, EndTime)) return true;
+			if (UseWindow2 && FlattenAtEnd2 && !InOneWindow(t, StartTime2, EndTime2)) return true;
+			return false;
 		}
 
 		private double TickValue()
@@ -956,6 +1052,9 @@ namespace NinjaTrader.NinjaScript.Strategies
 			TtTrailMode effectiveTrailMode = _runnerHighLowActive ? TtTrailMode.HighLow : TrailMode;
 			if (BeMode == TtSimpleMode.Off && effectiveTrailMode == TtTrailMode.Off) return;
 			if (currentSignalName.Length == 0 || entryPrice <= 0) return;
+			// ManualTakesOver: once the operator moved the stop by hand, auto BE/trail stop managing
+			// this position (the manual stop stands until fill/flatten). Latch resets on next entry.
+			if (ManualStopMode == TtManualStopConflict.ManualTakesOver && _stopManuallyMoved) return;
 
 			bool isLong = Position.MarketPosition == MarketPosition.Long;
 			double price = MarkPrice();
@@ -1080,7 +1179,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 		// wrong-side price, so the caller can leave the previous stop in place.
 		private bool ApplyManualStop(double price)
 		{
-			if (Position.MarketPosition == MarketPosition.Flat) return false;
+			if (!EnableManualBrackets || Position.MarketPosition == MarketPosition.Flat) return false;
 			bool isLong = Position.MarketPosition == MarketPosition.Long;
 			double px = Instrument.MasterInstrument.RoundToTickSize(price);
 			double mk = MarkPrice();
@@ -1091,8 +1190,20 @@ namespace NinjaTrader.NinjaScript.Strategies
 					Print("[Terminator_V2] Manual SL ignored — wrong side of price (" + px.ToString("F2") + " vs " + mk.ToString("F2") + ").");
 				return false;
 			}
+			if (ManualStopMode == TtManualStopConflict.ManualTightenOnly && currentStopPrice > 0)
+			{
+				bool loosens = isLong ? px < currentStopPrice : px > currentStopPrice;
+				if (loosens)
+				{
+					if (_onOrderRejects++ < 10)
+						Print("[Terminator_V2] Manual SL ignored — Manual Stop Mode = ManualTightenOnly (loosening blocked).");
+					return false;
+				}
+			}
 			ApplyStopToAllParcels(px);
 			currentStopPrice = px;
+			_stopManuallyMoved = true;
+			SetManualLine(SL_LINE_TAG, px, Brushes.Salmon, ref _slLineLastPrice);
 			return true;
 		}
 
@@ -1101,7 +1212,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 		// the TP nudge buttons are disabled on the dashboard whenever UseScaleOut is on.
 		private bool ApplyManualTarget(double price)
 		{
-			if (UseScaleOut || Position.MarketPosition == MarketPosition.Flat) return false;
+			if (!EnableManualBrackets || UseScaleOut || Position.MarketPosition == MarketPosition.Flat) return false;
 			bool isLong = Position.MarketPosition == MarketPosition.Long;
 			double px = Instrument.MasterInstrument.RoundToTickSize(price);
 			double mk = MarkPrice();
@@ -1115,6 +1226,8 @@ namespace NinjaTrader.NinjaScript.Strategies
 			string sig = currentSignalName.Length > 0 ? currentSignalName : (isLong ? "TtLong" : "TtShort");
 			SetProfitTarget(sig, CalculationMode.Price, px);
 			currentTargetPrice = px;
+			_targetManuallyMoved = true;
+			SetManualLine(TP_LINE_TAG, px, Brushes.LimeGreen, ref _tpLineLastPrice);
 			return true;
 		}
 
@@ -1155,6 +1268,98 @@ namespace NinjaTrader.NinjaScript.Strategies
 			if (Position.MarketPosition == MarketPosition.Flat) return;
 			if (sn != 0) ApplyManualStop(NudgeStopBase() + sn * TickSize);
 			if (tn != 0 && !UseScaleOut) ApplyManualTarget(NudgeTargetBase() + tn * TickSize);
+		}
+
+		// Write a draggable horizontal line at price and remember what WE wrote (the drag baseline).
+		private void SetManualLine(string tag, double price, Brush brush, ref double shadow)
+		{
+			if (State != State.Realtime) return;
+			double px = Instrument.MasterInstrument.RoundToTickSize(price);
+			if (px <= 0) return;
+			try
+			{
+				HorizontalLine hl = Draw.HorizontalLine(this, tag, px, brush, DashStyleHelper.Dash, 2);
+				if (hl != null) ((DrawingTool)hl).IsLocked = false;   // keep it user-draggable
+			}
+			catch { }
+			shadow = px;
+			_manualLinesPresent = true;
+		}
+
+		private void RemoveManualLines()
+		{
+			if (!_manualLinesPresent) return;
+			try { RemoveDrawObject(SL_LINE_TAG); } catch { }
+			try { RemoveDrawObject(TP_LINE_TAG); } catch { }
+			_slLineLastPrice = 0.0; _tpLineLastPrice = 0.0;
+			_slPendingPx = 0.0; _tpPendingPx = 0.0;
+			_manualLinesPresent = false;
+		}
+
+		// Read back any user drag of the SL/TP lines and keep the lines synced to the real brackets.
+		// Called every tick (throttled) and at each bar close (forced). A 1-cycle debounce keeps a
+		// drag from firing SetStopLoss/SetProfitTarget on every intermediate position.
+		private void ServiceManualBrackets(bool force)
+		{
+			if (State != State.Realtime) return;
+			if (!EnableManualBrackets || Position.MarketPosition == MarketPosition.Flat)
+			{
+				RemoveManualLines();
+				return;
+			}
+			DateTime nowUtc = DateTime.UtcNow;
+			if (!force && (nowUtc - _lastManualSvcUtc).TotalMilliseconds < MANUAL_SVC_MIN_MS) return;
+			_lastManualSvcUtc = nowUtc;
+			double tol = TickSize * 0.5;
+
+			// --- Stop line: detect drag (debounced), then reconcile the line to currentStopPrice ---
+			HorizontalLine sl = DrawObjects[SL_LINE_TAG] as HorizontalLine;
+			if (sl != null)
+			{
+				double linePx = Instrument.MasterInstrument.RoundToTickSize(sl.StartAnchor.Price);
+				if (Math.Abs(linePx - _slLineLastPrice) >= tol)            // moved from what we last wrote
+				{
+					if (_slPendingPx > 0 && Math.Abs(linePx - _slPendingPx) < tol)
+					{
+						if (!ApplyManualStop(linePx) && currentStopPrice > 0)
+							SetManualLine(SL_LINE_TAG, currentStopPrice, Brushes.Salmon, ref _slLineLastPrice);  // snap back
+						_slPendingPx = 0.0;
+					}
+					else _slPendingPx = linePx;                            // record, commit next cycle once settled
+				}
+				else _slPendingPx = 0.0;
+			}
+			if (currentStopPrice > 0)
+			{
+				if (sl == null || Math.Abs(currentStopPrice - _slLineLastPrice) >= tol)
+					SetManualLine(SL_LINE_TAG, currentStopPrice, Brushes.Salmon, ref _slLineLastPrice);
+			}
+			else if (sl != null) { try { RemoveDrawObject(SL_LINE_TAG); } catch { } _slLineLastPrice = 0.0; }
+
+			// --- Target line: same pattern (single-target mode only — currentTargetPrice stays 0
+			// under UseScaleOut, so this block never draws a line there) ---
+			HorizontalLine tp = DrawObjects[TP_LINE_TAG] as HorizontalLine;
+			if (tp != null)
+			{
+				double linePx = Instrument.MasterInstrument.RoundToTickSize(tp.StartAnchor.Price);
+				if (Math.Abs(linePx - _tpLineLastPrice) >= tol)
+				{
+					if (_tpPendingPx > 0 && Math.Abs(linePx - _tpPendingPx) < tol)
+					{
+						if (!ApplyManualTarget(linePx) && currentTargetPrice > 0)
+							SetManualLine(TP_LINE_TAG, currentTargetPrice, Brushes.LimeGreen, ref _tpLineLastPrice);
+						_tpPendingPx = 0.0;
+					}
+					else _tpPendingPx = linePx;
+				}
+				else _tpPendingPx = 0.0;
+			}
+			if (currentTargetPrice > 0)
+			{
+				if (tp == null || Math.Abs(currentTargetPrice - _tpLineLastPrice) >= tol)
+					SetManualLine(TP_LINE_TAG, currentTargetPrice, Brushes.LimeGreen, ref _tpLineLastPrice);
+			}
+			else if (tp != null) { try { RemoveDrawObject(TP_LINE_TAG); } catch { } _tpLineLastPrice = 0.0; }
 		}
 
 		private void FlattenAll(string reason)
@@ -1224,6 +1429,8 @@ namespace NinjaTrader.NinjaScript.Strategies
 			breakEvenSet = false;
 			_intendedQty = 0;
 			currentTargetPrice = 0.0;
+			_stopManuallyMoved = false;
+			_targetManuallyMoved = false;
 		}
 
 		private double MarkPrice()
@@ -1419,6 +1626,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 				ProcessDashboardCommands();
 				UpdateDailyRisk();
 				CheckSizeGuard();
+				ServiceManualBrackets(false);   // read back any SL/TP line drag (throttled)
 				UpdateDashboard();
 			}
 			catch { /* never let a tick throw into NT8 */ }
@@ -1506,7 +1714,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 			CheckSizeGuard();
 
 			// Intraday window flatten
-			if (UseTimeFilter && FlattenAtEnd && !InWindow() && Position.MarketPosition != MarketPosition.Flat)
+			if (ShouldFlattenAtWindowEnd() && Position.MarketPosition != MarketPosition.Flat)
 			{
 				FlattenAll("WindowEnd");
 				pendingReverseDir = 0;
@@ -1625,6 +1833,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 				// same-direction cross while in position → ignore (already positioned)
 			}
 
+			ServiceManualBrackets(true);   // sync the SL/TP lines to the brackets after auto-trail/BE
 			UpdateDashboard();
 		}
 
@@ -1675,6 +1884,15 @@ namespace NinjaTrader.NinjaScript.Strategies
 			entryPrice = Close[0];
 			currentStopPrice = stopPx;
 			breakEvenSet = false;
+
+			// Manual-bracket bookkeeping: clear the per-trade latches and seed the tracked TP price
+			// (price-based modes directly; Currency stays $-display until the first manual touch) so
+			// the draggable TP line renders immediately instead of only after the first manual nudge.
+			_stopManuallyMoved = false;
+			_targetManuallyMoved = false;
+			currentTargetPrice = (TpMode != TtExitMode.Off && TpMode != TtExitMode.Currency)
+				? Instrument.MasterInstrument.RoundToTickSize(dir > 0 ? entryPrice + ToTicks(TpMode, TpValue) * TickSize : entryPrice - ToTicks(TpMode, TpValue) * TickSize)
+				: 0.0;
 
 			int qty = ComputeQuantity(dir);
 			_intendedQty = qty;
@@ -1734,6 +1952,10 @@ namespace NinjaTrader.NinjaScript.Strategies
 			currentStopPrice = stopPx;
 			breakEvenSet = false;
 			_intendedQty = totalQty;
+			// Manual TP nudge has no meaning under scale-out (see ApplyManualTarget), so
+			// currentTargetPrice stays 0; only the manual-move latches need resetting here.
+			_stopManuallyMoved = false;
+			_targetManuallyMoved = false;
 
 			for (int i = 0; i < sigs.Count; i++)
 			{
@@ -1941,6 +2163,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 					_nudgeRow.Children.Add(_slUpBtn);
 					_nudgeRow.Children.Add(_tpDownBtn);
 					_nudgeRow.Children.Add(_tpUpBtn);
+					if (!EnableManualBrackets) _nudgeRow.Visibility = Visibility.Collapsed;
 
 					_flattenBtn = MakeDashButton("FLATTEN ALL", 294, 26);
 					_flattenBtn.Background = BtnShortBg;
@@ -2139,7 +2362,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 				double avg = Position.AveragePrice;
 				entryText = string.Format("Entry   {0:F2}", avg);
 				if (currentStopPrice > 0)
-					stopText = string.Format("Stop    {0:F2}{1}", currentStopPrice, breakEvenSet ? "  (BE)" : "");
+					stopText = string.Format("Stop    {0:F2}{1}{2}", currentStopPrice, breakEvenSet ? "  (BE)" : "", _stopManuallyMoved ? "  (M)" : "");
 				else
 					stopText = "Stop    none";
 				if (UseScaleOut)
@@ -2156,7 +2379,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 				// show that instead of recomputing from settings that no longer match the live order.
 				else if (currentTargetPrice > 0)
 				{
-					tgtText = string.Format("Target  {0:F2}  (M)", currentTargetPrice);
+					tgtText = string.Format("Target  {0:F2}{1}", currentTargetPrice, _targetManuallyMoved ? "  (M)" : "");
 				}
 				else if (TpMode != TtExitMode.Off)
 				{
@@ -2179,6 +2402,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 			bool ip = inPos;
 			bool autoOn = _autoEnabled, longOn = _longEnabled, shortOn = _shortEnabled;
 			bool scaleOut = UseScaleOut;
+			bool manualOn = EnableManualBrackets;
 
 			ChartControl.Dispatcher.InvokeAsync(() =>
 			{
@@ -2209,6 +2433,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 					if (_shortBtn != null) _shortBtn.IsEnabled = autoOn;
 					// SL nudge always works in a position; TP nudge only makes sense for a single target
 					// (scale-out has per-parcel TP1/TP2/TP3 instead of one price to nudge).
+					if (_nudgeRow != null) _nudgeRow.Visibility = manualOn ? Visibility.Visible : Visibility.Collapsed;
 					if (_slDownBtn != null) _slDownBtn.IsEnabled = ip;
 					if (_slUpBtn != null) _slUpBtn.IsEnabled = ip;
 					if (_tpDownBtn != null) _tpDownBtn.IsEnabled = ip && !scaleOut;
@@ -2442,8 +2667,10 @@ namespace NinjaTrader.NinjaScript.Strategies
 			if (!UseDailyProfit) RemoveProperties(col, nameof(DailyProfit));
 			if (!UseDailyLoss && !UseDailyProfit) RemoveProperties(col, nameof(DailyFlatten));
 			if (SizingMode != TtSizingMode.RiskBased) RemoveProperties(col, nameof(RiskPerTrade));
-			if (!UseTimeFilter) RemoveProperties(col, nameof(StartTime), nameof(EndTime), nameof(FlattenAtEnd));
+			if (!UseTimeFilter) RemoveProperties(col, nameof(StartTime), nameof(EndTime), nameof(FlattenAtEnd), nameof(UseWindow2));
+			if (!UseTimeFilter || !UseWindow2) RemoveProperties(col, nameof(StartTime2), nameof(EndTime2), nameof(FlattenAtEnd2));
 			if (!ShowDashboard) RemoveProperties(col, nameof(DashboardStartMinimized), nameof(DashboardCorner));
+			if (!EnableManualBrackets) RemoveProperties(col, nameof(ManualNudgeTicks), nameof(ManualStopMode));
 
 			return col;
 		}
