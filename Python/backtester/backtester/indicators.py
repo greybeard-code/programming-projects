@@ -53,6 +53,37 @@ class SMA:
         return self.value
 
 
+class Bollinger:
+    """SMA +/- mult * population std-dev (NT8 Bollinger). update(close)
+    once per bar; read .middle/.upper/.lower."""
+
+    def __init__(self, period: int, mult: float = 2.0):
+        self.period = period
+        self.mult = mult
+        self._win: deque[float] = deque(maxlen=period)
+        self.middle = math.nan
+        self.upper = math.nan
+        self.lower = math.nan
+
+    @property
+    def ready(self) -> bool:
+        return len(self._win) == self.period
+
+    def update(self, price: float) -> float:
+        self._win.append(price)
+        if self.ready:
+            m = self._sum() / self.period
+            var = sum((p - m) ** 2 for p in self._win) / self.period
+            sd = math.sqrt(var)
+            self.middle = m
+            self.upper = m + self.mult * sd
+            self.lower = m - self.mult * sd
+        return self.middle
+
+    def _sum(self) -> float:
+        return sum(self._win)
+
+
 class ATR:
     """Wilder's ATR. update(high, low, close) once per bar."""
 
