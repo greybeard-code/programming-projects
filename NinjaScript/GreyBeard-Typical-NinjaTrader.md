@@ -131,7 +131,23 @@ genuinely doesn't apply to that strategy's model):
   stop backward into more risk. A manual override button is the one place that's allowed to be an
   explicit exception, since the user is intentionally overriding.
 
-## 4. Other conventions observed
+## 4. Required `SetDefaults` display flags (all indicators)
+
+Every GreyBeard indicator must set these two flags in `State.SetDefaults` (strategies with plots
+too). Confirmed verbatim against `gbBarStatus.cs`, `gbKingOrderBlock.cs`, `gbKingPanaZilla.cs`:
+
+```csharp
+IsSuspendedWhileInactive = false;      // keep running when inactive (not the selected/active chart object)
+ShowTransparentPlotsInDataBox = true;  // show transparent plots in the Data Box
+```
+
+- `IsSuspendedWhileInactive = false` — the "runs when inactive" flag. `false` means the indicator
+  keeps calculating even when it isn't the active chart object, so its values stay current. Do
+  **not** leave it at the default / set it to `true`.
+- `ShowTransparentPlotsInDataBox = true` — the "Show Transparent in Data box" flag. Plots drawn
+  with a transparent brush still report their values in the Data Box.
+
+## 5. Other conventions observed
 
 - `SetProfitTarget`/`SetStopLoss` base distances (the "default" bracket every entry gets) are set
   once in `State.Configure`, in ticks. Manual dashboard nudges then override the specific live
@@ -142,7 +158,43 @@ genuinely doesn't apply to that strategy's model):
 - Alert sound properties typically pair a `bool ...Enable` with a `string ...File` (sound file
   path), sometimes with a master on/off toggle controlling several at once.
 
-## 5. Open items / things to confirm per-project
+### Time-of-day filters (session windows)
+
+Time inputs use a **`DateTime` property with the clock picker**, not a raw `int HHmmss`. The
+`int HHmmss` form (`93000`, `160000`) in `Terminator_V2.cs` is the older style — do **not** copy it
+for new scripts. The standard (from `GodZillaKilla.cs`, now `gbZeus.cs`):
+
+- Each window is a pair of `DateTime` properties decorated with the time editor, plus an `Enable`
+  bool that carries `[RefreshProperties(RefreshProperties.All)]` (so dependent rows can hide via the
+  `ICustomTypeDescriptor` pattern). Default the enable **on**.
+
+  ```csharp
+  [NinjaScriptProperty]
+  [RefreshProperties(RefreshProperties.All)]
+  [Display(Name = "Enable Session Filter", Order = 1, GroupName = "2. Session")]
+  public bool EnableSession { get; set; }
+
+  [NinjaScriptProperty]
+  [PropertyEditor("NinjaTrader.Gui.Tools.TimeEditorKey")]
+  [Display(Name = "Session Start", Order = 2, GroupName = "2. Session")]
+  public DateTime SessionStart { get; set; }
+
+  [NinjaScriptProperty]
+  [PropertyEditor("NinjaTrader.Gui.Tools.TimeEditorKey")]
+  [Display(Name = "Session End", Order = 3, GroupName = "2. Session")]
+  public DateTime SessionEnd { get; set; }
+  ```
+- Requires `using NinjaTrader.Gui;` (the `PropertyEditor` attribute) and `using System.ComponentModel;`
+  (`RefreshProperties`).
+- Defaults in `State.SetDefaults` via
+  `DateTime.Parse("10:15", System.Globalization.CultureInfo.InvariantCulture)`.
+- Compare by converting to the `int HHmmss` form only at the comparison site with `ToTime(...)`:
+  `ToTime(Time[0])` vs `ToTime(SessionStart)` / `ToTime(SessionEnd)` (handle the start > end
+  wrap-past-midnight case). Cache `ToTime(prop)` in a field if it's read on a hot path.
+- `AutoCloseTimeEditorKey` is a valid alternative editor (see `ORB_TradeSaber.cs`) when the field is
+  a flatten/close time rather than a window bound.
+
+## 6. Open items / things to confirm per-project
 
 This doc reflects what's been observed in existing source, not an exhaustive spec. Things that
 may still need a case-by-case decision when starting a new script:

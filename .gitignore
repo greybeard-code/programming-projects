@@ -6,3 +6,8 @@
 
 # Licensed third-party vendor binaries -- not our IP, don't redistribute via git
 NinjaScript/uai_wrapper/nt8 code/*.dll
+
+# NinjaTrader executions/trade-grid exports (personal trading records, not code)
+**/*NinjaTrader Grid*.csv
+NinjaScript/TOGodMode/NT8 code/*.csv
+Python/backtester/nt8 code/**/*.csv
