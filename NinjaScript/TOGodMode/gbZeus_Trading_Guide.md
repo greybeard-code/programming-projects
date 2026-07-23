@@ -2,6 +2,14 @@
 
 A plain-English guide to the **GodTrades indicator** and the **gbZeus strategy** that trades it. Written for traders, not programmers — no code, just what it does and how to run it.
 
+## Credits
+
+Zeus automates other people's work. It does not originate the method or the signals:
+
+- **The "God Trades" methodology is the work of [TraderOracle](https://www.youtube.com/watch?v=Saa2YTtIV7E).** Everything Zeus trades — candle gaps, the 3-candle validity rule, the Bollinger-band entries, the candle-back stop, the band-to-band target, the spiderweb stand-aside — comes from his teaching. **Watch the source material first:** [God Trade Masterclass](https://www.youtube.com/watch?v=Saa2YTtIV7E). Don't automate a method you haven't learned by eye.
+- **The GodTrades indicator is the work of Sneaky_Zekey**, included unmodified with his permission. It does all the setup detection; Zeus only executes what it reports.
+- **gbZeus** (the strategy, dashboard, risk controls) is the only part original here.
+
 ---
 
 ## The big picture
@@ -15,7 +23,7 @@ The indicator finds; Zeus trades.
 
 > **Required before anything else:** Zeus **cannot run without the GodTrades indicator, version 16.6.** Both scripts must be installed and compiled in NinjaTrader — Zeus reads the indicator's signals internally, so it doesn't have to be *added to the chart*, but it must be **present and compiled** or Zeus won't build.
 >
-> The indicator is **third-party work, included unmodified with the author's permission** — credit: *<author>*. **Do not edit it.** Beyond the courtesy, there's a technical reason: Zeus calls the indicator through a generated constructor whose argument list is built from the indicator's settings. That signature is **pinned to v16.6** — if you swap in a different indicator version that added, removed, or reordered a setting, **Zeus will stop compiling.** Always keep the two files together as a matched pair.
+> The indicator is the work of **Sneaky_Zekey**, included **unmodified with his permission**. **Do not edit it.** Beyond the courtesy, there's a technical reason: Zeus calls the indicator through a generated constructor whose argument list is built from the indicator's settings. That signature is **pinned to v16.6** — if you swap in a different indicator version that added, removed, or reordered a setting, **Zeus will stop compiling.** Always keep the two files together as a matched pair.
 >
 > If you also drop the indicator on the chart you can watch the arrows and gap lines line up with your fills; keep its Bollinger settings identical to Zeus's (20 period, 2.0 std-dev).
 

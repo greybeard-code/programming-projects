@@ -8,12 +8,22 @@ own hedges and contradictions — it is **not** trading advice and not a claim
 that the edge is real. For the automation status and backtested reality, see
 `C:\Dev\programming-projects\Python\backtester\strategy\GodTrades.md`.
 
+## Credits
+
+The **"God Trades" methodology is the work of TraderOracle** — this file only
+records it. Primary source, and the thing to watch before trading any of this:
+**[God Trade Masterclass](https://www.youtube.com/watch?v=Saa2YTtIV7E)**.
+
+The **GodTrades NinjaTrader indicator is by Sneaky_Zekey** (used unmodified,
+with permission). The `gbZeus` strategy that executes these signals is the only
+original work in this repo.
+
 ## Sources
 
 | # | Source | What it is | How captured |
 |---|---|---|---|
 | 1 | Canva deck "The God Trades" (14 slides) | The written rule set | Read slide-by-slide in browser (Canva/YouTube block WebFetch — both are JS SPAs) |
-| 2 | YouTube "god trade masterclass" | 28-min live class, discretionary color | Auto-caption transcript via `yt-dlp` (channel: "Trading for Rent Money", video id `Saa2YTtIV7E`) |
+| 2 | [YouTube "God Trade Masterclass"](https://www.youtube.com/watch?v=Saa2YTtIV7E) | 28-min live class, discretionary color | Auto-caption transcript via `yt-dlp` (channel: "Trading for Rent Money", video id `Saa2YTtIV7E`) |
 
 > Retrieval note for future sessions: WebFetch returns only the SPA shell for
 > both Canva and YouTube. Use the in-app/Chrome browser for Canva slides;

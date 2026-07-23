@@ -1,4 +1,8 @@
-# GodTrades — "Zekey" version evaluation
+# GodTrades — Sneaky_Zekey version evaluation
+
+> **Credits and scope, up front.** The **"God Trades" methodology is TraderOracle's** ([God Trade Masterclass](https://www.youtube.com/watch?v=Saa2YTtIV7E)). The **GodTrades indicator is Sneaky_Zekey's**, and this evaluation finds it **well built and faithful to the method** — it is the strongest piece of the stack and the one we kept.
+>
+> What tests poorly below is **not the indicator**. It is the *PredatorX execution template* — a separate order-entry configuration whose fixed-tick brackets, breakeven, and missing session filter throw away the band-to-band winners the method depends on. The criticism is of that configuration's settings, not of anyone's coding. A good signal engine wired to the wrong exits still loses.
 
 Evaluation of the GodTrades stack in `NinjaScript/TOGodMode/NT8 code/`:
 

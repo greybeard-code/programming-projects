@@ -28,11 +28,15 @@ using NinjaTrader.NinjaScript.Indicators;
 //   * stop:   back of the signal candle (static; never auto-moved to BE).
 //   * target: opposite Bollinger band, re-priced each bar (BandTarget mode).
 //
+// CREDITS
+//   Methodology — "God Trades" is the work of TraderOracle. Zeus automates his
+//   published method; it does not originate it. God Trade Masterclass:
+//   https://www.youtube.com/watch?v=Saa2YTtIV7E
+//   Indicator  — GodTrades.cs is by Sneaky_Zekey, redistributed UNMODIFIED with
+//   his permission. Do not edit it.
+//
 // REQUIRES the GodTrades indicator, version 16.6 — it is the signal source.
-// The indicator is third-party work, redistributed UNMODIFIED with the author's
-// permission. Credit: <INDICATOR AUTHOR — fill in before distributing>.
-// Do not edit GodTrades.cs; keep its Bollinger settings identical to the ones
-// configured below.
+// Keep its Bollinger settings identical to the ones configured below.
 //
 // VERSION COUPLING (important): this strategy calls the indicator through the
 // NinjaScript-generated constructor, whose argument list is built from the
