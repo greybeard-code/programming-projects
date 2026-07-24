@@ -1,7 +1,36 @@
 // ============================================================================
-//  Terminator_V2 — v2.4.1  (2026-07-16)
+//  Terminator_V2 — v2.4.3  (2026-07-23)
 //  ATR trailing-stop stop-and-reverse strategy with full risk/exit/filter
 //  controls, an on-chart dashboard, and engine plots.
+//
+//  v2.4.3: merges the two features that existed ONLY on the parallel
+//  "v2.4.2" branch (formerly Python/backtester/nt8 code/Terminatorv2/, since
+//  DELETED — recoverable from git history) into this, the active line. Both
+//  branches had independently shipped a "v2.4.1" for different changes; that
+//  collision is why this jumps to 2.4.3 — do NOT reuse 2.4.1/2.4.2 for
+//  anything, and do not re-create a second working copy of this file. This
+//  folder (NinjaScript/TerminatorV2/) is the only home for Terminator code,
+//  docs, templates, and backtest artifacts; bin\Custom\Strategies\ is a
+//  deploy target kept byte-identical, not a second source.
+//  (1) TIME FILTER ENTRIES ONLY. New setting: the time window gates new
+//  ENTRIES only — the stop-and-reverse exit always fires (even outside the
+//  window) and the window-end flatten is disabled. This is the semantics the
+//  backtest champion requires (TerminatorV2.md §9, next to this file): over 510 days
+//  entries-only nets $22,422 and survives the $2k trailing floor, whereas
+//  FlattenAtEnd=true nets $16,146 (-28%, throws away the overnight carry) and
+//  FlattenAtEnd=false nets $21,907 but BREACHES the floor. When on, it
+//  overrides BOTH Flatten At Window End and Flatten At Window 2 End. Default
+//  off — existing templates behave exactly as before.
+//  (2) CARRIED-POSITION Day PnL FIX. The carried-position unrealized baseline
+//  was captured inside OnStateChange(Realtime), where GetUnrealizedProfitLoss()
+//  can return 0/stale (position + market data not ready), leaking the carried
+//  position's pre-live unrealized into live Day PnL and potentially tripping
+//  the daily loss/profit lock on the first realtime bar. Capture is now
+//  DEFERRED to the first realtime evaluation (EnsureCarriedBaseline), which
+//  runs before the discard/close path can fire. Also: a DISCARDED carried
+//  position now contributes exactly $0 (Day PnL held at 0 while it is being
+//  flattened, then re-baselined). Matters here because the recommended config
+//  routinely carries a position across the historical->realtime boundary.
 //
 //  v2.4.1: (1) manual live brackets, completing the v2.4.0 buttons-only cut:
 //  draggable SL/TP horizontal chart lines (drag = a real SetStopLoss/
@@ -240,6 +269,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 		private bool carryingPosition;
 		private double carriedUnrealizedBaseline;  // its unrealized PnL at the boundary, excluded from live Day PnL
 		private bool _discardCarriedPending;       // flatten the carried position on the first realtime bar
+		private bool _carriedBaselinePending;      // capture the carried baseline on the FIRST realtime eval, not in OnStateChange (where GetUnrealizedProfitLoss is unreliable -> 0 -> historical bleed)
 
 		// Managed-stop state (one unified stop shared across all parcels, per pattern doc §5 / Template D)
 		private double entryPrice;
@@ -558,6 +588,13 @@ namespace NinjaTrader.NinjaScript.Strategies
 		[Display(Name = "Flatten At Window 2 End", GroupName = "10. Session", Order = 7)]
 		public bool FlattenAtEnd2 { get; set; }
 
+		// Window gates ENTRIES only: the reverse exit still fires outside the window and the
+		// window-end flatten is suppressed (BOTH windows'). Overrides FlattenAtEnd/FlattenAtEnd2.
+		[NinjaScriptProperty]
+		[Display(Name = "Time Filter Entries Only", GroupName = "10. Session", Order = 8)]
+		[RefreshProperties(RefreshProperties.All)]
+		public bool TimeFilterEntriesOnly { get; set; }
+
 		[NinjaScriptProperty]
 		[Display(Name = "Cooldown Bars", GroupName = "11. Misc", Order = 0)]
 		public int CooldownBars { get; set; }
@@ -613,7 +650,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 		[Display(Name = "Version", GroupName = "ZZ. About", Order = 0)]
 		public string Version
 		{
-			get { return "2.4.1"; }
+			get { return "2.4.3"; }
 		}
 		#endregion
 
@@ -724,6 +761,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 				StartTime2 = 180000;
 				EndTime2 = 225500;
 				FlattenAtEnd2 = true;
+				TimeFilterEntriesOnly = false;
 
 				CooldownBars = 0;
 				ShowMarkers = true;
@@ -789,11 +827,11 @@ namespace NinjaTrader.NinjaScript.Strategies
 				// flatten it so live trading starts truly flat.
 				carryingPosition = Position != null && Position.MarketPosition != MarketPosition.Flat;
 				carriedUnrealizedBaseline = 0.0;
-				if (carryingPosition && CurrentBars != null && CurrentBars.Length > 0 && CurrentBars[0] >= 0)
-				{
-					try { carriedUnrealizedBaseline = Position.GetUnrealizedProfitLoss(PerformanceUnit.Currency, MarkPrice()); }
-					catch { carriedUnrealizedBaseline = 0.0; }
-				}
+				// DEFER the baseline capture: GetUnrealizedProfitLoss() inside OnStateChange(Realtime) can
+				// return 0/stale (position + market data not ready), which leaks the carried position's
+				// pre-live unrealized into Day PnL. EnsureCarriedBaseline() captures it at the first
+				// realtime evaluation instead, BEFORE the discard/close path can fire.
+				_carriedBaselinePending = carryingPosition;
 				_discardCarriedPending = carryingPosition && DiscardCarriedAtRealtime;
 
 				if (ShowDashboard)
@@ -853,6 +891,9 @@ namespace NinjaTrader.NinjaScript.Strategies
 		private bool ShouldFlattenAtWindowEnd()
 		{
 			if (!UseTimeFilter) return false;
+			// Entries-only: the window never force-flattens (either window). The position is closed
+			// by the reverse signal, a stop, or the SESSION TEMPLATE's flatten-at-session-end.
+			if (TimeFilterEntriesOnly) return false;
 			int t = ToTime(Time[0]);
 			if (FlattenAtEnd && !InOneWindow(t, StartTime, EndTime)) return true;
 			if (UseWindow2 && FlattenAtEnd2 && !InOneWindow(t, StartTime2, EndTime2)) return true;
@@ -955,10 +996,12 @@ namespace NinjaTrader.NinjaScript.Strategies
 
 		// "" = entry allowed; otherwise a short reason for the filter-block marker.
 		// Cooldown is handled by the caller (it must only gate fresh-from-flat entries).
-		private string EntryBlockReason(int dir)
+		// ignoreWindow: used by the clean-split REVERSAL path under TimeFilterEntriesOnly, so an
+		// opposite signal can still close (and re-establish) a position outside the entry window.
+		private string EntryBlockReason(int dir, bool ignoreWindow = false)
 		{
 			if (!_autoEnabled) return "auto-off";
-			if (UseTimeFilter && !InWindow()) return "window";
+			if (!ignoreWindow && UseTimeFilter && !InWindow()) return "window";
 			if (dir > 0 && (!EnableLongs || !_longEnabled)) return "long-off";
 			if (dir < 0 && (!EnableShorts || !_shortEnabled)) return "short-off";
 			if (tradingBlocked) return "daily";
@@ -1445,6 +1488,11 @@ namespace NinjaTrader.NinjaScript.Strategies
 		// latches false); OnBarUpdate and OnMarketData both call this on the single strategy thread.
 		private double ComputeDayPnL()
 		{
+			EnsureCarriedBaseline();
+			// A carried position being DISCARDED contributes nothing to live Day PnL (the discard sends
+			// no real order — it's a pre-live virtual artifact, including any drift while it's flattened).
+			// Hold at 0 until the discard completes; the discard handler then re-baselines so it stays 0.
+			if (_discardCarriedPending) { dailyPnl = 0.0; return 0.0; }
 			double pnl = SystemPerformance.AllTrades.TradesPerformance.Currency.CumProfit - sessionStartCumProfit;
 			if (Position.MarketPosition != MarketPosition.Flat)
 			{
@@ -1457,10 +1505,27 @@ namespace NinjaTrader.NinjaScript.Strategies
 				sessionStartCumProfit += carriedUnrealizedBaseline;
 				carryingPosition = false;
 				carriedUnrealizedBaseline = 0.0;
+				_carriedBaselinePending = false;
 				pnl = SystemPerformance.AllTrades.TradesPerformance.Currency.CumProfit - sessionStartCumProfit;
 			}
 			dailyPnl = pnl;
 			return pnl;
+		}
+
+		// Capture the carried-position baseline at the FIRST realtime evaluation, where Position +
+		// market data are reliably ready. MUST run before the carried position is discarded/closed,
+		// else its pre-live unrealized leaks into Day PnL (and can falsely trip the daily-profit lock).
+		// Idempotent — latches _carriedBaselinePending false.
+		private void EnsureCarriedBaseline()
+		{
+			if (!_carriedBaselinePending) return;
+			if (carryingPosition && Position.MarketPosition != MarketPosition.Flat)
+			{
+				try { carriedUnrealizedBaseline = Position.GetUnrealizedProfitLoss(PerformanceUnit.Currency, MarkPrice()); }
+				catch { carriedUnrealizedBaseline = 0.0; }
+			}
+			else carriedUnrealizedBaseline = 0.0;
+			_carriedBaselinePending = false;
 		}
 
 		private void UpdateDailyRisk()
@@ -1681,6 +1746,11 @@ namespace NinjaTrader.NinjaScript.Strategies
 				return;
 			}
 
+			// Lock in the carried-position baseline BEFORE the discard/close path below can fire
+			// (reliable here: Position + market data are ready). Without this, the carried position's
+			// historical unrealized leaks into Day PnL and can falsely trip the daily-profit lock.
+			EnsureCarriedBaseline();
+
 			// Daily session reset — driven by the actual session boundary (Bars.IsFirstBarOfSession),
 			// NOT calendar date. A calendar-midnight reset inside an overnight Globex session (e.g.
 			// 17:00->16:00) would clear tradingBlocked and re-baseline PnL mid-session, letting the
@@ -1692,7 +1762,16 @@ namespace NinjaTrader.NinjaScript.Strategies
 			{
 				if (Position.MarketPosition == MarketPosition.Long) ExitLong("DiscardCarried", "");
 				else if (Position.MarketPosition == MarketPosition.Short) ExitShort("DiscardCarried", "");
-				if (Position.MarketPosition == MarketPosition.Flat) _discardCarriedPending = false;
+				if (Position.MarketPosition == MarketPosition.Flat)
+				{
+					_discardCarriedPending = false;
+					// Discard = the carried position never counts. Re-baseline to "now" so its full
+					// (virtual) realized, incl. the drift taken while flattening, drops out of Day PnL.
+					sessionStartCumProfit = SystemPerformance.AllTrades.TradesPerformance.Currency.CumProfit;
+					carryingPosition = false;
+					carriedUnrealizedBaseline = 0.0;
+					_carriedBaselinePending = false;
+				}
 				else { UpdateDashboard(); return; }
 			}
 
@@ -1706,6 +1785,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 				pendingReverseDir = 0;
 				carryingPosition = false;
 				carriedUnrealizedBaseline = 0.0;
+				_carriedBaselinePending = false;
 			}
 
 			// Manual commands also serviced here (covers any gap between ticks).
@@ -1818,7 +1898,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 				{
 					// CLEAN-SPLIT REVERSAL: close on this bar, queue the new-direction entry for
 					// when we're flat — so each order is exactly Quantity (no 2x close+reverse).
-					string reason = EntryBlockReason(dir);
+					string reason = EntryBlockReason(dir, TimeFilterEntriesOnly);
 					if (reason.Length == 0)
 					{
 						FlattenAll("reverse");
@@ -2667,8 +2747,10 @@ namespace NinjaTrader.NinjaScript.Strategies
 			if (!UseDailyProfit) RemoveProperties(col, nameof(DailyProfit));
 			if (!UseDailyLoss && !UseDailyProfit) RemoveProperties(col, nameof(DailyFlatten));
 			if (SizingMode != TtSizingMode.RiskBased) RemoveProperties(col, nameof(RiskPerTrade));
-			if (!UseTimeFilter) RemoveProperties(col, nameof(StartTime), nameof(EndTime), nameof(FlattenAtEnd), nameof(UseWindow2));
+			if (!UseTimeFilter) RemoveProperties(col, nameof(StartTime), nameof(EndTime), nameof(FlattenAtEnd), nameof(UseWindow2), nameof(TimeFilterEntriesOnly));
 			if (!UseTimeFilter || !UseWindow2) RemoveProperties(col, nameof(StartTime2), nameof(EndTime2), nameof(FlattenAtEnd2));
+			// Entries-only overrides both flatten toggles — hide them so the grid can't imply otherwise.
+			if (UseTimeFilter && TimeFilterEntriesOnly) RemoveProperties(col, nameof(FlattenAtEnd), nameof(FlattenAtEnd2));
 			if (!ShowDashboard) RemoveProperties(col, nameof(DashboardStartMinimized), nameof(DashboardCorner));
 			if (!EnableManualBrackets) RemoveProperties(col, nameof(ManualNudgeTicks), nameof(ManualStopMode));
 
