@@ -9,7 +9,8 @@ session spanning **18:00 ET (prior day) -> 16:55 ET (same trading day)**,
 flattening once at the end, never holds a position through ANY halt and
 is exactly as compliant as the narrow afternoon box, while covering the
 18:00 ET reopen -- the single best hour in the whole 510-day dataset
-(+$4,278, see TerminatorV2_ETH.md). Entries are then restricted to the
+(+$4,278, see NinjaScript/TerminatorV2/TerminatorV2_ETH.md). Entries are
+then restricted to the
 historically profitable hours via NT8's two time-filter windows
 (entry_window/entry_window2); exits/stops always manage regardless of
 window, so a position can legitimately carry from the evening into the
@@ -38,7 +39,7 @@ independently re-optimized to atr_mult=3.25/atr_period=28 (sl varied
 final pick uses the walk-forward's own converged params rather than the
 single full-sample grid's nominal peak (mult=3.0/period=20, which tested
 almost as well but was chosen by only one grid, not five independent
-ones). See strategy/TerminatorV2.md revision (6).
+ones). See NinjaScript/TerminatorV2/TerminatorV2.md revision (6).
 
 IMPORTANT: this supersedes BOTH earlier configs --
 strategies/terminator_evening.py (net $15,623, Sharpe 2.76 -- was thought

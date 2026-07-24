@@ -125,6 +125,7 @@ timestamps were **ET wall clock, not UTC** (fixed in reduction, cache v2).
   strategy keying off a renko bar's HIGH/LOW sees exactly the values NT8 does,
   not just the close. Assigning the breakout tick to the next bar (rule 9)
   also moved that tick's volume and fill span by one tick per bar, which
-  re-validated the r100-4 Terminator numbers (see strategy/TerminatorV2.md).
+  re-validated the r100-4 Terminator numbers (see
+  NinjaScript/TerminatorV2/TerminatorV2.md).
 - Fills in this backtester never depend on renko prices (they resolve on
   real ticks), so none of this affects fill fidelity — only signal timing.

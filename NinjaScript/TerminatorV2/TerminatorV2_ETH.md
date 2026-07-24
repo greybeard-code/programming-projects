@@ -70,7 +70,7 @@ compliance benefit.
 
 Needs a **session template spanning 18:00 ET → 16:55 ET next day** (flatten
 positions/cancel orders at session end — this is what enforces flat-by-16:55,
-independent of the entry windows) plus **Terminator_V2 v2.4.2**'s dual windows
+independent of the entry windows) plus **Terminator_V2 v2.4.3+**'s dual windows
 + *Time Filter Entries Only* mode: Use Time Filter = true, Entries Only = true,
 Flatten At Window End = false, and **two windows, each bounded by the 16:55
 close** — Filter 1 **153000–165500**, Use Time Filter 2 = true, Filter 2

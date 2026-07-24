@@ -136,7 +136,8 @@ plotly, tzdata, pytest — no pandas/polars, keep it that way unless needed).
   sequence-aware loader now; BARS_VERSION bumped (rebuilds the bar cache
   transparently). Verified: identical-OHLC 61.1% → 99.8% on the r60-3
   export. Headline numbers barely moved (Terminator champion $22,409 →
-  $22,422; see strategy/TerminatorV2.md and strategy/GodZillaKilla.md for
+  $22,422; see NinjaScript/TerminatorV2/TerminatorV2.md and
+  strategy/GodZillaKilla.md for
   full before/after) — the bug was real but the champion's SAR signal
   turned out robust to it. If you see this bug pattern again (bar mismatch
   clustering right at midnight ET) on some OTHER as-yet-untested renko
@@ -149,8 +150,9 @@ plotly, tzdata, pytest — no pandas/polars, keep it that way unless needed).
   overnight-session support) is therefore ONE compliant trading day: it
   flattens once, before the *next* halt, and never holds a position through
   any halt — this is a materially different (and much better) framing than
-  restricting trading to a short daytime box. See TerminatorV2.md §3 and
-  TerminatorV2_ETH.md §4 for why this matters.
+  restricting trading to a short daytime box. See
+  NinjaScript/TerminatorV2/TerminatorV2.md §3 and TerminatorV2_ETH.md §4
+  for why this matters.
 - **Apex rule set** (the modeled prop-firm rules, per user 2026-07-09):
   trailing drawdown **$2,000** — `PropFirmConfig.threshold` in account.py now
   defaults to $2,000 (corrected from $2,500 on 2026-07-09; the CLI
@@ -260,10 +262,35 @@ FlattenAtEnd=true $16,146 (−28%, the carry is real profit); FlattenAtEnd=
 false $21,907 but BREACHES (−$26 headroom, holds through out-of-window
 reversal signals). So the champion needs entries-only semantics. Modeled in
 Python via terminator_v2.py flags `flatten_at_window_end` /
-`window_blocks_reversal` (both default off). Terminator_V2.cs bumped to
-v2.4.2 with a **Time Filter Entries Only** mode (gates entries, reversal exit
-always fires, window-end flatten disabled) — inspected but NOT yet
-NT8-compiled; build + compare_nt8 before live. See TerminatorV2.md §9.
+`window_blocks_reversal` (both default off). Terminator_V2.cs has a **Time
+Filter Entries Only** mode (gates entries, reversal exit always fires,
+window-end flatten disabled) — see NinjaScript/TerminatorV2/TerminatorV2.md §9.
+- **Terminator_V2.cs branch merge — v2.4.3, 2026-07-23.** The .cs had FORKED
+  into two lineages that each shipped a **"v2.4.1" for different changes**:
+  `NinjaScript/TerminatorV2/` (the live line — manual brackets, dashboard,
+  2nd time window) and `Python/backtester/nt8 code/Terminatorv2/` (labeled
+  "v2.4.2" — entries-only mode + the carried-position Day-PnL fix). Neither
+  was a superset. The two backtester-side features were merged INTO the live
+  line as **v2.4.3**, which compiles clean, and the duplicate `.cs` under
+  `nt8 code/Terminatorv2/` was **DELETED** — it had taken three real commits
+  of feature development (`91ad407`, `11724d0`, `67748b1`), which is exactly
+  how the collision happened. Recoverable from git history if ever needed.
+  Entries-only overrides BOTH windows' flatten flags (the live line has an
+  independent flag per window; the old 2.4.2 had one shared flag).
+  REMAINING: Playback + compare_nt8 trade-list certification before live —
+  the merge is compile-verified, not behavior-verified.
+- **Terminator lives OUTSIDE this project.** As of 2026-07-23 all Terminator
+  material — `Terminator_V2.cs`, the evaluation reports (`TerminatorV2.md`,
+  `_ETH`, `_PKfunded`), NT8 templates, and committed trade lists/sweeps —
+  is in **`NinjaScript/TerminatorV2/`** at the monorepo root, NOT in
+  `strategy/` here. This backtester still owns the Python ports
+  (`strategies/terminator_*.py`) and generates its runs into `reports/`
+  (gitignored); write findings up in the reports over there. Do not create a
+  second copy of the `.cs` or the docs under `Python/backtester/`.
+  General rule this follows: **your own NinjaScript lives in
+  `NinjaScript/<Project>/`; other people's code** (e.g. Playr101's
+  GodZillaKilla) **gets snapshotted under `nt8 code/`** — which is why
+  `nt8 code/GodZillaKilla/` legitimately stays.
 
 Validation reference run (EmaCross, MNQ 1m, defaults, cache v2/v3 —
 post-timestamp-fix 2026-07-05): net ~-$2,125, 2102 trades, WR 33.4%,

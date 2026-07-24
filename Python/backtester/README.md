@@ -85,7 +85,7 @@ same export. If you pulled this repo before that fix and have a populated
 `.cache\bars\`, no action needed — the cache version bump forces a
 transparent rebuild on next use. Headline strategy results computed before
 the fix should be treated as approximate for any renko-bar strategy using
-an overnight session; see `strategy/TerminatorV2.md` and
+an overnight session; see `NinjaScript/TerminatorV2/TerminatorV2.md` and
 `strategy/GodZillaKilla.md` for the specific before/after numbers on this
 project's two reference strategies (both moved only slightly).
 

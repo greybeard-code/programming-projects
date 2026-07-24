@@ -1,4 +1,9 @@
-"""Terminator_V2 core port (from Terminator_V2.cs v2.4.2, NT8).
+"""Terminator_V2 core port (from Terminator_V2.cs v2.4.3, NT8).
+
+Authoritative .cs, and all Terminator docs/templates/backtest artifacts, live in
+NinjaScript/TerminatorV2/ at the monorepo root. See
+NinjaScript/TerminatorV2/TerminatorV2.md §10 for the branch-merge history (a
+duplicate .cs that had forked under Python/backtester/ was deleted 2026-07-23).
 
 The NT8 original is an ATR trailing-stop stop-and-reverse: a chandelier-style
 trail line follows price at ATRMult * ATR(ATRPeriod); a close crossing above

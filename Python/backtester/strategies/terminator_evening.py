@@ -20,7 +20,7 @@ profitable hours, and beats this config outright: net $22,409, Sharpe 3.90,
 MC breach 0.4%, pass $3K eval 99.6%, walk-forward validated (5/5 OOS
 windows profitable). There is no longer a reason to use this file over
 terminator_rec.py for any purpose other than historical comparison. See
-strategy/TerminatorV2.md revision (6).
+NinjaScript/TerminatorV2/TerminatorV2.md revision (6).
 """
 import importlib.util
 from pathlib import Path

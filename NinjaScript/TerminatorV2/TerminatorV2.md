@@ -1,12 +1,18 @@
 # Terminator_V2 — Evaluation Report
 
-**Source:** `Terminator_v2.4.2\Strategies\Terminator_V2.cs` (NT8, v2.4.2)
+**Source:** `NinjaScript/TerminatorV2/Terminator_V2.cs` (NT8, **v2.4.3**) —
+kept byte-identical to `Documents\NinjaTrader 8\bin\Custom\Strategies\`.
+Behaviour below was measured against the signal/window logic now in v2.4.3;
+see §10 for the branch-merge history and why "v2.4.2" is not installable.
 **Data:** 2024-12-16 → 2026-07-03 (510 calendar days, 400 in-session trading
 days), tick-level L1 replay, MNQ.
-**Python port:** `strategies/terminator_v2.py` (base engine) ·
-`strategies/terminator_rec.py` (recommended config below).
-Tearsheet: `reports/TerminatorRec_MNQ.html` · Evaluated 2026-07-09 (all
-times US/Eastern).
+**Python port:** `Python/backtester/strategies/terminator_v2.py` (base engine) ·
+`.../terminator_rec.py` (recommended config below). Paths below that are not
+repo-rooted are relative to `Python/backtester/`.
+Tearsheet: `Python/backtester/reports/TerminatorRec_MNQ.html` (gitignored —
+regenerate via *Reproduce*) · Evaluated 2026-07-09 (all times US/Eastern).
+Committed trade lists / sweeps for these runs are in `backtest/` next to this
+file; the NT8 template is in `templates/`.
 
 ## 1. What the strategy is
 
@@ -196,9 +202,10 @@ Both prior open items are now resolved; one live-account question remains
 
 ## 8. NT8 settings
 
-**Requires Terminator_V2 v2.4.2+** (adds the second time window and the
-*Time Filter Entries Only* mode — see §9; earlier versions cannot reproduce
-this config, they lose 28% of P&L or breach the floor).
+**Requires Terminator_V2 v2.4.3+** (the second time window and the *Time
+Filter Entries Only* mode — see §9; earlier versions cannot reproduce this
+config, they lose 28% of P&L or breach the floor). Do **not** go looking for
+a "v2.4.2" to install — see §10.
 
 - **Session template** spanning **18:00 ET → 16:55 ET next day**, set to
   flatten positions / cancel orders at session end. **This is what makes the
@@ -218,19 +225,23 @@ The recommended config depends on **entries-only** window semantics: the
 window blocks new entries, but an opposite SAR signal still exits the live
 position, and a position may carry across the out-of-window gap until a
 signal / hard stop / session flatten. The two window modes the C# had before
-v2.4.2 were measured against this over the full 510 days ($2,000 floor):
+entries-only existed were measured against this over the full 510 days
+($2,000 floor):
 
 | Window semantics | Net | Sharpe | max DD | $2,000 floor |
 |---|---|---|---|---|
-| **entries-only** (v2.4.2, recommended) | $22,409 | 3.90 | −$1,488 | survives ($678) |
+| **entries-only** (v2.4.3, recommended) | $22,409 | 3.90 | −$1,488 | survives ($678) |
 | FlattenAtEnd=true (force-flat at window end) | $16,146 | 3.23 | −$1,530 | survives ($808) |
 | FlattenAtEnd=false (reversal exit blocked out of window) | $21,907 | 3.00 | −$2,003 | **BREACHES (−$26)** |
 
 FlattenAtEnd=true throws away the overnight/morning carry (−$6,263, −28%);
 FlattenAtEnd=false keeps the P&L but holds through reversal signals outside
-the window, deepening drawdowns until it breaches. v2.4.2's *Time Filter
-Entries Only* gates entries while letting the reversal exit always fire and
-disabling the window-end flatten — reproducing the entries-only column.
+the window, deepening drawdowns until it breaches. The *Time Filter Entries
+Only* mode gates entries while letting the reversal exit always fire and
+disabling the window-end flatten — reproducing the entries-only column. In
+v2.4.3 it suppresses **both** windows' flatten flags (`Flatten At Window End`
+and `Flatten At Window 2 End`), and both are hidden in the property grid
+while it is on.
 
 **Flat at 16:55 vs the entry windows — two separate things.** Being flat by
 16:55 every trading day is enforced by the **session template** (flatten at
@@ -239,14 +250,60 @@ and each must stay on one side of the close: **15:30–16:55** and
 **18:00–22:55** (never a single window spanning 16:55). The entries-only
 carry still ends at the session flatten (16:55) — an evening entry can ride
 to the next afternoon but is closed at 16:55, so the position never crosses
-the close either. v2.4.2 adds the second window so the two blocks can be set
+the close either. The second window exists so the two blocks can be set
 without one window crossing 16:55.
 
-The C# change is unit-inspected but **not yet NT8-compiled**; build it and
-validate with `tools/compare_nt8.py` against a Python trade export before
-trading it live.
+## 10. Branch-merge history (v2.4.3, 2026-07-23)
+
+The .cs had **forked into two lineages that each shipped a "v2.4.1" for
+different changes** — which is why an earlier revision of this file told you
+to install a "v2.4.2" that was never in NT8:
+
+| | `NinjaScript/TerminatorV2/` (live) | `Python/backtester/nt8 code/Terminatorv2/` (deleted) |
+|---|---|---|
+| Its "v2.4.1" meant | manual live brackets + 2nd time window | the carried-position Day-PnL fix |
+| Version string | 2.4.1 | 2.4.2 |
+| `TimeFilterEntriesOnly` | absent | present |
+| `EnsureCarriedBaseline` | absent | present |
+| Manual brackets / dashboard | present | absent |
+
+Neither was a superset. **v2.4.3 merges the two backtester-side features into
+the live line** (the newer, larger one), because losing the manual-bracket and
+dashboard work to regain entries-only would have been the worse trade:
+
+1. `TimeFilterEntriesOnly` — property, the `ShouldFlattenAtWindowEnd()`
+   suppression, the `EntryBlockReason(dir, ignoreWindow)` overload, and the
+   clean-split reversal call site. Adapted on merge: the live line has an
+   independent flatten flag *per window*, so entries-only overrides both
+   (the old 2.4.2 had a single shared flag).
+2. `EnsureCarriedBaseline` — the carried-position unrealized baseline is now
+   captured at the first realtime evaluation instead of inside
+   `OnStateChange(Realtime)`, where `GetUnrealizedProfitLoss()` can return
+   0/stale and leak historical P&L into live Day PnL. Matters here because
+   the recommended config routinely carries a position across that boundary.
+   A discarded carried position now contributes exactly $0.
+
+**Going forward:** everything Terminator — the `.cs`, these reports, NT8
+templates, and backtest artifacts — lives in **`NinjaScript/TerminatorV2/`**.
+`Terminator_V2.cs` there is authoritative and is kept byte-identical to the
+NT8 `bin\Custom\Strategies\` copy (that path is a deploy target, not a second
+home). The duplicate `.cs` under `Python/backtester/nt8 code/Terminatorv2/`
+was **deleted on 2026-07-23** — it was never a passive snapshot, it took three
+real commits of feature development (`91ad407`, `11724d0`, `67748b1`) while
+the live line was independently gaining manual brackets, which is exactly how
+two different changes both ended up called v2.4.1. Its contents are recoverable
+from git history; its NT8 template was rescued to `templates/`. Do not
+re-create a working copy of this `.cs` anywhere else, and do not reuse the
+version numbers 2.4.1 or 2.4.2.
+
+**Status:** v2.4.3 compiles clean (Roslyn, against the installed NT8
+assemblies). That is compile-verified, **not behavior-verified** — run
+Playback with the §8 settings and validate with `tools/compare_nt8.py`
+against a Python trade export before trading it live.
 
 ## Reproduce
+
+Run from `C:\Dev\programming-projects\Python\backtester\`:
 
 ```powershell
 .venv\Scripts\python cli.py strategies\terminator_rec.py --mc-target 3000
