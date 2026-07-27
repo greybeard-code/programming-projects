@@ -47,3 +47,15 @@ class GodTradesZeus(GodTrades):
     spiderweb_suppress = True
     spiderweb_distance_ticks = 100
     spiderweb_line_count = 5
+
+    # mirrors gbZeus MaxStopTicks: skip a signal whose candle-back stop would be
+    # wider than this many ticks (0 = off). Bounds per-trade risk.
+    max_stop_ticks = 0
+
+    def _submit_entry(self, sig):
+        if self.max_stop_ticks > 0 and sig.source != "RE":
+            tick = self._broker.spec.tick_size
+            ref = self.engine._last_close
+            if abs(ref - sig.stop) / tick > self.max_stop_ticks:
+                return
+        super()._submit_entry(sig)
