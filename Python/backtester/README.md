@@ -49,7 +49,24 @@ Order management (ATM-style): `move_stop(price)`, `move_target(price)`,
 `move_stop_to_breakeven(offset_ticks=)`, and `stop_order` / `target_order` /
 `working_orders` for direct inspection — call from `on_bar` to trail stops.
 State: `self.position`, `self.flat`, `self.avg_price`, `self.balance`.
-Indicators (incremental, NT8-style): `EMA, SMA, ATR, RSI, Highest, Lowest`.
+Indicators (incremental, NT8-style): `EMA, SMA, Bollinger, ATR, RSI,
+EfficiencyRatio, Highest, Lowest`.
+
+**Multi-timeframe & tick-level strategies:** declare `secondary_periods =
+["15m"]` to get `on_secondary_bar(bar, bars, period)` fired the instant each
+secondary bar closes (no look-ahead) and `self.secondary(period)` for its
+history. Defining `on_tick(ts, price, index)` switches that run to a
+per-event resolver — orders submitted in `on_tick` fill on later events only
+— for strategies that need intrabar reaction; strategies that define neither
+stay on the fast vectorized path.
+
+**Confluence / NT8-template-driven strategies:** `backtester/nt8config.py`
+parses saved NT8 ATM templates and strategy-template XML (brackets,
+breakeven, tiered trailing, bar type, time windows) so a live NT8 config can
+drive a Python backtest directly; `backtester/atm.py` executes the resulting
+multi-bracket exits. `sweep_confluence.py` sweeps which signal engines are
+required and how many must agree. See `strategies/godzilla_killa.py` for a
+worked example (six independent signal engines voting per bar).
 
 ## Bar types
 
@@ -146,18 +163,31 @@ and walk-forward efficiency with Davey's verdict (< 0.5 = likely curve-fit).
 
 ## Prop-firm simulation
 
-The trailing threshold (modeled on Apex's rule set) trails the **intratrade**
-equity peak (unrealized included) and, by default, locks at start balance +
-$100. A breach is equity touching the floor.
+The trailing threshold (modeled on Apex's real rule set) trails the
+**intratrade** equity peak (unrealized included) and, by default, locks at
+start balance + a small buffer. A breach is equity touching the floor.
 
 ```
---balance 50000 --prop-threshold 2500     # 50K account defaults
+--balance 50000 --prop-threshold 2000     # 50K account defaults ($2,000)
 --prop-halt                               # stop the test at the breach
 --prop-threshold 0                        # disable
 ```
 
 The console summary reports either the breach timestamp or the minimum
 headroom that survived; the tearsheet plots the floor under the equity curve.
+
+Two further Apex rules are modeled:
+
+- **Max position size** — `ContractSpec.apex_max_position` (6 full-size minis
+  / 60 micros) is enforced by the broker automatically per symbol; override
+  via `Strategy.max_position` (`0` disables).
+- **30-second minimum hold** — `Strategy.min_hold_s = 30` blocks
+  `close_position()` until a position has been held that long (`force=True`
+  bypasses it for risk stand-downs like a daily-loss lock). Every run also
+  *reports* sub-30-second exposure (trade count, $ P&L) regardless of whether
+  it's enforced, since a real account may flag or void those trades even
+  when the backtest doesn't gate them — check this before trusting a result
+  built on very short holds.
 
 ## Monte Carlo
 
@@ -201,7 +231,5 @@ tick streams.
 
 ## Not yet implemented
 
-- `on_tick` strategies (bar-driven only; tick-accurate fills already handled)
 - L2 depth / queue-position simulation
-- Parameter sweeps (run the CLI in a loop for now)
-- Multi-symbol portfolios
+- Multi-symbol portfolios (one symbol per `Backtest` run)
