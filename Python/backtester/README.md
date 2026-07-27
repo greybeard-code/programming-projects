@@ -231,5 +231,4 @@ tick streams.
 
 ## Not yet implemented
 
-- L2 depth / queue-position simulation
 - Multi-symbol portfolios (one symbol per `Backtest` run)

@@ -104,5 +104,7 @@ Build order informed by the books:
 2. Walk-forward runner (IS/OOS 5:1, ≥5 windows).
 3. Parameter sweep with ±20% sensitivity plateaus built in.
 4. OIB research support: add prevailing bid/ask *sizes* to the reduced cache
-   — our L1/L2 data can backtest OIB where NT8 cannot.
+   — our L1 data can backtest OIB where NT8 cannot (L2 depth was investigated
+   but the recorded L2 files are effectively empty — depth was never captured
+   by the NRD recorder — so this stays L1-only).
 5. Carver vol-target sizing helper.
