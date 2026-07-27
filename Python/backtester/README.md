@@ -5,6 +5,29 @@ Tick-level futures backtester for NinjaTrader Market Replay data
 Built for fast iteration on intraday prop-firm strategies before porting
 them to NinjaTrader 8.
 
+## New here?
+
+1. Copy or download this whole `backtester` folder onto your machine (it's
+   self-contained — code, tests, and docs; the tick data itself lives
+   separately, see `BACKTESTER_DATA_ROOT` below).
+2. Open **Claude Code in this folder** as your working directory. It
+   auto-loads `CLAUDE.md`, which has the architecture, conventions, and a
+   full writeup of the validated GodZillaKilla confluence settings — you
+   don't need to paste anything in for Claude to see it.
+3. Point your own tick data at it: set `BACKTESTER_DATA_ROOT` to wherever
+   your NinjaTrader Market Replay Parquet repo lives (same folder layout as
+   the path above), or ask Claude to help you get data in place.
+
+A good first prompt to paste in:
+
+```
+I just set up this backtester repo. Read CLAUDE.md and README.md to get
+oriented, then walk me through running my first backtest. I'd like to
+experiment with variations on the GodZillaKilla confluence strategy
+settings documented in CLAUDE.md — help me set up a few of my own configs
+to test.
+```
+
 ## Quick start
 
 ```powershell
