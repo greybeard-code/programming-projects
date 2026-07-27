@@ -202,7 +202,83 @@ plotly, tzdata, pytest — no pandas/polars, keep it that way unless needed).
   was already $1.04 before this calibration, so pre-existing MNQ results
   (incl. the Terminator champion) are unaffected.
 
-## State / roadmap (updated 2026-07-04)
+## GodZillaKilla confluence backtest — validated configs (2026-07-26)
+
+A multi-day study (MNQ, r70-4 ninZaRenko, full history 2024-12-16..2026-07-17,
+1 contract unless noted) starting from a user-specified 4-of-6-engine gate
+ended up producing the most validated, actionable result in this repo. Full
+narrative is in the session's Word docs (`reports/GodZillaKilla_Backtest_
+Findings.docx`, `GodZillaKilla_RealMoney_ReEvaluation.docx` — both gitignored,
+regenerate via the scratch scripts noted below if needed); this is the
+distilled, load-bearing summary. **No committed `strategies/*.py` file
+encodes this yet** — configure a `GodZillaKilla()` instance per the settings
+below (see `strategies/godzilla_killa.py` for the attribute names), same
+pattern as the `_run` functions in the (uncommitted, scratchpad-only) sweep
+scripts this study used.
+
+**Methodology, so the numbers below can be trusted without rederiving them:**
+the strategy's raw backtest looked profitable almost everywhere at first, but
+most of that P&L was sub-30-second scalps that Apex's real 30s minimum-hold
+rule would void (measured as "rule-adjusted net" = raw net minus sub-30s
+*winners*, a conservative estimate — this rule cannot be enforced in the sim
+itself because GZK's exits are broker-side ATM brackets, `min_hold_s` only
+gates `close_position()`). Only an evening entry window survives that rule
+honestly; walk-forward on the original strict gate was UNINFORMATIVE
+(some OOS folds had exactly 1 trade); relaxing to a looser gate unlocked
+enough trades for a real out-of-sample verdict; a **zero-optimization
+fixed-config check** (one pinned config, run once, sliced into time segments
+it was never tuned on) is what actually validated the edge — it overturned
+two false alarms from the walk-forward stage (an apparent Q1'26 "regime
+failure" and a low walk-forward-efficiency score both turned out to be
+optimizer selection-bias artifacts, not real problems, once optimization was
+removed entirely).
+
+**Gate (both configs below):** all 6 signal engines *disabled except*
+TH (ThunderZilla) + PA (PanaKanal) + SJ (SuperJump); `set1_required=3`
+(all 3 must agree — looser than the user's original 4-of-6-with-KO/SU/NC-
+available ask, which only fired ~2.3x/month, too rare to validate).
+1-bar confirmation. Entry window **20:00-20:45 ET** (8:00-8:45pm). Windows
+past ~21:30 ET decay (trades get slower but the edge disappears); the
+9:30-10:15am morning window is a real but materially worse-risk-adjusted
+alternative (see below).
+
+- **Prop-firm version** (Apex $2,000 trailing floor; this is what the CLI's
+  `--prop-threshold` / `PropFirmConfig` model): flat exits, **TP 60 / SL 200
+  ticks**, **3 contracts** on a 50K account. Backtested: net $2,803/19mo,
+  WR 82.9%, PF 1.39, maxDD -$830 (survives w/ $1,159 headroom), Monte Carlo
+  (5000 sims) P(breach $2k)=13%, **P(pass a $3k eval before breaching)=56%**
+  — the first config in this whole project with a real eval-pass
+  probability (1 contract alone makes too little to ever reach $3k: 0% pass).
+  6 contracts barely improves pass odds (59%) for 3x the breach risk (45%);
+  9 contracts breaches outright (net/DD math: -$277/contract maxDD x N
+  crosses the $2k floor around 7x). **Do not run this on NQ** — full-size NQ
+  is 10x MNQ's dollar value, so even 1 NQ contract overshoots the floor
+  (flat exit: maxDD -$4,531, 75% MC breach; even a hand-tuned tight SL60
+  survives by only $213, a coin-flip 48% breach) — micros are the only way
+  to size into the validated 3-contract sweet spot.
+- **Real-money version** (no prop-firm rules — no 30s min-hold, no trailing
+  floor; this is `prop=None` in `Backtest(...)`, i.e. omit `--prop-threshold`
+  or pass 0): the stop TIGHTENS from 200 to **TP 60 / SL 150 ticks** (no
+  floor to protect, so the tighter stop wins outright: more net, better
+  Sharpe, smaller drawdown, at any contract count you're comfortable
+  sizing to your own risk tolerance — no external cap). Backtested at 1
+  contract: net $1,111/19mo (~140 trades, ~7.4/mo), WR 80%, PF 1.52,
+  Sharpe 1.83, maxDD -$227. **Further upgrade, confirmed real:** set
+  ThunderZilla's `thunder_params['trend_period'] = 300` (default 200, SMA)
+  — net rises to $1,178, Sharpe to 2.05, maxDD unchanged, on ~4% fewer
+  trades (skips a few marginal signals) — a clean improvement with no
+  downside on this window. Trade logs (ET timestamps) for all combos:
+  `reports/GZK_realmoney_MNQ_8pm_TP60SL150{,_TH300}_trades.csv` (gitignored,
+  regenerate if missing).
+- **Morning window (9:30-10:15am ET, TP80/SL200)** is a real, higher-
+  frequency (~48 trades/mo), higher-absolute-dollar alternative under
+  either prop or real-money framing, but materially riskier: real-money net
+  $1,973 (SMA=300: $2,793) vs. evening's $1,111-$1,178, at **7.7x the max
+  drawdown** for less than 2x the profit and roughly half the Sharpe.
+  Prefer evening for capital preservation; morning only if raw trade
+  frequency/dollars matter more than risk-adjusted quality.
+
+## State / roadmap (updated 2026-07-26)
 
 Done: engine + fills + brackets + order modification, Apex tracker + daily
 loss limit, metrics (Sharpe/Sortino/Calmar/gross-vs-net), tearsheet + trades
@@ -291,6 +367,27 @@ window-end flatten disabled) — see NinjaScript/TerminatorV2/TerminatorV2.md §
   `NinjaScript/<Project>/`; other people's code** (e.g. Playr101's
   GodZillaKilla) **gets snapshotted under `nt8 code/`** — which is why
   `nt8 code/GodZillaKilla/` legitimately stays.
+
+- **Recent small additions (2026-07-26):** `strategies/god_trades_zeus.py`
+  gained `max_stop_ticks` (0=off) — skips a signal whose candle-back stop
+  would be wider than N ticks, mirroring gbZeus's `MaxStopTicks`.
+  `strategies/terminator_mcl.py` (MCL/micro-crude Terminator_V2 config,
+  r40-2, evening-only) **FAILED validation and must not be deployed**: MCL
+  only has ~4 months of parquet history, and the one real out-of-sample
+  test (walk-forward) came back WFE 0.41 with no parameter convergence —
+  the in-sample "Sharpe 3.58" story doesn't survive contact with OOS data;
+  kept in the repo only as a recorded negative result, re-evaluate only if
+  MCL gets a multi-year history. `strategies/terminator_scaleout.py` is an
+  unfinished research build testing the ATM scale-out exit path (TP1/TP2/
+  runner via `backtester/atm.py`) on the validated Terminator champion's
+  signal/session — not yet swept. `tools/databento_fill.py` fills gaps in
+  the L1 Parquet cache from Databento's TBBO schema when the NT8 recorder
+  missed a day (stdlib HTTP only, no pandas dependency, needs
+  `DATABENTO_API_KEY`). Note: L2 (market depth) was investigated and
+  abandoned — the NRD recorder never actually captured depth (recorded L2
+  parquet files are effectively empty rows), so L2-anything is a dead end,
+  not a roadmap item; the repo's real order-flow edge (aggressor side +
+  quote sizes, see below) is L1-only.
 
 Validation reference run (EmaCross, MNQ 1m, defaults, cache v2/v3 —
 post-timestamp-fix 2026-07-05): net ~-$2,125, 2102 trades, WR 33.4%,
