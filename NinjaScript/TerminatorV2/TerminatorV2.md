@@ -3,7 +3,8 @@
 **Source:** `NinjaScript/TerminatorV2/Terminator_V2.cs` (NT8, **v2.4.3**) —
 kept byte-identical to `Documents\NinjaTrader 8\bin\Custom\Strategies\`.
 Behaviour below was measured against the signal/window logic now in v2.4.3;
-see §10 for the branch-merge history and why "v2.4.2" is not installable.
+see §10 for the branch-merge history and §11 for the Playback certification
+(entries-only logic confirmed; live P&L trails backtest ~25% on renko drift).
 **Data:** 2024-12-16 → 2026-07-03 (510 calendar days, 400 in-session trading
 days), tick-level L1 replay, MNQ.
 **Python port:** `Python/backtester/strategies/terminator_v2.py` (base engine) ·
@@ -296,10 +297,58 @@ from git history; its NT8 template was rescued to `templates/`. Do not
 re-create a working copy of this `.cs` anywhere else, and do not reuse the
 version numbers 2.4.1 or 2.4.2.
 
-**Status:** v2.4.3 compiles clean (Roslyn, against the installed NT8
-assemblies). That is compile-verified, **not behavior-verified** — run
-Playback with the §8 settings and validate with `tools/compare_nt8.py`
-against a Python trade export before trading it live.
+**Status:** v2.4.3 compiles clean (Roslyn) **and is now Playback-certified** —
+see §11.
+
+## 11. Playback certification (v2.4.3, 2026-07-27)
+
+Ran the §8 recommended config in NT8 Market-Replay Playback on **MNQ,
+2026-06-21 → 2026-07-17** (22 trading days) and compared the executions export
+to the Python champion (`terminator_rec.py`, same window) via
+`tools/convert_nt8_executions.py` → `tools/compare_nt8.py --tz
+America/New_York --tolerance-s 120`.
+
+**Entries-only logic — CERTIFIED.**
+- **0 of 122 NT8 entries fell outside the windows.** (The pre-fix run, before
+  entries-only was configured correctly, had **474** out-of-window entries —
+  so this directly confirms the `TimeFilterEntriesOnly` gate works.)
+- **115 of 120 Python trades matched** an NT8 trade (same direction/qty, entry
+  within tolerance). 5 only-ours, 7 only-nt8.
+- **Median entry delta +1 tick, median exit delta −1 tick** — the typical
+  trade reproduces tick-exact.
+- The evening→overnight **carry trades appear and match**, confirming the
+  entries-only carry end-to-end.
+
+**P&L fidelity — a real caveat, not a bug.** Gross P&L over the window:
+
+| | trades | gross |
+|---|---|---|
+| Python model | 120 | **$2,293** |
+| NT8 Playback | 122 | **$1,721** |
+| difference | | **−$572 (−25%)** |
+
+The gap is **ninZaRenko live-accumulation drift** — Playback builds bricks
+live (tick-by-tick, with reconnect re-anchor offsets that are *never* a
+multiple of T and irreproducible by any backtest; see CLAUDE.md renko notes).
+It is **not a logic bug**: deltas are random-signed, the median is 1 tick, and
+the gap is dominated by a few drift outliers (one exit filled **488 ticks**
+late, one entry **156 ticks** off) plus the 12 unmatched trades where the
+diverging brick streams produced structurally different signals. Entry deltas
+mean +2.4 tk / exit mean −8.66 tk (outlier-pulled).
+
+**Takeaway:** the backtest figures ($22,422 net, $677 floor headroom, 2.0% MC
+breach) are a **ceiling, not an expectation** — live renko drift shaved 25% off
+gross in this 4-week sample, so treat floor headroom / MC breach as
+*optimistic* vs live, and don't size up on backtest headroom until live drift
+is observed over more than one window. One 4-week sample doesn't fix the drift
+magnitude (it's random and could average nearer zero, or this window could be
+lucky), but the direction is firm: **live < backtest, by enough to respect.**
+
+**Scope note for gbTerminator:** this certifies the *logic*, which gbTerminator
+(the GreyBeard fork) shares. It does **not** cover gbTerminator's order-name
+rename (`TtLong`→`GbtLong`) — this replay used the old `Tt*` names. Confirm
+stops attach on the gbTerminator account separately (live-observed working as
+of 2026-07-27).
 
 ## Reproduce
 
