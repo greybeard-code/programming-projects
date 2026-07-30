@@ -161,8 +161,15 @@ def load_atm_template(path: str | Path) -> AtmSpec:
 
 # BarsPeriodTypeSerialize values -> BarSpec strings. 12345 is the registered
 # custom-type id of ninZaRenko (Value=brick, Value2=trend); verified against
-# the Terminator PK funded template (100/4 -> r100-4).
+# the Terminator PK funded template (100/4 -> r100-4). 20821 is SaberRenko's
+# (Value=bar size, BaseBarsPeriodValue=offset, Value2=time filter seconds —
+# NOTE Value2 means something different per bar type: ninZaRenko's trend
+# threshold vs SaberRenko's time filter; see research/SaberRenko_spec.md §7
+# Phase 4). BaseBarsPeriodValue is present but unused (=1) in ninZaRenko
+# templates — confirmed against the same reference template used for
+# _BAR_TYPE_RENKO.
 _BAR_TYPE_RENKO = 12345
+_BAR_TYPE_SABER = 20821
 
 
 @dataclass
@@ -213,9 +220,13 @@ def _parse_bar_spec(el: ET.Element, name: str) -> str:
     value2 = _int(el.find("Value2"))
     if type_id == _BAR_TYPE_RENKO:
         return f"r{value}-{value2}"
+    if type_id == _BAR_TYPE_SABER:
+        offset = _int(el.find("BaseBarsPeriodValue"))
+        return f"s{value}-{offset}-{value2}"
     raise ValueError(
         f"{name}: BarsPeriodTypeSerialize={type_id} not mapped to a BarSpec "
-        f"(known: {_BAR_TYPE_RENKO}=ninZaRenko). Add the mapping when needed.")
+        f"(known: {_BAR_TYPE_RENKO}=ninZaRenko, {_BAR_TYPE_SABER}=SaberRenko). "
+        "Add the mapping when needed.")
 
 
 def load_strategy_template(path: str | Path) -> StrategyTemplate:

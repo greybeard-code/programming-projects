@@ -124,3 +124,38 @@ def test_strategy_template_reference():
     # missing prop without default raises
     with pytest.raises(KeyError):
         t.get("NoSuchProperty")
+
+
+def test_strategy_template_saber_bar_spec(tmp_path):
+    """SaberRenko's registered type id (20821) maps Value=bar size,
+    BaseBarsPeriodValue=offset, Value2=time filter seconds — a different
+    Value2 meaning than ninZaRenko's trend threshold (see
+    research/SaberRenko_spec.md §7 Phase 4)."""
+    p = tmp_path / "saber.xml"
+    p.write_text(
+        "<StrategyTemplate><StrategyType>X.Y.Z</StrategyType>"
+        "<Strategy><SomeStrategy>"
+        "<BarsPeriodSerializable>"
+        "<BarsPeriodTypeSerialize>20821</BarsPeriodTypeSerialize>"
+        "<BaseBarsPeriodType>Tick</BaseBarsPeriodType>"
+        "<BaseBarsPeriodValue>16</BaseBarsPeriodValue>"
+        "<Value>64</Value><Value2>1</Value2>"
+        "</BarsPeriodSerializable>"
+        "<InstrumentOrInstrumentList>MNQ 06-26</InstrumentOrInstrumentList>"
+        "</SomeStrategy></Strategy></StrategyTemplate>")
+    t = load_strategy_template(p)
+    assert t.bar_spec == "s64-16-1"
+
+
+def test_strategy_template_unknown_bar_type(tmp_path):
+    p = tmp_path / "unknown.xml"
+    p.write_text(
+        "<StrategyTemplate><StrategyType>X.Y.Z</StrategyType>"
+        "<Strategy><SomeStrategy>"
+        "<BarsPeriodSerializable>"
+        "<BarsPeriodTypeSerialize>999</BarsPeriodTypeSerialize>"
+        "<Value>1</Value><Value2>0</Value2>"
+        "</BarsPeriodSerializable>"
+        "</SomeStrategy></Strategy></StrategyTemplate>")
+    with pytest.raises(ValueError, match="not mapped to a BarSpec"):
+        load_strategy_template(p)

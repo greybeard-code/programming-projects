@@ -293,12 +293,15 @@ class Strategy:
 
 @dataclass(frozen=True)
 class BarSpec:
-    """Parsed bar type. kind: 'time' | 'tick' | 'renko'."""
+    """Parsed bar type. kind: 'time' | 'tick' | 'renko' | 'saber'."""
     kind: str
     seconds: int = 0          # time bars
     ticks: int = 0            # tick-count bars: trades per bar
     brick_ticks: int = 0      # renko: bar body height in ticks
     trend_ticks: int = 0      # renko: with-trend close distance from prev close
+    bar_ticks: int = 0        # saber: Bar Size (B), ticks
+    offset_ticks: int = 0     # saber: Offset (O), ticks
+    filter_s: int = 0         # saber: Time Filter, seconds
 
     @property
     def key(self) -> str:
@@ -306,13 +309,34 @@ class BarSpec:
             return f"{self.seconds}s"
         if self.kind == "tick":
             return f"{self.ticks}t"
+        if self.kind == "saber":
+            return f"s{self.bar_ticks}-{self.offset_ticks}-{self.filter_s}"
         return f"r{self.brick_ticks}-{self.trend_ticks}"
 
 
 def parse_barspec(period: str) -> BarSpec:
     """'30s'/'1m'/'5m'/'1h' time bars; '500t' tick bars; 'r8-4' ninZaRenko
-    (brick 8 ticks, trend threshold 4; 'r8' defaults trend to brick/2)."""
+    (brick 8 ticks, trend threshold 4; 'r8' defaults trend to brick/2);
+    's64-16'/'s64-16-2' SaberRenko (Bar Size 64, Offset 16, Time Filter
+    seconds, default 1). See research/SaberRenko_spec.md."""
     p = period.strip().lower()
+    m = re.fullmatch(r"s(\d+)-(\d+)(?:-(\d+))?", p)
+    if m:
+        bar = int(m.group(1))
+        offset = int(m.group(2))
+        filt = int(m.group(3)) if m.group(3) else 1
+        if offset > bar:
+            raise ValueError(
+                f"SaberRenko offset ({offset}) must not exceed bar size "
+                f"({bar}) — an offset larger than the bar degenerates "
+                "(near-every-tick bars); see research/SaberRenko_spec.md §1")
+        if bar % offset != 0:
+            raise ValueError(
+                f"SaberRenko bar size ({bar}) must be a multiple of offset "
+                f"({offset}) to keep closes on the renko grid — e.g. "
+                "s64-16, s100-25; see research/SaberRenko_spec.md §3.4")
+        return BarSpec("saber", bar_ticks=bar, offset_ticks=offset,
+                       filter_s=max(1, filt))
     m = re.fullmatch(r"r(\d+)(?:-(\d+))?", p)
     if m:
         brick = int(m.group(1))

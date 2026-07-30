@@ -29,6 +29,15 @@ def test_parse_barspec():
         parse_barspec("r4-8")                   # trend > brick
     with pytest.raises(ValueError):
         parse_barspec("8 renko")
+    s = parse_barspec("s64-16")                 # time filter defaults to 1s
+    assert (s.kind == "saber" and s.bar_ticks == 64 and s.offset_ticks == 16
+           and s.filter_s == 1 and s.key == "s64-16-1")
+    s2 = parse_barspec("s64-16-2")
+    assert s2.filter_s == 2 and s2.key == "s64-16-2"
+    with pytest.raises(ValueError):
+        parse_barspec("s16-64")                 # offset > bar size
+    with pytest.raises(ValueError):
+        parse_barspec("s70-16")                 # bar size not a multiple of offset
 
 
 def test_build_bars_basic():
