@@ -12,7 +12,7 @@ using NinjaTrader.Data;
 using NinjaTrader.NinjaScript;
 #endregion
 
-//  gbSignalProbe v1.1.0
+//  gbSignalProbe v1.2.0
 //  ---------------------------------------------------------------------------
 //  Late-bound probe for ANY third-party indicator on the chart. It answers the
 //  three questions a closed-source vendor DLL will not:
@@ -85,7 +85,7 @@ namespace NinjaTrader.NinjaScript.Indicators.GreyBeard
 		public string Author => "GreyBeard";
 
 		[Display(Name = "Version", GroupName = "0. Developer", Order = 1)]
-		public string Version => "1.1.0";
+		public string Version => "1.2.0";
 
 		[Display(Name = "Website", GroupName = "0. Developer", Order = 2)]
 		public string Website => "https://greybeardconsulting.net/";
@@ -417,9 +417,18 @@ namespace NinjaTrader.NinjaScript.Indicators.GreyBeard
 				if (!Directory.Exists(dir))
 					Directory.CreateDirectory(dir);
 
-				filePath = Path.Combine(dir, string.Format("gbSignalProbe_{0}_{1}.csv",
+				// Include the target substring: two probes on the same chart/instrument opened in the
+				// same second (the normal case when comparing a vendor and a gb indicator side by side)
+				// would otherwise both resolve to the same filename and one would clobber the other.
+				string tag = string.IsNullOrEmpty(TargetIndicator) ? "all" : TargetIndicator;
+				foreach (char c in Path.GetInvalidFileNameChars())
+					tag = tag.Replace(c, '_');
+				tag = tag.Replace(' ', '_');
+
+				filePath = Path.Combine(dir, string.Format("gbSignalProbe_{0}_{1}_{2}.csv",
 					Instrument.MasterInstrument.Name,
-					DateTime.Now.ToString("yyyyMMdd_HHmmss")));
+					tag,
+					DateTime.Now.ToString("yyyyMMdd_HHmmss_fff")));
 
 				writer = new StreamWriter(filePath, false);
 				Print("gbSignalProbe: logging to " + filePath);
