@@ -194,7 +194,59 @@ for new scripts. The standard (from `GodZillaKilla.cs`, now `gbZeus.cs`):
 - `AutoCloseTimeEditorKey` is a valid alternative editor (see `ORB_TradeSaber.cs`) when the field is
   a flatten/close time rather than a window bound.
 
-## 6. Open items / things to confirm per-project
+## 6. Compile traps (learned the hard way, 2026-08-01)
+
+Two NinjaTrader behaviours that will burn compile cycles on any new gb indicator. Both were hit
+building `gbUltimateSignalsIndicator` / `gbUltimateAIPro`.
+
+### 6.1 Enums used as `[NinjaScriptProperty]` types MUST live in the global namespace
+
+NinjaTrader auto-generates a `#region NinjaScript generated code` wrapper into
+`namespace NinjaTrader.NinjaScript.Indicators`, and it emits custom enum parameter types
+**unqualified**:
+
+```csharp
+public GreyBeard.gbFoo gbFoo(int length, GbFooMode mode, …)   // note: GbFooMode, not GreyBeard.GbFooMode
+```
+
+An enum declared inside `...Indicators.GreyBeard` therefore cannot resolve from there → `CS0246`.
+Declare such enums at global scope, in no namespace at all, with a `Gb` prefix to stay unique in the
+shared Custom assembly:
+
+```csharp
+// no namespace block
+public enum GbFooMode { A, B }
+
+namespace NinjaTrader.NinjaScript.Indicators.GreyBeard { … }
+```
+
+This is why the vendor's `UltimateAIProV3_Enums.cs` has no namespace — it is not sloppiness, it is
+the required workaround. Enums *not* used as `[NinjaScriptProperty]` types can stay namespaced.
+
+### 6.2 Never hand-write the generated region — and avoid self-referencing indicators
+
+NT8 **appends** its generated region on every compile once a type is registered; it does not match
+signatures and update in place. A hand-written copy therefore becomes a duplicate:
+`CS0102` / `CS0111` / `CS0121` / `CS0229` in bulk.
+
+But registration only happens after a successful compile, which creates a deadlock for an indicator
+that calls its **own** factory (the multi-timeframe pattern `MyInd(BarsArray[1], …)` that
+`UltimateAIProV3` uses):
+
+- First build: no region exists yet → the self-call fails with `CS1955`.
+- Hand-write a region to get it compiling → NT8 starts generating one too → duplicates.
+
+**Do not self-reference.** If an indicator needs a higher-timeframe version of its own calculation,
+run that pipeline in-instance against `BarsArray[1]` instead — give the helper engine a
+`barsInProgress` parameter, bind its `Series<T>` to `BarsArray[bip]` rather than `this`, and read
+through `CurrentBars[bip]` / `Closes[bip]` / `Highs[bip]`. `gbUltimateAIPro.ComputeHtfBar()` is the
+worked example. It is also cheaper than spawning a second indicator instance.
+
+Files placed on disk directly never get a region until NT8 generates one, so a normal (non
+self-referencing) indicator compiles fine without it — it just cannot be constructed by name from a
+strategy until after the first successful compile.
+
+## 7. Open items / things to confirm per-project
 
 This doc reflects what's been observed in existing source, not an exhaustive spec. Things that
 may still need a case-by-case decision when starting a new script:

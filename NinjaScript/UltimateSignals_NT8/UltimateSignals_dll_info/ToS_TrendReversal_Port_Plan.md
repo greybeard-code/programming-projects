@@ -273,8 +273,27 @@ had it). **Confirmed compiling clean on the licence holder's install as of 2026-
 Hand-check-the-maths (§6.1) and the signal-count sanity check (§6.2) are still outstanding — do those
 before trusting live output.
 
+**Amended 2026-08-01 after the decompiled vendor source arrived**
+([UltimateSignals_Decoded_Technical_Summary.md](UltimateSignals_Decoded_Technical_Summary.md)).
+Two fidelity fixes to Phase 1, both found by comparing against ground truth:
+
+1. **The latch fires on the transition, not the level.** The source (and the public thinkScript's
+   `buynow`) uses `buy and not buy[1]`; the first draft used `buy` alone, which would re-arm a state
+   that had been stopped out while the raw condition was still true — reachable at warm-up. Fixed,
+   with the raw conditions held in `Series<double>` rather than plain fields so they rewind with
+   NT8's historical recalculation (§4.1 of this plan).
+2. **Warm-up now seeds all four state series**, not just the plots; the first evaluated bar reads
+   `[1]` off each and previously hit an unset value.
+
+Also settled by ground truth: §3 correctly predicted the composition (base Trend Reversal, no VWAP
+or engulfing anywhere in the vendor source), §2.1 correctly predicted the study is symmetric, and
+the inferred plot map was right in full. One thing Phase 2 must respect that this plan did not
+anticipate: the vendor's ZigZag runs on **EMA(High,5) / EMA(Low,5)**, not raw extremes.
+
 **Next:** Phase 2 (ZigZagHighLow port) once Phase 1 has been run side-by-side against
-UltimateSignals on the licence holder's chart.
+UltimateSignals on the licence holder's chart. Note §8 of the decoded summary — there may be no need
+for Phase 2 at all if `UltimateAIProV3` is licensed, since it exposes the same signals with
+user-configurable arrow colours.
 
 Related: [UltimateSignals_Review.md](UltimateSignals_Review.md) ·
 [UltimateSignals_Signals.md](UltimateSignals_Signals.md) ·

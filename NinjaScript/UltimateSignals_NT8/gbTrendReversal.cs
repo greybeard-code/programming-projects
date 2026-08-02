@@ -37,6 +37,10 @@ namespace NinjaTrader.NinjaScript.Indicators.GreyBeard
 		// stop condition clears it -- NOT simply when the raw condition goes false on its own.
 		private Series<double> buyState, sellState;
 
+		// Raw (unlatched) buy/sell conditions, kept as Series so the transition test reads a value
+		// that rewinds with NT8's historical recalculation rather than a stale field.
+		private Series<double> buyCondSeries, sellCondSeries;
+
 		[Display(Name = "Author",  Order = 0, GroupName = "0. Developer")]
 		public string Author => "GreyBeard";
 
@@ -233,8 +237,10 @@ namespace NinjaTrader.NinjaScript.Indicators.GreyBeard
 				fastMa		= EMA(Close, FastLength);
 				slowMa		= EMA(Close, SlowLength);
 
-				buyState	= new Series<double>(this);
-				sellState	= new Series<double>(this);
+				buyState		= new Series<double>(this);
+				sellState		= new Series<double>(this);
+				buyCondSeries	= new Series<double>(this);
+				sellCondSeries	= new Series<double>(this);
 
 				if (!(SuperfastLength < FastLength && FastLength < SlowLength))
 					Print(string.Format("[gbTrendReversal] WARNING: lengths are not strictly increasing (Superfast={0}, Fast={1}, Slow={2}) -- the buy/sell conditions require Superfast < Fast < Slow to ever fire.", SuperfastLength, FastLength, SlowLength));
@@ -250,6 +256,12 @@ namespace NinjaTrader.NinjaScript.Indicators.GreyBeard
 			// Wait for all three MAs to be past their own warm-up before evaluating conditions.
 			if (CurrentBar < SlowLength)
 			{
+				// Seed every state series, not just the plots -- the first evaluated bar reads
+				// [1] off all four and would otherwise hit an unset value.
+				buyState[0] = 0;
+				sellState[0] = 0;
+				buyCondSeries[0] = 0;
+				sellCondSeries[0] = 0;
 				BuyTrigger[0] = 0;
 				SellTrigger[0] = 0;
 				TrendState[0] = 0;
@@ -267,11 +279,25 @@ namespace NinjaTrader.NinjaScript.Indicators.GreyBeard
 			bool stopBuy	= ma9 <= ma14;
 			bool stopSell	= ma9 >= ma14;
 
-			double prevBuy  = CurrentBar >= 1 ? buyState[1]  : 0;
-			double prevSell = CurrentBar >= 1 ? sellState[1] : 0;
+			// Raw conditions are held in Series, not plain fields, so they rewind correctly when
+			// NT8 recalculates historical bars.
+			buyCondSeries[0]  = buyCond  ? 1 : 0;
+			sellCondSeries[0] = sellCond ? 1 : 0;
 
-			double newBuy  = buyCond  && !stopBuy  ? 1 : (prevBuy  == 1 && stopBuy  ? 0 : prevBuy);
-			double newSell = sellCond && !stopSell ? 1 : (prevSell == 1 && stopSell ? 0 : prevSell);
+			double prevBuy      = CurrentBar >= 1 ? buyState[1]      : 0;
+			double prevSell     = CurrentBar >= 1 ? sellState[1]     : 0;
+			double prevBuyCond  = CurrentBar >= 1 ? buyCondSeries[1]  : 0;
+			double prevSellCond = CurrentBar >= 1 ? sellCondSeries[1] : 0;
+
+			// The source latches on the TRANSITION into the condition (buynow = buy and not buy[1]),
+			// not on the condition merely holding. Using the level instead would re-arm a state that
+			// had been stopped out while the raw condition was still true -- reachable at warm-up,
+			// where the state seeds to 0 while buy/sell may already be true.
+			bool buyNow  = buyCond  && prevBuyCond  == 0;
+			bool sellNow = sellCond && prevSellCond == 0;
+
+			double newBuy  = buyNow  && !stopBuy  ? 1 : (prevBuy  == 1 && stopBuy  ? 0 : prevBuy);
+			double newSell = sellNow && !stopSell ? 1 : (prevSell == 1 && stopSell ? 0 : prevSell);
 
 			buyState[0]  = newBuy;
 			sellState[0] = newSell;
