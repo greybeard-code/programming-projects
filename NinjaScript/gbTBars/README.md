@@ -3,10 +3,9 @@
 A GreyBeard build of the **TBars** bar type for NinjaTrader 8 — asymmetric
 trend/reversal bars with a Heikin-Ashi presentation layer.
 
-**Status:** v1.0.0, compiles clean, **not yet validated on a chart.** The
-algorithm is certified against a real NT8 export (see [Evidence](#evidence)),
-but that gate was run against the *vendor* build. gbTBars' own chart-parity run
-is the next step.
+**Status:** v1.0.0, **validated on a live chart 2026-08-05.** The fix works:
+geometry mismatches against the Python port fell from 29 bars to 2 (99.9%
+identical high/low). See [Evidence](#evidence).
 
 Registered on `BarsPeriodType` **91001**, so it **coexists** with the vendor's
 TBars (98765) rather than replacing it. Existing charts keep resolving the
@@ -277,6 +276,44 @@ single tick of divergence anywhere is structurally far more visible.
 
 ---
 
+### gbTBars parity run — 2026-08-05
+
+Identical setup to the vendor gate (MNQ 09-26, Speed 120, 2026-07-19 → 07-31,
+Break at EOD ON). gbTBars emitted 2205 bars, the vendor build 2232.
+
+| metric | vendor TBars | **gbTBars** |
+|---|---|---|
+| matched by close time | 99.1% | **99.2%** |
+| **identical high/low** | 98.7% (29 bad) | **99.9% (2 bad)** |
+| identical close | 91.5% | **92.7%** |
+| identical full OHLC | 79.3% | **80.5%** |
+| volume rule `ours + breakout tick` | 98.3% | **99.5%** |
+
+**Fix 2 is confirmed.** Geometry mismatches fell 29 → 2, and the survivors are
+mid-session, not at session boundaries. The malformed reset bars are gone; that
+also accounts for gbTBars emitting 27 fewer bars than the vendor build.
+
+**This corrects an earlier misattribution.** The vendor gate concluded the
+reset *point* (trading-hours template vs. the port's >30 min gap) was the
+driver of that residual, because forcing the port to reproduce the inversion
+(`reset_carries_dir=True`) moved parity only 78.8% → 79.5%. That test was
+misleading: it reproduced the bug at the *port's* reset points, which don't
+coincide with NT8's, so it never lined up. Removing the bug from the NT8 side
+instead means neither side emits a malformed bar, and the reset-point
+difference turns out to be almost entirely benign.
+
+**What's left is not geometry.** The full-OHLC figure is now dominated by a
+±1 tick disagreement on the two Heikin-Ashi averages — open off by one tick on
+13.4% of bars, close on 7.2%. Both formulas were verified against NT8's own
+stored values, so this is rounding *propagation*, not a wrong formula: one
+divergent bar shifts the next open, which shifts its close, until it self-heals.
+
+**Unrelated finding — an NT8 data hole.** The chart is missing every tick
+between **11:06 and 11:43 ET on Fri 2026-07-24** (mid-RTH), which the parquet
+repo has. That single contiguous block accounts for 439,303 contracts and all
+17 of the port's unmatched bars. Excluding it, high/low parity is **99.9%
+(2182/2184)**. Worth reloading that day's tick data in NT8 before the next run.
+
 ## Backtester
 
 The Python tick-level backtester (`Python/backtester/`) has a matching port:
@@ -305,15 +342,11 @@ Full spec, including the worked geometry and the parity methodology:
 - [x] Parity gate vs. real NT8 chart export — **vendor** build
 - [x] Volume behaviour confirmed
 - [x] gbTBars compiles clean
-- [ ] **gbTBars chart-parity run** ← next
-- [ ] Confirm fix 2 on a live chart (down-session → 18:00 ET reopen)
-- [ ] Session-boundary residual: match the trading-hours template boundary
+- [x] **gbTBars chart-parity run** — 2026-08-05, fix 2 confirmed
+- [ ] Residual ±1 tick on the two HA averages (rounding propagation)
 - [ ] MGC parity (needs contract **MGC 08-26**, window ending 2026-07-28 — the
       recorded contract rolls out after that)
-
-Testable prediction for the next run: because fix 2 aligns gbTBars with the
-port's default reset behaviour, a gbTBars export should score **better than
-79.3%**, with the 29 session-boundary bars shrinking.
+- [ ] Repair the NT8 tick-data hole on 2026-07-24 (see Evidence) and re-run
 
 ---
 

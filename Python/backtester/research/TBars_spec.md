@@ -300,12 +300,18 @@ fills never touch them.
    tie-break mode further is the wrong lever (all three modes were tested
    end-to-end; see §3.2).
 2. **29 bars (1.3%) with genuinely different high/low**, carrying the large
-   deltas (−94 to +71 ticks). These are the session-boundary re-seeds:
-   ~3 per boundary over ~10 sessions. NT8 with Break at EOD on re-seeds at
-   the *trading-hours template* boundary; this port re-seeds on a >30 min
-   trade gap. Running with `reset_carries_dir=True` moved the total only
-   78.8% → 79.5%, so the direction-carry is NOT the driver — the reset
-   *point* is.
+   deltas (−94 to +71 ticks) — the session-boundary re-seeds.
+
+   **CORRECTED 2026-08-05.** This section originally concluded the reset
+   *point* (trading-hours template vs. this port's >30 min gap) was the
+   driver, because `reset_carries_dir=True` moved the total only 78.8% →
+   79.5%. That inference was wrong. The gbTBars parity run (§8.2) fixed the
+   direction carry on the NT8 side and geometry mismatches fell **29 → 2**.
+   The earlier test misled because it reproduced the inversion at the
+   *port's* reset points, which do not coincide with NT8's — reproducing a
+   bug in the wrong places cannot improve agreement. The direction carry was
+   the driver all along; the reset-point difference is almost entirely
+   benign once neither side emits a malformed bar.
 
 **Judgement.** Good enough to use, not yet fully certified. For comparison
 ninZaRenko landed at 96-100% and SaberRenko at 96-97%, but both emit raw
@@ -346,6 +352,30 @@ ends, which never completes and so is never emitted.
 
 The remaining 29 "neither" bars are now exactly the session-boundary
 population as OHLC residual 2 — same root cause, one fix away.
+
+### 8.2 gbTBars parity run — 2026-08-05
+
+Same setup, against `NinjaScript/gbTBars/gbTBars.cs` (the fixed build, own
+BarsPeriodType 91001). 2205 bars vs the vendor's 2232.
+
+| metric | vendor | **gbTBars** |
+|---|---|---|
+| matched by close time | 99.1% | **99.2%** |
+| identical high/low | 98.7% (29 bad) | **99.9% (2 bad)** |
+| identical close | 91.5% | **92.7%** |
+| identical full OHLC | 79.3% | **80.5%** |
+| volume rule confirmed | 98.3% | **99.5%** |
+
+Geometry is now effectively exact; the residual full-OHLC gap is entirely the
+±1 tick HA-average propagation of residual 1 (open 13.4% of bars, close 7.2%).
+Removing the inverted re-seed also removed 27 malformed bars, which is most of
+the bar-count difference.
+
+**NT8 data hole found.** The chart has no ticks between 11:06 and 11:43 ET on
+2026-07-24 (mid-RTH) though the parquet repo does — 439,303 contracts, and all
+17 of the port's unmatched bars. Excluding that window, high/low parity is
+99.9% (2182/2184). It also explains why NT8's bar volumes summed *below* traded
+volume on this run where the vendor run summed above.
 
 ## 9. Remaining after the gate
 

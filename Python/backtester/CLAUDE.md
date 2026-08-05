@@ -136,9 +136,13 @@ plotly, tzdata, pytest — no pandas/polars, keep it that way unless needed).
   were verified against NT8's own stored values — and (b) 29 bars (1.3%) at
   session boundaries, because NT8 with Break at EOD ON re-seeds at the
   trading-hours TEMPLATE boundary while this port re-seeds on a >30 min trade
-  gap. `reset_carries_dir=True` moves the total only 78.8%->79.5%, so the
-  reset POINT is the driver, not the direction carry — fix that first if
-  tighter parity is wanted. The volume gate also exposed a hole on OUR
+  gap. CORRECTED 2026-08-05: an earlier note here blamed the reset POINT,
+  because `reset_carries_dir=True` moved the total only 78.8%->79.5%. Wrong
+  inference — that reproduces the bug at the PORT's reset points, which don't
+  coincide with NT8's. `NinjaScript/gbTBars/` fixes the direction carry on the
+  NT8 side and geometry mismatches fall 29 -> 2 (high/low 99.9%, OHLC 80.5%);
+  the reset-point difference is benign once neither side emits a malformed
+  bar. What remains is purely the +-1 tick HA rounding propagation. The volume gate also exposed a hole on OUR
   side, now FIXED (2026-08-04): a bar still forming at a day-file boundary
   carried its geometry but not its accumulated volume, so bar volumes summed
   0.64% below traded volume; SaberRenko had the identical hole. Both carry
