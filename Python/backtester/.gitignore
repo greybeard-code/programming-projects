@@ -4,3 +4,20 @@ reports/
 __pycache__/
 *.pyc
 .pytest_cache/
+
+# Vendor bar-type snapshots under "nt8 code/" keep the DLL, Info.xml and NT8's
+# empty export stub only (see nt8 code/SaberRenko). NT8_Tbars is a
+# DECOMPILATION of the same TBars class with the license check stripped, not
+# vendor source — keep it locally for reference, never commit it. Same policy
+# as ninZaRenko; research/TBars_spec.md §0 records what it told us.
+nt8 code/TBarsNew/NT8_Tbars/
+nt8 code/TBarsNew/NT8_Tbars.zip
+
+# Vendor binaries are NEVER committed — this repository is public, and the
+# NT8 bar types/indicators snapshotted under "nt8 code/" are paid third-party
+# products. Keep them locally for reference; the behaviour we depend on is
+# captured in research/*_spec.md instead. (SaberRenko.dll predates this rule
+# and is already tracked; removing it needs a history rewrite.)
+nt8 code/**/*.dll
+nt8 code/**/*.zip
+nt8 code/**/*.pdf

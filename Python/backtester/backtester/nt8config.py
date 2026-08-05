@@ -168,8 +168,17 @@ def load_atm_template(path: str | Path) -> AtmSpec:
 # Phase 4). BaseBarsPeriodValue is present but unused (=1) in ninZaRenko
 # templates — confirmed against the same reference template used for
 # _BAR_TYPE_RENKO.
+# 98765 is TBars, as registered by TBarsNEW.dll (the build installed here);
+# its ONE user parameter is BaseBarsPeriodValue ("Speed Settings"), and the
+# Value/Value2 it serialises are derived, not independent — State.Configure
+# overwrites them with BaseBarsPeriodValue/2 and BaseBarsPeriodValue*2 on
+# every load, so they are read back only to verify that assumption holds.
+# Older TBars builds registered different ids (2015, and 15 which COLLIDES
+# with NT8's built-in Delta type); neither is mapped — see
+# research/TBars_spec.md §7.
 _BAR_TYPE_RENKO = 12345
 _BAR_TYPE_SABER = 20821
+_BAR_TYPE_TBARS = 98765
 
 
 @dataclass
@@ -223,10 +232,21 @@ def _parse_bar_spec(el: ET.Element, name: str) -> str:
     if type_id == _BAR_TYPE_SABER:
         offset = _int(el.find("BaseBarsPeriodValue"))
         return f"s{value}-{offset}-{value2}"
+    if type_id == _BAR_TYPE_TBARS:
+        speed = _int(el.find("BaseBarsPeriodValue"))
+        if (value, value2) != (speed // 2, speed * 2):
+            raise ValueError(
+                f"{name}: TBars Value/Value2 ({value}/{value2}) do not match "
+                f"Speed Settings {speed} (expected {speed // 2}/{speed * 2}). "
+                "TBars derives both from BaseBarsPeriodValue in "
+                "State.Configure, so a template disagreeing here was not "
+                "written by the bar type this port models — check the "
+                "BarsPeriodTypeSerialize id (research/TBars_spec.md §7).")
+        return f"tb{speed}"
     raise ValueError(
         f"{name}: BarsPeriodTypeSerialize={type_id} not mapped to a BarSpec "
-        f"(known: {_BAR_TYPE_RENKO}=ninZaRenko, {_BAR_TYPE_SABER}=SaberRenko). "
-        "Add the mapping when needed.")
+        f"(known: {_BAR_TYPE_RENKO}=ninZaRenko, {_BAR_TYPE_SABER}=SaberRenko, "
+        f"{_BAR_TYPE_TBARS}=TBars). Add the mapping when needed.")
 
 
 def load_strategy_template(path: str | Path) -> StrategyTemplate:

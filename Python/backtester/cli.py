@@ -19,7 +19,8 @@ def main() -> None:
     ap.add_argument("strategy", help="path to a .py file with a Strategy subclass")
     ap.add_argument("--symbol", help="override strategy symbol (e.g. MNQ)")
     ap.add_argument("--period", help="override bar type: time (30s, 1m, 5m), "
-                                     "tick (500t), renko (r8, r8x3)")
+                                     "tick (500t), ninZaRenko (r8, r8-4), "
+                                     "SaberRenko (s64-16), TBars (tb120)")
     ap.add_argument("--start", help="first day, YYYY-MM-DD or YYYYMMDD")
     ap.add_argument("--end", help="last day, YYYY-MM-DD or YYYYMMDD")
     ap.add_argument("--balance", type=float, default=50_000.0,

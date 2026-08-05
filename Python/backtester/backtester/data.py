@@ -70,9 +70,12 @@ def _eastern_offset_ns(date: str) -> int:
 
 
 CACHE_VERSION = b"3"   # reduced: v3 = trust replay_importer UTC tag, else ET->UTC
-BARS_VERSION = b"7"    # bars: v7 = renko brick state carries across day-file
-                       # boundaries (see load_bars_sequence); v6 = breakout
-                       # tick belongs to next bar (H/L parity)
+BARS_VERSION = b"8"    # bars: v8 = saber/tbars carry accumulated volume across
+                       # day-file boundaries (end_state grew 3 fields, so an
+                       # old cache's end_state would fail to unpack); v7 =
+                       # renko brick state carries across day-file boundaries
+                       # (see load_bars_sequence); v6 = breakout tick belongs
+                       # to next bar (H/L parity)
 
 # The replay_importer (v>=2) stamps output Parquet with these keys and stores
 # true UTC. Files carrying timestamps=UTC skip the _eastern_offset_ns
@@ -122,9 +125,13 @@ class BarDay:
     # Meaningless (0.0/0) for time/tick bars.
     end_anchor: float = 0.0
     end_dir: int = 0
-    # SaberRenko-only: the still-forming bar's (open_price, anchor, open_ts,
-    # seed_high, seed_low) at end-of-day, to carry into the next day's
-    # build_saber_bars. None for every other bar kind.
+    # Tuple-carry bar kinds only: the still-forming bar's state at end-of-day,
+    # to carry into the next day's builder (see load_bars_sequence). Shape is
+    # per-kind and opaque to everything but that builder — SaberRenko's
+    # (open_price, anchor, open_ts, seed_high, seed_low), TBars'
+    # (bar_open, bar_max, bar_min, bar_dir, run_high, run_low), each followed
+    # by (volume, buy_volume, sell_volume) accumulated so far by that forming
+    # bar. None for every other bar kind (renko uses end_anchor/end_dir above).
     end_state: tuple | None = None
 
     def __len__(self) -> int:
@@ -312,7 +319,16 @@ class Catalog:
         if spec.kind == "renko":
             return self._load_sequence_renko(symbol, dates, spec, tick_size, days)
         if spec.kind == "saber":
-            return self._load_sequence_saber(symbol, dates, spec, tick_size, days)
+            return self._load_sequence_carry(
+                symbol, dates, spec, days,
+                lambda day, carry: build_saber_bars(
+                    day, spec.bar_ticks, spec.offset_ticks, tick_size,
+                    spec.filter_s * 1_000_000_000, carry=carry))
+        if spec.kind == "tbars":
+            return self._load_sequence_carry(
+                symbol, dates, spec, days,
+                lambda day, carry: build_tbar_bars(
+                    day, spec.speed_ticks, tick_size, carry=carry))
         return [self.load_bars(symbol, date, spec, tick_size,
                                days[i] if days is not None else None)
                 for i, date in enumerate(dates)]
@@ -338,9 +354,15 @@ class Catalog:
             prev_last_ts = int(day.ts[-1])
         return out
 
-    def _load_sequence_saber(self, symbol: str, dates: list[str], spec,
-                             tick_size: float,
-                             days: list[DayL1] | None) -> list[BarDay]:
+    def _load_sequence_carry(self, symbol: str, dates: list[str], spec,
+                             days: list[DayL1] | None,
+                             build) -> list[BarDay]:
+        """load_bars_sequence for bar kinds that thread an opaque carry
+        TUPLE across days (saber, tbars). `build(day, carry) -> BarDay` is
+        the kind's builder with its parameters already bound; renko keeps a
+        separate path because its carry is two named scalars stored as
+        distinct parquet metadata fields.
+        """
         out: list[BarDay] = []
         carry: tuple | None = None
         prev_last_ts: int | None = None
@@ -352,8 +374,8 @@ class Catalog:
             if (prev_last_ts is not None
                     and int(day.ts[0]) - prev_last_ts > RENKO_RESET_GAP_NS):
                 carry = None
-            bars, carry = self._load_saber_cached(
-                symbol, date, spec, tick_size, day, carry)
+            bars, carry = self._load_carry_cached(
+                symbol, date, spec, day, carry, build)
             out.append(bars)
             prev_last_ts = int(day.ts[-1])
         return out
@@ -401,19 +423,18 @@ class Catalog:
         _atomic_replace(tmp, bp)
         return bars, float(bars.end_anchor), int(bars.end_dir)
 
-    def _load_saber_cached(self, symbol: str, date: str, spec,
-                           tick_size: float, day: DayL1,
-                           carry: tuple | None
-                           ) -> tuple[BarDay, tuple]:
-        """load_bars_sequence's per-day cache lookup/build for saber specs.
+    def _load_carry_cached(self, symbol: str, date: str, spec,
+                           day: DayL1, carry: tuple | None,
+                           build) -> tuple[BarDay, tuple]:
+        """Per-day cache lookup/build for tuple-carry bar kinds (saber, tbars).
 
         Mirrors `_load_renko_cached`: a cache hit additionally requires the
         stored carry-in to match what THIS call needs — otherwise the day
-        was cached under a different carry-in and must be rebuilt. The
-        carry tuple (open_price, anchor, open_ts, seed_high, seed_low) is
-        JSON-encoded into the parquet metadata rather than split into
-        scalar fields, since unlike renko's (anchor, dir) it has no fixed
-        small arity worth hand-unpacking.
+        was cached under a different carry-in (e.g. built via plain
+        `load_bars`, or from a sequence that started elsewhere) and must be
+        rebuilt. The carry tuple is JSON-encoded into the parquet metadata
+        rather than split into scalar fields, since unlike renko's
+        (anchor, dir) it has no fixed small arity worth hand-unpacking.
         """
         bp = self._bars_path(symbol, date, spec.key)
         want_c = json.dumps(carry).encode()
@@ -426,9 +447,7 @@ class Catalog:
                 bars = BarDay(*(t.column(c).to_numpy() for c in BAR_COLS))
                 return bars, tuple(json.loads(meta[b"end_state"]))
             del t   # release the read handle before we replace this path
-        bars = build_saber_bars(day, spec.bar_ticks, spec.offset_ticks,
-                                tick_size, spec.filter_s * 1_000_000_000,
-                                carry=carry)
+        bars = build(day, carry)
         bp.parent.mkdir(parents=True, exist_ok=True)
         tmp = bp.with_suffix(f".{os.getpid()}.tmp")
         pq.write_table(pa.table({c: getattr(bars, c) for c in BAR_COLS})
@@ -455,7 +474,7 @@ def _flow_volumes(day: DayL1) -> tuple[np.ndarray, np.ndarray]:
 
 
 def build_bars(day: DayL1, spec, tick_size: float) -> BarDay:
-    """Dispatch on BarSpec.kind: time / tick / renko."""
+    """Dispatch on BarSpec.kind: time / tick / renko / saber / tbars."""
     if spec.kind == "time":
         return build_time_bars(day, spec.seconds)
     if spec.kind == "tick":
@@ -466,6 +485,8 @@ def build_bars(day: DayL1, spec, tick_size: float) -> BarDay:
     if spec.kind == "saber":
         return build_saber_bars(day, spec.bar_ticks, spec.offset_ticks,
                                 tick_size, spec.filter_s * 1_000_000_000)
+    if spec.kind == "tbars":
+        return build_tbar_bars(day, spec.speed_ticks, tick_size)
     raise ValueError(f"Unknown bar kind {spec.kind!r}")
 
 
@@ -711,26 +732,31 @@ def build_saber_bars(day: DayL1, bar_ticks: int, offset_ticks: int,
     distance, so the brand-new bar can never also be in breakout on the
     tick that opened it (spec §2, "no cascades" proof).
 
-    Completed-bar H/L are **purely `{open, close, anchor}`** — real intrabar
-    extremes are NOT retained (spec §3.3, a real behavioral difference from
-    ninZaRenko). The currently-*forming* bar keeps real running extremes,
-    which surface in two places: a bar closed as a **partial** at a session
-    reset (this day's mid-file trade gap > `RENKO_RESET_GAP_NS`, spec §5.3
-    — the same threshold `build_renko_bars` uses, and for the same reason:
-    it coincides with the real CME halt), and the trailing `end_state`
-    carried out for the next day (spec §5.3 / Catalog.load_bars_sequence's
-    overnight-session carry, same day-file-boundary concern as renko).
+    Completed-bar H/L are the real traded extremes across the bar's full
+    tick span (its open tick through the completing tick, inclusive) UNIONED
+    with `{open, close, anchor}` — confirmed against two real NT8 SaberRenko
+    chart exports (64/16 and 100/25, spec §3.3 revision 2026-07-30: 96-97%
+    exact OHLC match once this union was found, residual explained by feed
+    skew, same class of noise already documented for ninZaRenko). Every
+    forming bar (partial-at-reset, or the trailing `end_state` carried into
+    the next day) already tracks real running extremes the same way, so this
+    makes completed and forming bars consistent rather than a special case.
 
     Breakout comparisons use NT8 `ApproxCompare` semantics (inclusive: a
     tick landing exactly on a trigger completes the bar — the OPPOSITE of
     ninZaRenko's strict `>`/`<`).
 
-    `carry` is `(open_price, anchor, open_ts_ns, seed_high, seed_low)` —
-    the still-forming bar's state at the end of a PRIOR day, continued here
-    with no reset (the caller is responsible for deciding carry vs. reset,
+    `carry` is `(open_price, anchor, open_ts_ns, seed_high, seed_low,
+    volume, buy_volume, sell_volume)` — the still-forming bar's state at the
+    end of a PRIOR day, continued here with no reset (the caller is responsible for deciding carry vs. reset,
     same contract as `build_renko_bars`). `seed_high`/`seed_low` fold in
     real extremes accumulated on the prior day, since this day's tick array
-    cannot see them. `None` starts fresh: a doji seed at this day's first
+    cannot see them; the three volume fields are what that bar has already
+    accumulated on earlier days, added when it finally completes (without them
+    a bar spanning a day-file boundary silently loses its pre-boundary volume
+    — measured at 0.6% of traded volume over 10 MNQ days, research/
+    TBars_spec.md §9). `None` starts fresh, zero carried volume: a doji seed
+    at this day's first
     trade (this repo's day files are ET calendar days; day-file boundaries
     within one CME trading day, e.g. an 18:00-16:55 ET overnight session,
     have no real gap at midnight ET, so the caller carries state across
@@ -761,8 +787,9 @@ def build_saber_bars(day: DayL1, bar_ticks: int, offset_ticks: int,
         open_price = anchor = float(prices[0])
         open_ts = int(ts[0])
         seed_hi = seed_lo = open_price
+        cv = cb = cs = 0
     else:
-        open_price, anchor, open_ts, seed_hi, seed_lo = carry
+        open_price, anchor, open_ts, seed_hi, seed_lo, cv, cb, cs = carry
     i0 = 0
     # A bar can never complete on the SAME tick that opened it (spec §2's
     # no-cascade proof) — but that only means excluding index i0 when i0 IS
@@ -805,13 +832,28 @@ def build_saber_bars(day: DayL1, bar_ticks: int, offset_ticks: int,
             kunits = int(over // offset_ticks) if over > 0 else 0
             newc = trig + d * kunits * offset_size
 
-            hi = max(open_price, newc, anchor)
-            lo = min(open_price, newc, anchor)
+            # H/L are the real traded extremes across the bar's full tick
+            # span (open tick through the completing tick, inclusive) UNIONED
+            # with {open, close, anchor} — confirmed against a real NT8
+            # SaberRenko chart export (spec §3.3 revision): the DLL's
+            # UpdateBar accumulates the true running high/low tick-by-tick
+            # (same as any ordinary bar) and the completion step's explicit
+            # Max/Min(barOpenPrice, newClose, curOpen) only ever WIDENS that,
+            # never replaces it — the original reverse-engineering read the
+            # decompiled snippet as a replacement and was wrong; real/
+            # anchor-triple parity was 96-97% across two independent chart
+            # exports (64/16 and 100/25), residual explained by feed skew
+            # (same class of noise already documented for ninZaRenko).
+            real_hi = float(prices[i0:k + 1].max()) if k + 1 > i0 else open_price
+            real_lo = float(prices[i0:k + 1].min()) if k + 1 > i0 else open_price
+            hi = max(open_price, newc, anchor, real_hi)
+            lo = min(open_price, newc, anchor, real_lo)
             opens.append(open_price); highs.append(hi); lows.append(lo)
             closes.append(newc)
-            vols.append(int(vol[i0:k].sum()) if k > i0 else 0)
-            bvols.append(int(buy[i0:k].sum()) if k > i0 else 0)
-            svols.append(int(sell[i0:k].sum()) if k > i0 else 0)
+            vols.append(cv + (int(vol[i0:k].sum()) if k > i0 else 0))
+            bvols.append(cb + (int(buy[i0:k].sum()) if k > i0 else 0))
+            svols.append(cs + (int(sell[i0:k].sum()) if k > i0 else 0))
+            cv = cb = cs = 0        # carried-in volume belongs to this bar only
             ts_end.append(int(ts[k])); i0s.append(i0); i1s.append(k)
 
             open_price = newc
@@ -831,9 +873,10 @@ def build_saber_bars(day: DayL1, bar_ticks: int, offset_ticks: int,
         real_lo = min(seed_lo, float(prices[i0:end_idx + 1].min()))
         opens.append(open_price); highs.append(real_hi); lows.append(real_lo)
         closes.append(float(prices[end_idx]))
-        vols.append(int(vol[i0:end_idx + 1].sum()))
-        bvols.append(int(buy[i0:end_idx + 1].sum()))
-        svols.append(int(sell[i0:end_idx + 1].sum()))
+        vols.append(cv + int(vol[i0:end_idx + 1].sum()))
+        bvols.append(cb + int(buy[i0:end_idx + 1].sum()))
+        svols.append(cs + int(sell[i0:end_idx + 1].sum()))
+        cv = cb = cs = 0
         ts_end.append(int(ts[end_idx])); i0s.append(i0); i1s.append(end_idx + 1)
 
         open_price = anchor = float(prices[next_gap])
@@ -859,5 +902,259 @@ def build_saber_bars(day: DayL1, bar_ticks: int, offset_ticks: int,
         np.asarray(svols, dtype="int64"),
         np.asarray(i0s, dtype="int64"),
         np.asarray(i1s, dtype="int64"),
-        end_state=(open_price, anchor, open_ts, end_extent_hi, end_extent_lo),
+        # The still-forming bar's volume so far travels with it, so the day it
+        # finally completes reports the whole thing (see the carry note above).
+        end_state=(open_price, anchor, open_ts, end_extent_hi, end_extent_lo,
+                   cv + int(vol[i0:n].sum()),
+                   cb + int(buy[i0:n].sum()),
+                   cs + int(sell[i0:n].sum())),
+    )
+
+
+_TBARS_EPS = 1e-10
+
+
+def build_tbar_bars(day: DayL1, speed_ticks: int, tick_size: float,
+                    carry: tuple | None = None,
+                    reset_carries_dir: bool = False) -> BarDay:
+    """TBars — see research/TBars_spec.md.
+
+    Ported from `NinjaTrader.NinjaScript.BarsTypes.TBars` as shipped in
+    TBarsNEW.dll (the build actually installed here, custom BarsPeriodType
+    id 98765). Only behavioural facts are kept in this repo, same policy as
+    ninZaRenko/SaberRenko.
+
+    One user parameter, NT8's **"Speed Settings"** (`BaseBarsPeriodValue`,
+    here `speed_ticks` = N); the three distances are derived from it exactly
+    as `State.Configure` does, integer division included:
+
+    - trend offset   `N // 2` ticks — with-trend continuation distance
+    - reversal       `N * 2`  ticks — against-trend distance
+    - open offset    `N`      ticks — synthetic open, back from the close
+
+    So a reversal costs **4x** a continuation: this is a renko-family bar
+    with deliberately asymmetric thresholds (the "T"). A completing tick
+    always clamps to the threshold exactly (`min(price, bar_max)` where
+    `price > bar_max` is just `bar_max`), so closes stay on the tick grid
+    and the breakout comparison is STRICT (`>` / `<`) — a tick landing
+    exactly ON a threshold does not complete the bar.
+
+    **The emitted OHLC is Heikin-Ashi transformed, and that is faithful,
+    not a bug**: NT8 shows these values on the chart, so a strategy reading
+    `bars.close` here sees what the same strategy would see in NT8. Close is
+    `(bar_open + high + low + raw_price) / 4`, recomputed on every tick from
+    the bar's stored open and its running extremes; a completing bar's new
+    successor opens at `(fake_open + prev_ha_close) / 2`. High/low are the
+    REAL running extremes (unioned with the synthetic open) — the DLL's
+    `GetHeikinAshiHigh`/`GetHeikinAshiLow` helpers exist but are never
+    called. Fills still resolve on real ticks (engine/broker work off the
+    `i0`/`i1` spans), so the HA smoothing never reaches the fill model.
+
+    Two deliberate divergences from the DLL, both documented in the spec:
+
+    1. **Breakout-tick volume.** NT8 calls `UpdateBar(..., volume)` for the
+       completing tick AND `AddBar(..., volume)` for the bar it opens, so
+       that tick's volume lands in BOTH bars (total bar volume exceeds
+       traded volume). This repo requires bar spans to be contiguous and
+       non-overlapping — the engine resolves `[i0, i1)` per bar and a
+       double-covered tick would let one order fill twice. So the breakout
+       tick belongs to the NEW bar only (`i1 = k`, next `i0 = k`), matching
+       what `build_renko_bars`/`build_saber_bars` already do (spec §4).
+    2. **Session reset is gap-driven, not calendar-driven.** The DLL
+       re-seeds when `bars.IsResetOnNewTradingDay` (the Data Series "Break
+       at EOD" toggle) fires on a new session. Here, as for renko/saber, a
+       reset happens only on a genuine trade gap > RENKO_RESET_GAP_NS —
+       which is the real CME halt for this repo's data (spec §5).
+
+    `reset_carries_dir` controls the one place this port refuses to be
+    bug-compatible. The DLL's re-seed carries `barDirection` across the reset
+    and seeds `bar_max/bar_min = open +/- trend*dir`, which is **inverted**
+    whenever the prior direction was down: `bar_max < bar_min`, so a tick
+    between them satisfies BOTH tests, `maxExceeded` wins, and the emitted
+    bar gets `high = low = c1` with `c1` on the wrong side of its own open.
+    That bar violates OHLC ordering — measured on the N=4 case in
+    tests/test_tbars.py it comes out `O=98.0 H=97.5 L=97.5 C=97.5`, i.e. the
+    bar's own open sits a full 2 ticks ABOVE its high. Every indicator in
+    indicators.py (ATR, Highest/Lowest, ...) would silently consume it. So
+    the default (`False`)
+    seeds `dir = 0` instead, exactly as a fresh start does, which makes the
+    thresholds collapse symmetrically onto the open and can only ever emit a
+    valid doji. Pass `True` to reproduce the DLL verbatim when chasing chart
+    parity. The 2026-08-04 parity run (spec §8) measured what this costs:
+    `True` moved full-OHLC agreement only 78.8% -> 79.5% on 2232 MNQ bars, so
+    the safe default gives up ~0.7 points of parity and buys back a guarantee
+    that no bar with inverted OHLC ever reaches an indicator. Note the Data
+    Series "Break at EOD" toggle DEFAULTS TO ON, so NT8 really does re-seed
+    each session — what actually drives the residual there is the reset
+    POINT (template session boundary vs. this repo's >30 min trade gap),
+    not the direction carry (spec §5.2).
+
+    `carry` is `(bar_open, bar_max, bar_min, bar_dir, run_hi, run_lo,
+    volume, buy_volume, sell_volume)` — the still-forming bar's state at the
+    end of a PRIOR day, continued with no reset; the volume fields are what
+    that bar accumulated on earlier days and are added when it completes. The caller decides carry vs. reset (same contract as
+    `build_renko_bars`/`build_saber_bars`), because day FILES are ET
+    calendar days and an overnight session runs straight through midnight
+    ET with no real gap there. `None` starts fresh at this day's first
+    trade, reproducing the DLL's `bars.Count == 0` seed: a one-tick doji
+    whose thresholds collapse onto the open (`bar_dir` is 0, so
+    `open +/- trend*0` is just `open`), which the next differing tick
+    immediately breaks.
+    """
+    n = len(day)
+    if n == 0:
+        return _empty_bars()
+    ts, prices, vol = day.ts, day.price, day.volume
+    buy, sell = _flow_volumes(day)
+
+    trend_off = (speed_ticks // 2) * tick_size
+    rev_off = (speed_ticks * 2) * tick_size
+    open_off = speed_ticks * tick_size
+
+    gap_starts = np.flatnonzero(np.diff(ts) > RENKO_RESET_GAP_NS) + 1
+
+    ts_end, opens, highs, lows, closes, vols = [], [], [], [], [], []
+    bvols, svols, i0s, i1s = [], [], [], []
+
+    # NT8 stores every bar price on the instrument's tick grid, and that
+    # rounding is INSIDE the state loop, not a display step: the next bar's
+    # Heikin-Ashi open reads `bars.GetClose(...)` and each tick's HA close
+    # reads `bars.GetOpen(...)`, so a rounded value feeds the next
+    # computation. Rounding only at the end would drift. High/low never need
+    # it (they come from real trades, the clamped threshold, or the synthetic
+    # open — all already on the grid); only the two HA averages do.
+    # Banker's rounding (half-to-even), NOT half-up: NT8 rounds via .NET's
+    # Math.Round, whose default MidpointRounding is ToEven. Midpoints here are
+    # exact in binary floating point — an HA close is (sum of tick multiples)/4
+    # and an HA open is (sum of tick multiples)/2 — so the mode is decidable
+    # rather than fp noise, and it is worth ~17 points of OHLC parity.
+    def rnd(x: float) -> float:
+        return float(np.round(x / tick_size) * tick_size)
+
+    def ha_close(o: float, h: float, l: float, c: float) -> float:
+        return rnd((o + h + l + c) * 0.25)
+
+    if carry is None:
+        bar_open = run_hi = run_lo = float(prices[0])
+        bar_dir = 0
+        bar_max = bar_open + trend_off * bar_dir
+        bar_min = bar_open - trend_off * bar_dir
+        cv = cb = cs = 0
+    else:
+        (bar_open, bar_max, bar_min, bar_dir, run_hi, run_lo,
+         cv, cb, cs) = carry
+    i0 = 0
+    # A fresh/re-seeded bar is OPENED by the tick at i0, so that tick cannot
+    # also complete it (the DLL returns after AddBar) — the scan starts at
+    # i0+1. A carried-in bar was opened on a PRIOR day, so index 0 here is an
+    # ordinary updating tick and must stay eligible to complete it at once.
+    scan_off = 0 if carry is not None else 1
+
+    while i0 < n:
+        pos = int(np.searchsorted(gap_starts, i0, side="right"))
+        next_gap = int(gap_starts[pos]) if pos < len(gap_starts) else n
+
+        start = i0 + scan_off
+        scan_off = 1        # every later bar is opened by a tick in this day
+        end = next_gap
+
+        k = -1
+        if start < end:
+            seg = prices[start:end]
+            hit = (seg > bar_max + _TBARS_EPS) | (seg < bar_min - _TBARS_EPS)
+            rel = int(np.argmax(hit))
+            if hit[rel]:
+                k = start + rel
+
+        if k >= 0:
+            # running extremes over this bar's updating ticks, i.e. everything
+            # after the tick that opened it and before the one completing it
+            if k > start:
+                run_hi = max(run_hi, float(prices[start:k].max()))
+                run_lo = min(run_lo, float(prices[start:k].min()))
+            p = float(prices[k])
+            max_exc = p > bar_max + _TBARS_EPS
+            min_exc = p < bar_min - _TBARS_EPS
+            # `maxExceeded` is tested first in the DLL and wins when a broken
+            # (inverted) seed makes both true; the clamp then collapses to the
+            # threshold itself, since p is strictly beyond it.
+            c1 = bar_max if max_exc else bar_min
+            bar_dir = 1 if max_exc else -1
+            fake_open = c1 - open_off * bar_dir
+
+            hi = c1 if max_exc else run_hi
+            lo = c1 if min_exc else run_lo
+            closing = ha_close(bar_open, hi, lo, c1)
+            opens.append(bar_open); highs.append(hi); lows.append(lo)
+            closes.append(closing)
+            vols.append(cv + (int(vol[i0:k].sum()) if k > i0 else 0))
+            bvols.append(cb + (int(buy[i0:k].sum()) if k > i0 else 0))
+            svols.append(cs + (int(sell[i0:k].sum()) if k > i0 else 0))
+            cv = cb = cs = 0        # carried-in volume belongs to this bar only
+            ts_end.append(int(ts[k])); i0s.append(i0); i1s.append(k)
+
+            bar_open = rnd((fake_open + closing) * 0.5)  # Heikin-Ashi open
+            run_hi = c1 if max_exc else fake_open
+            run_lo = c1 if min_exc else fake_open
+            bar_max = c1 + (trend_off if bar_dir > 0 else rev_off)
+            bar_min = c1 - (rev_off if bar_dir > 0 else trend_off)
+            i0 = k
+            continue
+
+        if next_gap >= n:
+            break   # forming bar survives to end of data; carried out below
+
+        # Session gap. The DLL does not close the forming bar here — it just
+        # AddBars a fresh one — so the forming bar is completed by
+        # abandonment, keeping the HA close it last held.
+        end_idx = next_gap - 1
+        if end_idx >= start:
+            run_hi = max(run_hi, float(prices[start:next_gap].max()))
+            run_lo = min(run_lo, float(prices[start:next_gap].min()))
+        opens.append(bar_open); highs.append(run_hi); lows.append(run_lo)
+        closes.append(ha_close(bar_open, run_hi, run_lo, float(prices[end_idx])))
+        vols.append(cv + int(vol[i0:next_gap].sum()))
+        bvols.append(cb + int(buy[i0:next_gap].sum()))
+        svols.append(cs + int(sell[i0:next_gap].sum()))
+        cv = cb = cs = 0
+        ts_end.append(int(ts[end_idx])); i0s.append(i0); i1s.append(next_gap)
+
+        # Re-seed. bar_dir is dropped unless the caller asked for the DLL's
+        # verbatim (and threshold-inverting) behaviour — see docstring.
+        if not reset_carries_dir:
+            bar_dir = 0
+        bar_open = run_hi = run_lo = float(prices[next_gap])
+        bar_max = bar_open + trend_off * bar_dir
+        bar_min = bar_open - trend_off * bar_dir
+        i0 = next_gap
+
+    # Fold the forming bar's remaining UPDATING ticks into its extremes before
+    # carrying it out. That range starts at `start`, not `i0`: i0 is the tick
+    # that OPENED this bar (the previous bar's breakout, already represented by
+    # the run_hi/run_lo seed at its clamped threshold) and its raw price sits
+    # beyond that threshold, so including it here would inflate the carried
+    # extremes and desync a split build from a continuous one.
+    if n > start:
+        end_hi = max(run_hi, float(prices[start:n].max()))
+        end_lo = min(run_lo, float(prices[start:n].min()))
+    else:
+        end_hi, end_lo = run_hi, run_lo
+
+    return BarDay(
+        np.asarray(ts_end, dtype="int64"),
+        np.asarray(opens, dtype="float64"),
+        np.asarray(highs, dtype="float64"),
+        np.asarray(lows, dtype="float64"),
+        np.asarray(closes, dtype="float64"),
+        np.asarray(vols, dtype="int64"),
+        np.asarray(bvols, dtype="int64"),
+        np.asarray(svols, dtype="int64"),
+        np.asarray(i0s, dtype="int64"),
+        np.asarray(i1s, dtype="int64"),
+        # The still-forming bar's volume so far travels with it, so the day it
+        # finally completes reports the whole thing (see the carry note above).
+        end_state=(bar_open, bar_max, bar_min, bar_dir, end_hi, end_lo,
+                   cv + int(vol[i0:n].sum()),
+                   cb + int(buy[i0:n].sum()),
+                   cs + int(sell[i0:n].sum())),
     )

@@ -38,6 +38,12 @@ def test_parse_barspec():
         parse_barspec("s16-64")                 # offset > bar size
     with pytest.raises(ValueError):
         parse_barspec("s70-16")                 # bar size not a multiple of offset
+    tb = parse_barspec("tb120")
+    assert (tb.kind == "tbars" and tb.speed_ticks == 120
+            and tb.key == "tb120")
+    with pytest.raises(ValueError):
+        parse_barspec("tb1")                    # N//2 == 0 -> zero trend offset
+    assert parse_barspec("120t").kind == "tick"  # not confused with tb120
 
 
 def test_build_bars_basic():

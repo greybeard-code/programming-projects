@@ -54,7 +54,7 @@ def test_continuation_body_is_offset_range_is_bar_size():
     # carry mimics "just closed an up bar at 101.0, anchor 100.5" (open_ts
     # far in the past so the time filter is trivially already satisfied —
     # these geometry tests are not about the filter).
-    carry = (101.0, 100.5, 0, 101.0, 101.0)
+    carry = (101.0, 100.5, 0, 101.0, 101.0, 0, 0, 0)
     day = make_day([101.25, 101.5])
     bars = build_saber_bars(day, B, O, TICK, FILTER_NS, carry=carry)
     assert list(bars.close) == [101.5]
@@ -72,7 +72,7 @@ def test_continuation_body_is_offset_range_is_bar_size():
 def test_reversal_body_is_2b_minus_offset_no_wick():
     # carry mimics "just closed an up bar at 101.5, anchor 101.0" (the state
     # AFTER the continuation bar above completes).
-    carry = (101.5, 101.0, 0, 101.5, 101.5)
+    carry = (101.5, 101.0, 0, 101.5, 101.5, 0, 0, 0)
     day = make_day([101.25, 101.0, 100.75, 100.5, 100.25, 100.0])
     bars = build_saber_bars(day, B, O, TICK, FILTER_NS, carry=carry)
     assert list(bars.close) == [100.0]
@@ -85,28 +85,34 @@ def test_reversal_body_is_2b_minus_offset_no_wick():
 
 def test_merge_snaps_to_offset_lattice_and_never_cascades():
     # a single violent tick, 5 ticks past the continuation trigger (101.5):
-    # k = 5 // 2 = 2 whole offset units; close snaps to 101.5 + 2*0.5 = 102.5,
+    # k = 5 // 2 = 2 whole offset units; close SNAPS to 101.5 + 2*0.5 = 102.5,
     # NOT to the traded price 102.75 — and exactly one bar prints regardless
-    # of how far past the trigger the tick landed (spec §2's no-cascade proof).
-    carry = (101.0, 100.5, 0, 101.0, 101.0)
+    # of how far past the trigger the tick landed (spec §2's no-cascade
+    # proof). High/low are NOT purely synthetic, though (spec §3.3 revision,
+    # confirmed against a real NT8 export): they union {open,close,anchor}
+    # with the REAL traded extremes over the bar's tick span, so the actual
+    # 102.75 print (beyond the snapped close) DOES surface as this bar's
+    # high — the clean B+kO range formula only holds when nothing traded
+    # past the snap point.
+    carry = (101.0, 100.5, 0, 101.0, 101.0, 0, 0, 0)
     day = make_day([102.75])
     bars = build_saber_bars(day, B, O, TICK, FILTER_NS, carry=carry)
     assert len(bars) == 1
     assert bars.close[0] == pytest.approx(101.5 + 2 * O * TICK)   # 102.5
+    assert bars.high[0] == pytest.approx(102.75)            # real traded high
+    assert bars.low[0] == pytest.approx(100.5)              # == anchor here
     body = bars.close[0] - bars.open[0]
-    rng = bars.high[0] - bars.low[0]
-    assert body == pytest.approx(O * (1 + 2) * TICK)      # O*(1+k) = 6 ticks
-    assert rng == pytest.approx((B + 2 * O) * TICK)        # B+kO = 8 ticks
-    assert bars.volume[0] == 0                             # completing tick's
+    assert body == pytest.approx(O * (1 + 2) * TICK)        # O*(1+k) = 6 ticks
+    assert bars.volume[0] == 0                              # completing tick's
     # volume goes to the NEXT bar, not this one (confirmed via end_state):
-    assert bars.end_state[3] == pytest.approx(102.75)      # seed_high: the
+    assert bars.end_state[3] == pytest.approx(102.75)       # seed_high: the
     # actual traded price (beyond the snapped close) is not lost
 
 
 def test_breakout_is_inclusive_touch_completes_strict_short_does_not():
     # opposite of ninZaRenko's STRICT `>` (test_renko_touch_threshold_emits_
     # no_bar): a tick landing EXACTLY on the trigger DOES complete the bar.
-    carry = (101.0, 100.5, 0, 101.0, 101.0)
+    carry = (101.0, 100.5, 0, 101.0, 101.0, 0, 0, 0)
     at_trigger = build_saber_bars(make_day([101.5]), B, O, TICK, FILTER_NS,
                                   carry=carry)
     assert len(at_trigger) == 1
@@ -205,6 +211,28 @@ def test_sequence_carries_across_continuous_days(tmp_path):
     assert list(b1.close) == [101.0, 101.5, 102.0]
     assert list(b2.close) == [102.5]              # carried, no fresh reseed
     assert b2.open[0] == pytest.approx(102.0)
+
+
+def test_carry_preserves_volume_across_a_day_boundary():
+    # A bar still forming at the end of a day file must report ALL its volume
+    # on the day it completes, not just the post-boundary part -- the carry
+    # tuple's last three fields. Same hole TBars had; measured there at 0.6%
+    # of traded volume on real MNQ data (research/TBars_spec.md §9).
+    prices = [100.0, 100.25, 100.5, 100.75, 101.0, 101.25,
+              101.5, 101.75, 102.0, 102.25, 102.5, 102.75]
+    vols = [4, 2, 9, 3, 7, 1, 8, 5, 6, 2, 9, 3]
+    ts = list(range(len(prices)))
+    whole = build_saber_bars(_day(ts, prices, vols), B, O, TICK, FILTER_NS)
+
+    cut = 5
+    a = build_saber_bars(_day(ts[:cut], prices[:cut], vols[:cut]),
+                         B, O, TICK, FILTER_NS)
+    b = build_saber_bars(_day(ts[cut:], prices[cut:], vols[cut:]),
+                         B, O, TICK, FILTER_NS, carry=a.end_state)
+
+    assert list(a.volume) + list(b.volume) == list(whole.volume)
+    assert list(a.buy_volume) + list(b.buy_volume) == list(whole.buy_volume)
+    assert list(a.sell_volume) + list(b.sell_volume) == list(whole.sell_volume)
 
 
 def test_sequence_resets_on_genuine_gap(tmp_path):

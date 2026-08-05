@@ -293,7 +293,7 @@ class Strategy:
 
 @dataclass(frozen=True)
 class BarSpec:
-    """Parsed bar type. kind: 'time' | 'tick' | 'renko' | 'saber'."""
+    """Parsed bar type. kind: 'time' | 'tick' | 'renko' | 'saber' | 'tbars'."""
     kind: str
     seconds: int = 0          # time bars
     ticks: int = 0            # tick-count bars: trades per bar
@@ -302,6 +302,7 @@ class BarSpec:
     bar_ticks: int = 0        # saber: Bar Size (B), ticks
     offset_ticks: int = 0     # saber: Offset (O), ticks
     filter_s: int = 0         # saber: Time Filter, seconds
+    speed_ticks: int = 0      # tbars: "Speed Settings" (N), ticks
 
     @property
     def key(self) -> str:
@@ -311,6 +312,8 @@ class BarSpec:
             return f"{self.ticks}t"
         if self.kind == "saber":
             return f"s{self.bar_ticks}-{self.offset_ticks}-{self.filter_s}"
+        if self.kind == "tbars":
+            return f"tb{self.speed_ticks}"
         return f"r{self.brick_ticks}-{self.trend_ticks}"
 
 
@@ -318,8 +321,19 @@ def parse_barspec(period: str) -> BarSpec:
     """'30s'/'1m'/'5m'/'1h' time bars; '500t' tick bars; 'r8-4' ninZaRenko
     (brick 8 ticks, trend threshold 4; 'r8' defaults trend to brick/2);
     's64-16'/'s64-16-2' SaberRenko (Bar Size 64, Offset 16, Time Filter
-    seconds, default 1). See research/SaberRenko_spec.md."""
+    seconds, default 1); 'tb120' TBars ("Speed Settings" N=120). See
+    research/SaberRenko_spec.md and research/TBars_spec.md."""
     p = period.strip().lower()
+    m = re.fullmatch(r"tb(\d+)", p)
+    if m:
+        speed = int(m.group(1))
+        if speed < 2:
+            raise ValueError(
+                f"TBars speed ({speed}) must be >= 2 — the trend offset is "
+                "N//2 ticks, so N=1 gives a zero-tick trend threshold and a "
+                "new bar on every uptick; NT8's TBarsNEW pins its own default "
+                "to 2 for the same reason (research/TBars_spec.md §1)")
+        return BarSpec("tbars", speed_ticks=speed)
     m = re.fullmatch(r"s(\d+)-(\d+)(?:-(\d+))?", p)
     if m:
         bar = int(m.group(1))
@@ -357,7 +371,7 @@ def parse_barspec(period: str) -> BarSpec:
     if p.isdigit():
         return BarSpec("time", seconds=int(p))
     raise ValueError(f"Unrecognized bar period {period!r} "
-                     "(examples: 30s, 1m, 5m, 500t, r8, r8x3)")
+                     "(examples: 30s, 1m, 5m, 500t, r8, r8-4, s64-16, tb120)")
 
 
 def parse_period(period: str) -> int:

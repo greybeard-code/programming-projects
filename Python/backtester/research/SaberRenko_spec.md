@@ -1,13 +1,88 @@
 # SaberRenko — Specification, Evaluation, and Backtester Integration Plan
 
-Status 2026-07-29: **specification complete and self-consistent; NOT yet
-validated against a real NT8 chart export.** Every geometry law below was
-derived from the shipped bar type's own logic and then reproduced in a
-standalone reference simulator (scratch, not committed) — the worked examples
-in §4 are that simulator's output, not hand-derivation. What is still missing
-is the same thing ninZaRenko needed: a `gbBarExporter` dump off a real
-SaberRenko chart run through `tools/compare_bars.py`. Treat §1–§4 as
-authoritative-pending-parity, §6 as the honest evaluation, §7 as the plan.
+Status 2026-07-30: **Phases 1-6 complete. Validated against two real NT8
+chart exports** (MNQ, 64/16 and 100/25, 14 trading days each): 100% bar-count
+and close-price match, 95.8%/96.9% exact OHLC (residual explained by known
+feed skew — see §6.2). Backtester integration (`build_saber_bars`, cache +
+cross-day carry, NT8 template mapping, 12 hand-computed tests) has landed —
+see `backtester/data.py`, `backtester/strategy.py`, `backtester/nt8config.py`,
+`tests/test_saber_bars.py`. Only Phase 7 (optional real-wick variant) is
+outstanding, and it's no longer clearly motivated now that §3.3 is corrected
+(H/L already carry real extremes — see below). The parity pass caught and
+fixed a real bug in the original reverse-engineering: §3.3 originally
+(WRONGLY) concluded completed-bar H/L were purely synthetic
+`{open, close, anchor}`; the real chart data disproved that (§3.3, §6 have
+both been corrected accordingly — read the "Correction" notes there before
+trusting the pre-2026-07-30 framing anywhere else in this doc or in old
+conversation history).
+
+**Get the indicator.** SaberRenko is a TradeSaber product by Dre (@TradeSaber,
+12.3K subs) — **download the NT8 add-on from
+https://tradesaber.com/indicators/** (the video description links the same
+page as "Download SaberRenko"; a free trial of TradeSaber's other tools is
+at https://tradesaber.com/free-trial/, Discord at
+https://discord.gg/2YU9GDme8j). Per a comment on the intro video, install is
+a manual drop-in — copy the files (`SaberRenko.dll` etc., matching what's
+snapshotted in `nt8 code/SaberRenko/` here) into the relevant
+`Documents\NinjaTrader 8\bin\Custom\` subfolder and restart/recompile NT8,
+same as any third-party NinjaScript add-on.
+
+**The intro video** is https://www.youtube.com/watch?v=sdsLZMp2fLY ("These
+Renko Bars Solve 2 Problems + First Look At Predator X 4th Gen", TradeSaber,
+2026-07-24, 14:33 runtime — SaberRenko is only the first ~4 minutes; the
+rest is a live pullback-strategy trading session plus a preview of their
+unrelated "Predator X" order-entry v4). YouTube's own caption extraction was
+a dead end by every automated route tried (sandboxed browser: no captions
+reported at all; real logged-in Chrome: caption track confirmed to exist but
+every payload fetch returned HTTP 200 with an empty body — bot-protection,
+not a loading delay). The user supplied the full transcript directly
+(downloaded from elsewhere), summarized here:
+
+- **Naming**: "SaberRenko" is explicitly a play on "ninZaRenko" — same
+  category of bar, not a fork of it.
+- **Fix #1 confirmed** (matches §3.2): traditional ninZaRenko always draws
+  the open at the wrong edge of the candle (e.g. top-of-candle for a bar
+  that really formed by traveling downward) — the presenter calls this a
+  "fake open" and says it's what produces unrealistically good backtest
+  P&Ls that don't hold up in practice. SaberRenko's contiguous-open design
+  fixes this directly.
+- **Fix #2 confirmed** (matches §2/§3.4/§6.1): the "ghost candle" problem —
+  multiple bars stamped with the identical timestamp when price gaps past
+  several bricks in one tick, which can make a trade look like it filled at
+  a materially different time/price than it really did. The fix is
+  literally described as a simple **1-second filter**: a bar can't complete
+  until at least that much time has passed, and an excursion within that
+  window gets merged rather than printing separate same-timestamp bars —
+  matching this doc's Time Filter mechanics and default (1s) exactly.
+- **The wick/tail is intentionally preserved — direct vendor confirmation
+  of the §3.3 correction.** The presenter says explicitly that he kept
+  real high/low information in the bar (unlike some other renko-style bar
+  types that only show the synthetic body) specifically so traders who
+  trail a stop off the previous bar's low (long) or high (short) — a common
+  renko technique — can still do that. This independently corroborates
+  Phase 6's finding: H/L are real, by design, not a byproduct.
+- **Vendor's own accuracy caveat**: SaberRenko is explicitly NOT presented
+  as a byte-for-byte replica of ninZaRenko — the presenter says to expect
+  "slight differences" / occasional different bar counts on the same price
+  action (he shows one stretch where ninZaRenko merged something into one
+  bar that SaberRenko split into two), and frames it as its own bar type
+  worth judging on its own results, not a drop-in clone.
+- **Distribution**: free, no signup required, downloadable from the
+  TradeSaber site/Discord — consistent with the direct download link above.
+
+No mention of the exact B/O/F values used in the demo chart, and nothing
+in the transcript describes the Offset/merge arithmetic at a technical
+level beyond what's summarized above — the rest of the video is trade
+narration and Predator X v4 feature previews, out of scope for this doc.
+
+**From viewer comments on the video** (useful corroboration, not primary
+source): the parameter names really are **Offset** and **Time Filter** in
+the NT8 property grid (one commenter asks TradeSaber to expose them as
+`[NinjaScriptProperty]`/`[Range]`-attributed optimizer inputs — confirming
+they currently are NOT Strategy-Analyzer-optimizable, a real usability gap
+worth knowing about before planning a sweep against real NT8, though
+irrelevant to this Python port). Other viewers compare it to "King Renco"
+and "UniRenko" — other third-party NT8 renko variants, not evaluated here.
 
 **Provenance.** Source material is `nt8 code/SaberRenko/` — `SaberRenko.dll`
 (assembly `SaberRenko` v1.0.0.1, NT8 export 8.1.7.2) plus an empty
@@ -17,22 +92,20 @@ NinjaScript stub `.cs` (the vendor ships no source). The bar type is
 directory; **no decompiled vendor source is committed to this repo**, per the
 same policy applied to ninZa (see `research/ninZaRenko_spec.md` and
 `ninZaRenko_BarType_Engineering_Summary.md`). The vendor is TradeSaber
-(https://tradesaber.com/indicators/, an NT8 order-entry/automation shop);
-their listing gives no parameter documentation beyond the default "Bar Size +
-Offset (ticks) · e.g. 64 / 16", but its two marketing claims **independently
-corroborate** the reverse-engineered geometry rather than adding new
-information: *"These Renko bars have an actual opening price, which
-increases backtesting accuracy"* matches §3.2 (bars are contiguous —
-`open == previous close` — unlike ninZa's overlapping B−T geometry), and
-*"No more 'Ghost' multiple candles on the same time stamp"* matches §6.1's
-headline finding (the merge guarantees exactly one bar completes per tick,
-eliminating the cascade ninZaRenko emits on gap moves). No documentation of
-the Time Filter parameter or the merge arithmetic was found anywhere public.
-The vendor's tutorial video (https://www.youtube.com/watch?v=sdsLZMp2fLY) was
-not reviewable here (no transcript/description text was fetchable); worth a
-manual watch before Phase 6 parity work in case it demonstrates edge-case
-behavior (e.g. a real merge or time-filter event on a live chart) that the
-reference simulator should be checked against.
+(https://tradesaber.com/indicators/, an NT8 order-entry/automation shop, also
+selling the "Predator X" order-entry system and running an affiliate program
+with Apex — see the video description); their listing gives no parameter
+documentation beyond the default "Bar Size + Offset (ticks) · e.g. 64 / 16",
+but its two marketing claims **independently corroborated** the
+reverse-engineered geometry: *"These Renko bars have an actual opening
+price, which increases backtesting accuracy"* matches §3.2 (bars are
+contiguous — `open == previous close` — unlike ninZa's overlapping B−T
+geometry), and *"No more 'Ghost' multiple candles on the same time stamp"*
+matches §6.1's headline finding (the merge guarantees exactly one bar
+completes per tick, eliminating the cascade ninZaRenko emits on gap moves).
+No documentation of the Time Filter parameter or the merge arithmetic was
+found anywhere public; both were reverse-engineered here and then confirmed
+bar-for-bar against real chart exports (§6.2, Phase 6).
 
 ---
 
@@ -172,26 +245,42 @@ ninZaRenko fire on the same price levels; they draw completely different
 candles from them.** ninZa forces every body to B and overlaps the bars;
 Saber draws the true move contiguously.
 
-### 3.3 High/Low are entirely synthetic
+### 3.3 High/Low — real extremes, unioned with the trigger geometry
 
-A completed bar's H/L come **only** from `{open, close, cur_open}`. The true
-traded extremes tracked in `form_high`/`form_low` are **overwritten at
-completion and lost.** Consequences:
+**Correction, 2026-07-30 (Phase 6 chart-export validation):** §4 originally
+read the decompiled snippet's explicit
+`Math.Max(Math.Max(barOpenPrice, newClose), curOpen)` as *replacing* the
+bar's high/low at completion, discarding the real running extremes
+(`formHigh`/`formLow`) tracked on every prior tick. A real NT8 chart export
+disproved that: a completed bar's H/L are the **real traded extremes across
+its full tick span** (open tick through the completing tick, inclusive)
+**unioned with** `{open, close, anchor}` — the decompiled `Math.Max`/`Min`
+call only ever *widens* what was already accumulated, it never replaces it.
+`build_saber_bars` implements this union directly. Confirmed against two
+independent real MNQ exports (64/16 and 100/25, 9650 and 4073 matched bars):
+95.8% / 96.9% exact OHLC, residual almost entirely ±1-2 ticks (feed skew,
+the same class of noise already documented for ninZaRenko) with one -8 tick
+outlier not yet root-caused. See §6 below — this materially changes the
+evaluation.
 
-- A completed SaberRenko bar's OHLC is a pure function of (open, close,
-  direction, B, O). **High and Low carry zero information beyond the close
-  sequence.** ninZaRenko's H/L, by contrast, include the real trade extremes
-  of the bar's tick span (verified against exports; `build_renko_bars` does
-  this deliberately).
-- Verified example (§4, bar #5): the real high inside that bar was 11 ticks
-  above the printed high. The excursion is simply not in the bar.
-- Every with-trend bar has range exactly B. **ATR on a trending SaberRenko
-  series is very nearly constant** — which quietly guts any ATR-scaled stop,
-  Keltner channel (PanaKanal), Donchian, or order-block (KO) logic.
-- The *forming* bar shows real H/L; the *completed* bar does not. A
-  `Calculate.OnEachTick` strategy reading `High[0]`/`Low[0]` intrabar sees
-  values that the same bar will not have once closed — a genuine live-vs-
-  backtest mismatch that is intrinsic to the bar type, not to our port.
+Practically:
+- A completed bar's H/L generally equal the plain running high/low of its
+  ticks, same as any ordinary bar (and same as ninZaRenko). The
+  `{open, close, anchor}` triple only matters when real price never actually
+  reached one of those levels within the bar's own tick span — a rare edge
+  case (e.g. a very fast time-filtered completion) — where it acts as a
+  floor/ceiling, not the norm.
+- The *forming* bar's real running extremes and the *completed* bar's real
+  extremes are the SAME kind of value — no synthetic/real discontinuity at
+  completion, unlike the original (incorrect) reading of §4 bar #5, which
+  is no longer accurate.
+- **Independently confirmed by the vendor's own intro video** (transcript
+  reviewed 2026-07-30, see top-of-doc summary): the presenter states he
+  deliberately kept real high/low information in the bar so traders can
+  still trail a stop off the previous bar's low/high — i.e. this was
+  *designed* to carry real extremes, not an accident this doc happened to
+  measure. That is independent confirmation of the same conclusion the
+  chart-export parity numbers already established.
 
 ### 3.4 The close lattice
 
@@ -205,6 +294,15 @@ grid / every body is an exact multiple of the step" claim, and it is true —
 ---
 
 ## 4. Worked examples (reference-simulator output)
+
+**Stale H/L note (2026-07-30):** the tables below (and the "printed high /
+low is missing the real excursion" commentary attached to bars 5 and the
+F=30 case) were generated before the §3.3 correction and still show the
+OLD, disproven synthetic-only H/L. Open/close/timing/body/range numbers are
+still correct — only the specific H/L VALUES and the "excursion is gone"
+framing are stale; the real rule is now the real-extremes union in §3.3.
+Kept as-is (not regenerated) since they still correctly illustrate the
+entry/exit geometry, which is what they were built to show.
 
 **A. Steady 1-tick/second walk, B=64 O=16 F=1** (MNQ tick 0.25). Note bar 0
 is the session seed (body 64, no wick), bars 1–4 are continuations (body 16,
@@ -289,9 +387,13 @@ parity work, because it changes the bars.
 
 ## 6. Evaluation: is it a better renko?
 
-**For this repo's purposes: better in the ways that have actually cost us
-time, worse in a way that matters to half our existing signal code.** It is
-not a drop-in upgrade.
+**Updated 2026-07-30, post Phase 6 validation.** The original verdict below
+was written believing H/L were synthetic (§3.3's original, disproven
+reading) — that was the single biggest claimed cost, and it doesn't hold:
+H/L carry real intrabar information, same as ninZaRenko. Net effect: this
+looks like a genuine, close-to-drop-in improvement over ninZaRenko, not a
+trade-off. The remaining real costs are secondary (wall-clock sensitivity,
+asymmetric bodies, black-box provenance) rather than structural.
 
 ### 6.1 Genuine advantages over ninZaRenko
 
@@ -314,45 +416,51 @@ not a drop-in upgrade.
 6. **Same trigger levels as ninZa** (§3.2) — so a signal that keys on
    threshold crossings, not on candle shape, should port across with the
    mapping `T → O`, which makes A/B comparison cheap.
+7. **H/L carry real information (§3.3, corrected).** Real intrabar extremes
+   are retained, same as ninZaRenko — GZK's PanaKanal (Keltner/ATR), KO
+   (order blocks), SuperJump zones are NOT reading fabricated data here.
+   The original "don't expect GZK/Terminator to transfer" caution (below,
+   6.2 old #1) is withdrawn.
 
 ### 6.2 Real costs and risks
 
-1. **H/L are fabricated (§3.3).** This is the big one. Range is a constant B
-   on every trend bar, so ATR is near-degenerate; and the true intrabar
-   excursion is unrecoverable from the bar series. Our GodZillaKilla engines
-   lean on H/L: PanaKanal (Keltner/ATR), KO (order blocks off bar highs and
-   lows), SuperJump zones. **Do not expect GZK or Terminator numbers to
-   transfer to SaberRenko** — those engines would be reading synthetic data.
-   ninZa at least folds real extremes into H/L.
-2. **Live/backtest divergence is built in.** The forming bar's H/L are real
-   and get overwritten on close. Any `OnEachTick` strategy reading `High[0]`
-   sees one thing live and another in the historical series.
-3. **Bars depend on wall-clock time.** Completion is timestamp-driven, so the
-   series is sensitive to tick timestamp fidelity and to missing ticks. Our
-   Market-Replay parquet and NT8's own tick DB are different recordings
-   (~6 s feed skew is already documented). Expect **lower NT8 parity than
-   ninZa's 99.8%** and validate before trusting any number.
-4. **Asymmetric bodies.** Continuation O vs reversal 2B−O — 7:1 at the
+1. **Bars depend on wall-clock time.** Completion is timestamp-driven, so the
+   series is sensitive to tick timestamp fidelity and to missing ticks.
+   **Measured** (Phase 6, two real MNQ exports against our Market-Replay
+   parquet, 9650 and 4073 matched bars): 95.8% / 96.9% exact OHLC —
+   genuinely lower than ninZa's 99.8%, as expected, but a good result;
+   residual is almost entirely ±1-2 ticks (feed skew, same class of noise
+   already documented for ninZaRenko) plus one unexplained -8 tick outlier
+   not yet root-caused. Timing itself (bar count, close price) was **100%**
+   exact on both exports — the entry/exit geometry is fully validated; only
+   the wall-clock-driven H/L bound is imperfect.
+2. **Asymmetric bodies.** Continuation O vs reversal 2B−O — 7:1 at the
    defaults. Anything assuming "each brick = N ticks" breaks. It is a
    strongly trend-persistent bar: cheap to continue, expensive to turn.
    That's a deliberate design, but it must be sized deliberately too.
-5. **Same day-boundary trap as ninZa** (§5.3) — mitigated, not absent.
-6. **Black box, v1.0.0.1, no docs, no vendor found, no source.** One
+3. **Same day-boundary trap as ninZa** (§5.3) — mitigated, not absent.
+4. **Black box, v1.0.0.1, no docs, no vendor found, no source.** One
    undocumented DLL. The reload-path anchor reconstruction (§2) is a
-   divergence surface we cannot test from the Python side.
-7. **Silent misconfiguration.** O > B is degenerate and B % O ≠ 0 quietly
+   divergence surface we cannot test from the Python side. (The original
+   reverse-engineering also got the H/L rule wrong on first read — a live
+   reminder that black-box conclusions need the parity gate, not just
+   confident code-reading, before they're trusted.)
+5. **Silent misconfiguration.** O > B is degenerate and B % O ≠ 0 quietly
    breaks the lattice; the bar type enforces neither.
 
 ### 6.3 Verdict
 
-Worth adding as a **first-class bar type and running head-to-head**, not
-worth adopting on sight. The cascade and noise problems it fixes are real
-problems we have hit; the synthetic H/L is a real regression for our existing
-signal stack. The cheap, honest experiment is: port it (§7), then re-run the
-Terminator champion signal — which is close-based (SAR) and therefore the
-fair test — on `s100-25-1` against its validated `r100-4`, same session, same
-prop rules. If a close-driven strategy holds up or improves, the bar type
-earns its place and the H/L-dependent engines get evaluated separately.
+**Upgraded from "worth racing" to "worth adopting" post Phase 6.** The
+cascade/noise problems it fixes are real problems we have hit, H/L are NOT
+a regression for the existing signal stack (§6.1 #7), and Phase 6 confirms
+the entry/exit geometry is exactly right (100% bar-count and close-price
+match on two real MNQ exports) with H/L accurate to ±1-2 ticks. Nothing
+here is H/L-dependent-engine-blocking anymore. Still run the head-to-head
+before switching a champion over: re-run the Terminator/GZK signals on
+`s64-16-1` or `s100-25-1` against their validated `r*-*` renko configs, same
+session, same prop rules, and confirm the edge holds — the bar TYPE is now
+validated, but that says nothing yet about whether a specific strategy's
+tuned thresholds transfer cleanly to a different bar geometry.
 
 ---
 
@@ -435,38 +543,51 @@ difference); 8. completing tick's volume lands on the next bar;
 a >30 min gap; 10. `O == B` reproduces classic renko; 11. `O > B` and
 `B % O != 0` raise from `parse_barspec`.
 
-### Phase 6 — NT8 parity certification (the gate)
+### Phase 6 — NT8 parity certification (the gate) — DONE 2026-07-30
 
-Nothing here is trustworthy until this passes. Same rig as the ninZa work:
+Real exports: `nt8 code/SaberRenko/bars_MNQ_SaberRenko_64-16.csv` and
+`bars_MNQ_SaberRenko_100-25.csv`, MNQ, 2026-07-15 through 2026-07-30 (14
+trading days), Time Filter 1s both configs. Trimmed copies
+(`*_trimmed.csv`, cut to 2026-07-15..07-24 — the parquet repo's actual
+coverage as of this validation; the export runs 6 days past that) are what
+was actually compared, via `tools/compare_bars.py ... --tolerance-s 2`.
 
-1. Add `gbBarExporter` (already in `tools/`) to a SaberRenko chart —
-   MNQ, 64/16/1, a date range inside the parquet repo, tick-built.
-2. **Record the chart's session template and its *Break at EOD* setting**
-   (§5.3) — it changes the bars.
-3. `python tools\compare_bars.py bars_MNQ_SaberRenko_64-16.csv --symbol MNQ
-   --period s64-16-1 --tolerance-s 2` (2 s is enough — bars are ≥1 s apart,
-   unlike small-T renko which needed 10).
-4. Accept at **≥99% identical OHLC mid-session**, matching what ninZa reached
-   (99.8%). Because completion is time-driven (§6.2.3), expect residual
-   mismatch from feed skew; mismatch **clustered at midnight ET** means the
-   carry threading is wrong, not the geometry — see §5.3 before investigating
-   anything else.
-5. Repeat on a second config (e.g. 100/25/1) before declaring parity, as we
-   did across five ninZa settings.
+**Results:** bar count and close price **100.0%** exact on both configs
+(9650/9650 and 4073/4073 matched, zero misses). OHLC **95.8%** (64/16) /
+**96.9%** (100/25) exact — this is what SURFACED the H/L bug: every early
+mismatch had `dO=0 dC=0`, only H or L off, by amounts from 1 tick to 79
+ticks, in one direction (our computed range always narrower than NT8's).
+Traced one mismatch back to the raw parquet ticks and confirmed the real
+NT8 high/low was exactly `prices[i0:completing_tick+1].max()/.min()` — the
+bar's real running extremes across its own tick span, NOT the synthetic
+`{open,close,anchor}` triple the original reverse-engineering assumed (see
+§3.3's correction). Fixed in `build_saber_bars`; re-validated at 95.8%/96.9%
+with residual now almost entirely ±1-2 ticks (feed skew — the ninZaRenko
+spec documents ~6s skew for its noisiest setting; SaberRenko's wall-clock-
+driven completion makes it plausibly MORE skew-sensitive, not less) plus one
+unexplained -8 tick outlier on the 100/25 export, not investigated further
+(single occurrence, doesn't move the verdict).
 
-### Phase 7 — optional, after parity: the true-wick variant
+**Not yet checked:** the exporting chart's session template / *Break at
+EOD* setting (§5.3) was not recorded when the export was taken — worth
+confirming if the day-boundary carry ever needs deeper scrutiny, though
+nothing in the current mismatch pattern points at it (no clustering at
+midnight ET was observed).
 
-Because §3.3 throws away real extremes, offer an opt-in
-`BarSpec(..., real_wicks=True)` (key suffix `w`, e.g. `s64-16-1w`) that keeps
-`form_high`/`form_low` in the completed bar. This **breaks NT8 parity by
-construction** and must default off — but it gives strategies the intrabar
-excursion that no NT8 SaberRenko user can see, which is exactly the kind of
-L1 data edge this repo exists to exploit. Worth doing only if the bar type
-survives Phase 6 and the head-to-head in §6.3.
+### Phase 7 — optional: the true-wick variant — LIKELY MOOT
+
+The original motivation (§3.3 throwing away real extremes, so a strategy
+could opt into keeping them) **no longer applies** — §3.3's correction means
+completed bars already carry real extremes by default, matching what a
+`real_wicks=True` variant would have provided. Revisit only if some other
+divergence between our H/L and NT8's real behavior turns up (e.g. the
+unexplained -8 tick outlier above turning out to be systematic on
+investigation, not a one-off).
 
 ### Effort
 
-Phases 1–5 are roughly a day: the builder is ~120 lines and materially
+Phases 1–5 took roughly a day: the builder is ~150 lines and materially
 simpler than `build_renko_bars` (no overlapping geometry, no multi-emit
-loop, one bar per tick). Phase 6 depends on the user producing a chart
-export. Phase 7 is an hour on top of a passing Phase 6.
+loop, one bar per tick). Phase 6 (chart export + comparison + root-causing
+and fixing the H/L bug) took a few hours once the exports were in hand.
+Phase 7 is likely not needed at all.

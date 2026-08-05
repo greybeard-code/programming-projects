@@ -89,6 +89,65 @@ plotly, tzdata, pytest — no pandas/polars, keep it that way unless needed).
   type, so NT8's Renko fantasy-fill problem does not apply here. Do NOT
   accept decompiled ninZa source into this repo; validate bar parity via
   chart export / compare_nt8 instead.
+- **TBars ("tb120")** — LANDED 2026-08-04, parity gate RUN 2026-08-04. Port of
+  the vendor `TBars` bar type as shipped in **TBarsNEW.dll** (the build
+  installed in NT8 here; custom BarsPeriodType **98765**). Full writeup:
+  research/TBars_spec.md. ONE parameter, NT8's "Speed Settings" N, from
+  which Configure derives everything — trend `N//2` ticks, reversal `N*2`,
+  synthetic open offset `N` — so **a reversal costs 4x a continuation**
+  (that asymmetry is the "T"). Breakout is STRICT and the completing tick
+  clamps exactly to the threshold, so closes stay on the tick grid. The
+  emitted **OHLC is Heikin-Ashi transformed** (close = 4-way average, open
+  = midpoint of synthetic open and prior close; H/L are the real extremes —
+  the DLL's HA high/low helpers are dead code): that is FAITHFUL, since it
+  is what NT8 charts, and fills are unaffected because the engine still
+  resolves on real ticks. Two deliberate divergences: (1) the breakout
+  tick's volume goes to the NEW bar only, because NT8 counts it in BOTH
+  (UpdateBar *and* AddBar) and this repo requires non-overlapping `[i0,i1)`
+  spans or an order could fill twice — the double-count is CONFIRMED, not
+  inferred: 97.8% of bars satisfy `nt8_vol == our_vol + vol[breakout tick]`
+  and NT8's bar volumes sum to 2,292 contracts MORE than were traded; (2) at a gap re-seed `bar_dir` is
+  dropped by default (`reset_carries_dir=False`) — the DLL carries it and
+  seeds `open ± trend*dir`, which INVERTS when the prior direction was down
+  and emits a bar whose OPEN sits above its own high (hand-verified:
+  O=98.00 H=97.50 L=97.50 C=97.50), which every indicator would consume. Reset is
+  gap-driven here, as for renko/saber; NT8's own reset is the Data Series
+  **"Break at EOD"** toggle (`Bars.IsResetOnNewTradingDay`), which
+  DEFAULTS TO ENABLED (user-confirmed 2026-08-04) — so the re-seed path IS
+  live on a stock chart, and its reset POINT is the trading-hours template
+  boundary, not a trade gap.  That difference is residual (b) above. Expect
+  ~1 doji stub bar per reset (faithful — the seed collapses both thresholds
+  onto the open); MGC sees ~1.8 gaps/day, MNQ ~0.7. Reference config, and
+  what the parity gate should use: **MGC Speed 120** (trend $6 / reversal
+  $24 / open offset $12, ~21 bars/day). The three TBars builds found in
+  `nt8 code/TBarsNew/` are one class with identical math; the `.cs` one is
+  a DECOMPILATION with the license check stripped, not vendor source — same
+  no-decompiled-source policy as ninZa applies.
+  **CRITICAL, found by the parity gate:** NT8 stores every bar price on the
+  TICK GRID, rounded **half-to-even** (.NET Math.Round default), and that
+  rounding is INSIDE the state loop (the next bar's HA open reads the stored
+  close), so rounding only at the end drifts. Without it OHLC parity was
+  **0.1%**; with it 79.3%. Half-up scores 71.6%, half-down 72.7% — to-even
+  is right. **Parity gate result** (MNQ 09-26 Speed 120, 2026-07-19..07-31,
+  2232 bars, Break at EOD ON): timing 99.1%, high/low 98.7%, close 91.5%,
+  full OHLC 79.3%. Geometry + bar TIMING are certified (bar 1 verified by
+  hand to the cent); residual is (a) ±1 tick on the two HA averages on ~9%
+  of bars, which is error PROPAGATION not a wrong tie-break — both formulas
+  were verified against NT8's own stored values — and (b) 29 bars (1.3%) at
+  session boundaries, because NT8 with Break at EOD ON re-seeds at the
+  trading-hours TEMPLATE boundary while this port re-seeds on a >30 min trade
+  gap. `reset_carries_dir=True` moves the total only 78.8%->79.5%, so the
+  reset POINT is the driver, not the direction carry — fix that first if
+  tighter parity is wanted. The volume gate also exposed a hole on OUR
+  side, now FIXED (2026-08-04): a bar still forming at a day-file boundary
+  carried its geometry but not its accumulated volume, so bar volumes summed
+  0.64% below traded volume; SaberRenko had the identical hole. Both carry
+  tuples grew `(volume, buy_volume, sell_volume)` and BARS_VERSION went 7->8
+  (an old cache's end_state no longer unpacks). Residual is now -0.086%,
+  which is just the bar still forming when data ends and is correct.
+  Don't compare TBars parity to ninZaRenko's
+  96-100%: TBars emits a 4-way average of four rounded quantities, so one
+  tick of divergence anywhere is structurally far more visible.
 
 ## Conventions & gotchas
 
