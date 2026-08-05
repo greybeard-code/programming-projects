@@ -353,29 +353,43 @@ ends, which never completes and so is never emitted.
 The remaining 29 "neither" bars are now exactly the session-boundary
 population as OHLC residual 2 — same root cause, one fix away.
 
-### 8.2 gbTBars parity run — 2026-08-05
+### 8.2 Both charts re-exported after repairing the 07-24 tick data, so vendor and
+gbTBars ran on **identical** data over an identical window (MNQ 09-26, Speed
+120, 2026-07-19 18:00 → 07-31 16:59, Break at EOD ON), each compared against
+the Python port.
 
-Same setup, against `NinjaScript/gbTBars/gbTBars.cs` (the fixed build, own
-BarsPeriodType 91001). 2205 bars vs the vendor's 2232.
-
-| metric | vendor | **gbTBars** |
+| metric | vendor TBars | **gbTBars** |
 |---|---|---|
-| matched by close time | 99.1% | **99.2%** |
-| identical high/low | 98.7% (29 bad) | **99.9% (2 bad)** |
-| identical close | 91.5% | **92.7%** |
-| identical full OHLC | 79.3% | **80.5%** |
-| volume rule confirmed | 98.3% | **99.5%** |
+| bars emitted | 2232 | **2223** (port: 2222) |
+| matched by close time | 99.2% | **99.9%** |
+| **identical high/low** | 98.9% — 24 bad | **99.8% — 4 bad** |
+| identical close | 91.1% | **92.5%** |
+| identical full OHLC | 79.5% | **80.7%** |
 
-Geometry is now effectively exact; the residual full-OHLC gap is entirely the
-±1 tick HA-average propagation of residual 1 (open 13.4% of bars, close 7.2%).
-Removing the inverted re-seed also removed 27 malformed bars, which is most of
-the bar-count difference.
+Chart-to-chart: **2184 bars byte-identical**, 39 differ, 9 exist only in the
+vendor build.
 
-**NT8 data hole found.** The chart has no ticks between 11:06 and 11:43 ET on
-2026-07-24 (mid-RTH) though the parquet repo does — 439,303 contracts, and all
-17 of the port's unmatched bars. Excluding that window, high/low parity is
-99.9% (2182/2184). It also explains why NT8's bar volumes summed *below* traded
-volume on this run where the vendor run summed above.
+**Fix 2 confirmed.** The vendor's 24 bad bars cluster at **18:00:00** — the
+session reopen. gbTBars has 4, none of them at a reopen. The 9 vendor-only bars
+all fall within ~3 minutes of 18:00 too. The bar stream diverges for a handful
+of bars after each reopen and then re-syncs.
+
+**Correction to an earlier prediction.** I expected the vendor chart to show a
+visibly malformed bar (open above its own high). **It does not** — NT8's
+`UpdateBar` clamps high/low so they cannot cross the open. Verified side by side
+at 07-20 18:00:00: the port reproducing the DLL emits `O=28783.25 H=28768.25
+L=28768.25`, NT8 stores `O=H=L=28783.25`. So the arithmetic really is wrong, but
+NT8 masks the worst symptom and turns it into a doji at the open. The observable
+damage is **wrong** bars at session reopens, not **invalid** ones.
+
+That also means the Python port, which has no such clamp, would emit genuinely
+malformed OHLC under `reset_carries_dir=True` — 10 such bars in this window.
+Another reason the `False` default is right.
+
+**The remaining gap is not geometry.** ±1 tick on the two Heikin-Ashi averages,
+essentially unchanged between the builds (open 13.2% vendor / 13.1% gbTBars;
+close 7.5% / 7.3%) because the fix does not touch the HA math. That propagation
+is the only thing standing between 80.7% and ~100%.
 
 ## 9. Remaining after the gate
 

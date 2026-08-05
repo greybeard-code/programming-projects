@@ -140,7 +140,9 @@ plotly, tzdata, pytest — no pandas/polars, keep it that way unless needed).
   because `reset_carries_dir=True` moved the total only 78.8%->79.5%. Wrong
   inference — that reproduces the bug at the PORT's reset points, which don't
   coincide with NT8's. `NinjaScript/gbTBars/` fixes the direction carry on the
-  NT8 side and geometry mismatches fall 29 -> 2 (high/low 99.9%, OHLC 80.5%);
+  NT8 side and on identical data geometry mismatches fall 24 -> 4 (high/low 99.8%, OHLC
+  80.7%, timing 99.9%); NT8 CLAMPS the malformed bar into a doji at the open
+  so it never shows as invalid OHLC on a chart, only as WRONG bars at 18:00;
   the reset-point difference is benign once neither side emits a malformed
   bar. What remains is purely the +-1 tick HA rounding propagation. The volume gate also exposed a hole on OUR
   side, now FIXED (2026-08-04): a bar still forming at a day-file boundary

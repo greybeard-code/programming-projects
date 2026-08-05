@@ -4,8 +4,8 @@ A GreyBeard build of the **TBars** bar type for NinjaTrader 8 — asymmetric
 trend/reversal bars with a Heikin-Ashi presentation layer.
 
 **Status:** v1.0.0, **validated on a live chart 2026-08-05.** The fix works:
-geometry mismatches against the Python port fell from 29 bars to 2 (99.9%
-identical high/low). See [Evidence](#evidence).
+on identical data, geometry mismatches against the Python port fall from 24
+bars (vendor) to 4 (99.8% identical high/low). See [Evidence](#evidence).
 
 Registered on `BarsPeriodType` **91001**, so it **coexists** with the vendor's
 TBars (98765) rather than replacing it. Existing charts keep resolving the
@@ -276,43 +276,45 @@ single tick of divergence anywhere is structurally far more visible.
 
 ---
 
-### gbTBars parity run — 2026-08-05
+### gbTBars parity run — 2026-08-05 (clean re-run)
 
-Identical setup to the vendor gate (MNQ 09-26, Speed 120, 2026-07-19 → 07-31,
-Break at EOD ON). gbTBars emitted 2205 bars, the vendor build 2232.
+Both charts re-exported after repairing the 07-24 tick data, so vendor and
+gbTBars ran on **identical** data over an identical window (MNQ 09-26, Speed
+120, 2026-07-19 18:00 → 07-31 16:59, Break at EOD ON), each compared against
+the Python port.
 
 | metric | vendor TBars | **gbTBars** |
 |---|---|---|
-| matched by close time | 99.1% | **99.2%** |
-| **identical high/low** | 98.7% (29 bad) | **99.9% (2 bad)** |
-| identical close | 91.5% | **92.7%** |
-| identical full OHLC | 79.3% | **80.5%** |
-| volume rule `ours + breakout tick` | 98.3% | **99.5%** |
+| bars emitted | 2232 | **2223** (port: 2222) |
+| matched by close time | 99.2% | **99.9%** |
+| **identical high/low** | 98.9% — 24 bad | **99.8% — 4 bad** |
+| identical close | 91.1% | **92.5%** |
+| identical full OHLC | 79.5% | **80.7%** |
 
-**Fix 2 is confirmed.** Geometry mismatches fell 29 → 2, and the survivors are
-mid-session, not at session boundaries. The malformed reset bars are gone; that
-also accounts for gbTBars emitting 27 fewer bars than the vendor build.
+Chart-to-chart: **2184 bars byte-identical**, 39 differ, 9 exist only in the
+vendor build.
 
-**This corrects an earlier misattribution.** The vendor gate concluded the
-reset *point* (trading-hours template vs. the port's >30 min gap) was the
-driver of that residual, because forcing the port to reproduce the inversion
-(`reset_carries_dir=True`) moved parity only 78.8% → 79.5%. That test was
-misleading: it reproduced the bug at the *port's* reset points, which don't
-coincide with NT8's, so it never lined up. Removing the bug from the NT8 side
-instead means neither side emits a malformed bar, and the reset-point
-difference turns out to be almost entirely benign.
+**Fix 2 confirmed.** The vendor's 24 bad bars cluster at **18:00:00** — the
+session reopen. gbTBars has 4, none of them at a reopen. The 9 vendor-only bars
+all fall within ~3 minutes of 18:00 too. The bar stream diverges for a handful
+of bars after each reopen and then re-syncs.
 
-**What's left is not geometry.** The full-OHLC figure is now dominated by a
-±1 tick disagreement on the two Heikin-Ashi averages — open off by one tick on
-13.4% of bars, close on 7.2%. Both formulas were verified against NT8's own
-stored values, so this is rounding *propagation*, not a wrong formula: one
-divergent bar shifts the next open, which shifts its close, until it self-heals.
+**Correction to an earlier prediction.** I expected the vendor chart to show a
+visibly malformed bar (open above its own high). **It does not** — NT8's
+`UpdateBar` clamps high/low so they cannot cross the open. Verified side by side
+at 07-20 18:00:00: the port reproducing the DLL emits `O=28783.25 H=28768.25
+L=28768.25`, NT8 stores `O=H=L=28783.25`. So the arithmetic really is wrong, but
+NT8 masks the worst symptom and turns it into a doji at the open. The observable
+damage is **wrong** bars at session reopens, not **invalid** ones.
 
-**Unrelated finding — an NT8 data hole.** The chart is missing every tick
-between **11:06 and 11:43 ET on Fri 2026-07-24** (mid-RTH), which the parquet
-repo has. That single contiguous block accounts for 439,303 contracts and all
-17 of the port's unmatched bars. Excluding it, high/low parity is **99.9%
-(2182/2184)**. Worth reloading that day's tick data in NT8 before the next run.
+That also means the Python port, which has no such clamp, would emit genuinely
+malformed OHLC under `reset_carries_dir=True` — 10 such bars in this window.
+Another reason the `False` default is right.
+
+**The remaining gap is not geometry.** ±1 tick on the two Heikin-Ashi averages,
+essentially unchanged between the builds (open 13.2% vendor / 13.1% gbTBars;
+close 7.5% / 7.3%) because the fix does not touch the HA math. That propagation
+is the only thing standing between 80.7% and ~100%.
 
 ## Backtester
 
