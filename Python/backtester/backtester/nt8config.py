@@ -176,9 +176,18 @@ def load_atm_template(path: str | Path) -> AtmSpec:
 # Older TBars builds registered different ids (2015, and 15 which COLLIDES
 # with NT8's built-in Delta type); neither is mapped — see
 # research/TBars_spec.md §7.
+# 91001 is gbTBars (NinjaScript/gbTBars/gbTBars.cs) — the GreyBeard build of
+# the same bar type on its own id so it coexists with the vendor's. Identical
+# geometry and identical Speed-Settings derivation, so it maps to the SAME
+# `tb<N>` BarSpec; it only differs where the vendor build is wrong (no per-tick
+# debug Print, and the session re-seed drops the carried direction instead of
+# inverting the thresholds). That second fix makes gbTBars agree with this
+# port's DEFAULT `reset_carries_dir=False`, so a gbTBars chart should show
+# BETTER parity than the 79.3% measured against stock TBars.
 _BAR_TYPE_RENKO = 12345
 _BAR_TYPE_SABER = 20821
 _BAR_TYPE_TBARS = 98765
+_BAR_TYPE_GBTBARS = 91001
 
 
 @dataclass
@@ -232,7 +241,7 @@ def _parse_bar_spec(el: ET.Element, name: str) -> str:
     if type_id == _BAR_TYPE_SABER:
         offset = _int(el.find("BaseBarsPeriodValue"))
         return f"s{value}-{offset}-{value2}"
-    if type_id == _BAR_TYPE_TBARS:
+    if type_id in (_BAR_TYPE_TBARS, _BAR_TYPE_GBTBARS):
         speed = _int(el.find("BaseBarsPeriodValue"))
         if (value, value2) != (speed // 2, speed * 2):
             raise ValueError(
@@ -246,7 +255,8 @@ def _parse_bar_spec(el: ET.Element, name: str) -> str:
     raise ValueError(
         f"{name}: BarsPeriodTypeSerialize={type_id} not mapped to a BarSpec "
         f"(known: {_BAR_TYPE_RENKO}=ninZaRenko, {_BAR_TYPE_SABER}=SaberRenko, "
-        f"{_BAR_TYPE_TBARS}=TBars). Add the mapping when needed.")
+        f"{_BAR_TYPE_TBARS}=TBars, {_BAR_TYPE_GBTBARS}=gbTBars). "
+        "Add the mapping when needed.")
 
 
 def load_strategy_template(path: str | Path) -> StrategyTemplate:

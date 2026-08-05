@@ -5,19 +5,28 @@ __pycache__/
 *.pyc
 .pytest_cache/
 
-# Vendor bar-type snapshots under "nt8 code/" keep the DLL, Info.xml and NT8's
-# empty export stub only (see nt8 code/SaberRenko). NT8_Tbars is a
-# DECOMPILATION of the same TBars class with the license check stripped, not
-# vendor source — keep it locally for reference, never commit it. Same policy
-# as ninZaRenko; research/TBars_spec.md §0 records what it told us.
-nt8 code/TBarsNew/NT8_Tbars/
-nt8 code/TBarsNew/NT8_Tbars.zip
-
-# Vendor binaries are NEVER committed — this repository is public, and the
-# NT8 bar types/indicators snapshotted under "nt8 code/" are paid third-party
-# products. Keep them locally for reference; the behaviour we depend on is
-# captured in research/*_spec.md instead. (SaberRenko.dll predates this rule
-# and is already tracked; removing it needs a history rewrite.)
+# Vendor binaries are NEVER committed — this repository is PUBLIC, and the NT8
+# bar types/indicators snapshotted under "nt8 code/" are paid third-party
+# products. Keep them locally for reference; the behaviour we actually depend
+# on is captured in research/*_spec.md instead. Only Info.xml and NT8's empty
+# generated export stub are tracked, to document the package shape.
+# (SaberRenko.dll predates this rule and is already tracked and pushed;
+# removing it needs a history rewrite.)
 nt8 code/**/*.dll
 nt8 code/**/*.zip
 nt8 code/**/*.pdf
+
+# Decompilations. NT8_Tbars is the TBars class with the license check
+# stripped, circulated as if it were vendor source — it is not. Same policy as
+# ninZaRenko; research/TBars_spec.md §0 records what it told us.
+nt8 code/TBarsNew/NT8_Tbars/
+nt8 code/TBarsNew/NT8_Tbars.zip
+
+# Whole-DLL decompile of TBarsNEW (ILSpy project export). Most of it is NT8's
+# OWN stock code that the vendor's NinjaScript export bundled in, and it does
+# not even round-trip (the DrawingTools files emit CS1525 on 'ref').
+nt8 code/TBarsNew/TBarsNEW/NinjaTrader.Custom/
+nt8 code/TBarsNew/TBarsNEW/NinjaTrader.NinjaScript.*/
+nt8 code/TBarsNew/TBarsNEW/Properties/
+nt8 code/TBarsNew/TBarsNEW/NinjaTrader.Custom.Resource.resx
+nt8 code/TBarsNew/TBarsNEW/TBarsNEW-cleaned.*
