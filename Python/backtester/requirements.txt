@@ -1,5 +1,0 @@
-numpy
-pyarrow
-plotly
-tzdata
-pytest
